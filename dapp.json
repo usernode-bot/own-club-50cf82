@@ -80,6 +80,18 @@
       "name": "Health",
       "path": "/health",
       "expectText": "ok"
+    },
+    {
+      "name": "Demo club tab shows staff and the academy",
+      "path": "/?demo=1#club",
+      "expectText": "Staff",
+      "expectSelector": "#staff-list .list-row"
+    },
+    {
+      "name": "Demo club tab lists the academy prospects",
+      "path": "/?demo=1#club",
+      "expectText": "Academy",
+      "expectSelector": "#youth-list .list-row"
     }
   ]
 }

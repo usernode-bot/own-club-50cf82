@@ -52,7 +52,7 @@ const listingRow = {
 };
 
 test('a buy locks the listing, then the buyer, then the seller, and commits once', async () => {
-  const buyer = { state: fakeState(5000), version: 3 };
+  const buyer = { state: fakeState(100000), version: 3 };
   const { pool, log } = fakePool({ listing: listingRow, buyer });
   const out = await buyListing(pool, (await import('../public/engine.js')), {
     listingId: 9, userId: 'buyer', version: 3,
@@ -69,7 +69,7 @@ test('a buy locks the listing, then the buyer, then the seller, and commits once
     'BEGIN', 'listing', 'buyer', 'seller', 'buyer-write', 'delete', 'COMMIT',
   ]);
   assert.equal(out.version, 4);
-  assert.equal(out.career.credits, 3000);
+  assert.equal(out.career.credits, 98000);
   assert.ok(out.career.squads[CLUB].some((p) => p.id === 't9'));
   assert.equal(log.filter((l) => l.text === 'COMMIT').length, 1);
   assert.equal(log.filter((l) => l.text === 'ROLLBACK').length, 0);
@@ -79,7 +79,7 @@ test('a buy locks the listing, then the buyer, then the seller, and commits once
 });
 
 test('a listing that is gone is refused and rolls back', async () => {
-  const buyer = { state: fakeState(5000), version: 3 };
+  const buyer = { state: fakeState(100000), version: 3 };
   const { pool, log } = fakePool({ listing: null, buyer });
   const e = await import('../public/engine.js');
   const out = await buyListing(pool, e, { listingId: 9, userId: 'buyer', version: 3 });
@@ -90,7 +90,7 @@ test('a listing that is gone is refused and rolls back', async () => {
 });
 
 test('your own listing cannot be bought', async () => {
-  const buyer = { state: fakeState(5000), version: 3 };
+  const buyer = { state: fakeState(100000), version: 3 };
   const own = { ...listingRow, seller_user_id: 'buyer' };
   const { pool } = fakePool({ listing: own, buyer });
   const e = await import('../public/engine.js');
@@ -101,7 +101,7 @@ test('your own listing cannot be bought', async () => {
 test('a full squad or short credits is refused, rolled back, and the listing kept', async () => {
   const e = await import('../public/engine.js');
   for (const credits of [0, 5000]) {
-    const state = credits ? fakeState(5000) : fakeState(0);
+    const state = credits ? fakeState(100000) : fakeState(0);
     if (credits) {
       const player = listingRow.player;
       state.squads[CLUB] = new Array(e.SQUAD_MAX).fill(player);
@@ -116,7 +116,7 @@ test('a full squad or short credits is refused, rolled back, and the listing kep
 
 test('a stale buyer version is refused before anything moves', async () => {
   const e = await import('../public/engine.js');
-  const buyer = { state: fakeState(5000), version: 4 };
+  const buyer = { state: fakeState(100000), version: 4 };
   const { pool, log } = fakePool({ listing: listingRow, buyer });
   const out = await buyListing(pool, e, { listingId: 9, userId: 'buyer', version: 3 });
   assert.equal(out.error, 'version_mismatch');
@@ -126,10 +126,10 @@ test('a stale buyer version is refused before anything moves', async () => {
 
 test('when the seller has no career nobody is paid, and the buy still commits', async () => {
   const e = await import('../public/engine.js');
-  const buyer = { state: fakeState(5000), version: 3 };
+  const buyer = { state: fakeState(100000), version: 3 };
   const { pool, log } = fakePool({ listing: listingRow, buyer, deal: false });
   const out = await buyListing(pool, e, { listingId: 9, userId: 'buyer', version: 3 });
   assert.equal(out.error, undefined);
-  assert.equal(out.career.credits, 3000);
+  assert.equal(out.career.credits, 98000);
   assert.equal(log.filter((l) => l.text === 'COMMIT').length, 1);
 });

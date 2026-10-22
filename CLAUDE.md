@@ -180,17 +180,39 @@ unusable lineup with `autoLineup`.
 The finances are Club credits only; the wallet and Dummy USDC are never
 touched. A career has fans (`state.fans`, seeded by tier at 15,000 / 6,000 /
 2,500 and carried across seasons), which move after each of the club's matches
-(+5% win, +2% draw, −3% loss, floored at 0). Only a home match earns a gate:
-the smaller of the fans and the ground's capacity (30,000 / 12,000 / 5,000 by
-tier) times 5 credits a seat; away matches earn nothing. Every club matchday
-pays a flat ground upkeep of 250 credits, home or away, never taking the
-balance below 0. The engine's `moneyFields` fills these for an older career and
-`playMatchday` applies them, so catch-up, a watched kick-off and the demo all
-earn the same. Each season has one sponsor (`state.sponsor`: name, target, fee)
-chosen deterministically at purchase and at every rollover; when its target
-(reusing the board objective's wording) was met, `startNextSeason` pays its fee
-once and records the result in `state.lastSponsor`. Upkeep is a placeholder
-until stadium and facility buildings arrive and scale it.
+(+5% win, +2% draw, −3% loss, floored at 0) and never above `FAN_CAP` for its
+division (30,000 / 12,000 / 5,000, the same figures as `GROUND_CAPACITY`);
+`moneyFields` and the rollover clamp a stored value, and a relegated club drops
+to its new limit. Only a home match earns a gate: the smaller of the fans, the
+stadium's own seats (`STADIUM_SEATS`, 2,000 to 40,000 by level) and the
+division's cap, times 5 credits a seat; away matches earn nothing. Every club
+matchday pays a flat ground upkeep of 250 credits, home or away, then facility
+maintenance (`MAINTENANCE`, nothing at level 1 and 150/500/1,500/4,000 per
+facility at levels 2 to 5, summed by `maintenanceDue`), then player wages
+(`playerWage`/`wageBill`: `WAGE_RATE` 45/24/14 by division times the player's
+overall above 40, never below 5 points), then staff wages. Each is paid only as
+far as the balance reaches, never below 0. The engine's `moneyFields` fills
+these for an older career and `playMatchday` applies them, so catch-up, a
+watched kick-off and the demo all earn the same. Each season has one sponsor
+(`state.sponsor`: name, target, fee) chosen deterministically at purchase and at
+every rollover; when its target (reusing the board objective's wording) was
+met, `startNextSeason` pays its fee once and records the result in
+`state.lastSponsor`. Upkeep is a placeholder until stadium and facility
+buildings arrive and scale it.
+
+Staff are the five roles in `STAFF_ROLES` (coach, scout, doctor, physio, club
+staff), each with a one-off fee and a wage every matchday, one of each. They
+live in `state.staff` (`{ name, season, matchday }` or null), are hired and
+released by `hireStaff`/`releaseStaff` (no refund) through
+`POST /api/career/staff`, and pay `staffWagesDue` each matchday until released.
+They do not change matches yet. The academy takes in `ACADEMY_INTAKE` young
+players after every matchday (1/1/2/2/3 at levels 1 to 5), stronger at a higher
+level, up to `ACADEMY_CAPACITY` (10/20/30/45/60, matching the facility text);
+when full the longest waiting leaves. `academyIntake` is called from
+`playMatchday`; `state.youth` holds prospects newest first, earn nothing, and
+`promoteYouth` moves one into the squad (`SQUAD_MAX` 25) on a wage through
+`POST /api/career/youth`. `PUT /api/career` keeps the stored `staff` and
+`youth` whatever the page sends.
 
 The ten original clubs make up most of Division 1; the other 152 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
@@ -253,6 +275,14 @@ change follows it, and updates it when a request changes the look on purpose.
   step that just filled flashing amber once (off under reduced motion); the
   upgrade button is the plain secondary button, not amber. The balance at the
   top of the tab is the same `.bal` row as Home's Wallet.
+- **Staff and Academy:** two more sections on the Club tab below Facilities,
+  built from the same list rows. There is no new primary action: Hire, Release
+  and Promote are the plain secondary button, never amber, and a role you
+  cannot afford shows "N needed" in muted text like a facility. Academy rows
+  look like Squad list rows (position, name with a small line, overall) with
+  Promote at the end; an empty academy says the academy takes in N after every
+  matchday. Hire, release and promotion failures use the same error box and
+  Retry as a failed upgrade.
 - **Type scale:** `text-title`, `text-heading`, `text-body`, `text-small`
   (unchanged sizes), in the rounded system typeface; scores, stats, ratings
   and the table use tabular numbers.

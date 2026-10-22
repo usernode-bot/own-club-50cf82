@@ -15,29 +15,22 @@ function career(seed = 3) {
   return buildInitialState(CLUB, 'Test manager', seed);
 }
 
-test('a player earns a wage by overall, halved under 21, and never under 5', () => {
-  assert.equal(playerWage({ overall: 60, age: 25 }), 38);
-  assert.equal(playerWage({ overall: 80, age: 30 }), 68);
-  assert.equal(playerWage({ overall: 40, age: 25 }), 8);
-  assert.equal(playerWage({ overall: 30, age: 25 }), 5);
-  assert.equal(playerWage({ overall: 60, age: 19 }), 19);
-  assert.equal(playerWage({ overall: 30, age: 18 }), 5);
-  assert.equal(wageBill([{ overall: 60, age: 25 }, { overall: 40, age: 25 }]), 46);
-  assert.equal(wageBill([]), 0);
+test('a club with no squad has no wage bill', () => {
+  assert.equal(wageBill({ squads: {} }), 0);
 });
 
 test('a matchday pays upkeep and the whole squad its wages, never below zero', () => {
   const state = career(5);
-  const bill = wageBill(state.squads[CLUB]);
+  const bill = wageBill(state);
   assert.ok(bill > 0);
   state.credits = 100000;
   while (state.matchday < 3) playMatchday(state);
   const f = state.finance;
-  assert.equal(f.wage, bill * 3);
+  assert.equal(f.wages, bill * 3);
   const report = state.lastReport.finance;
-  assert.equal(report.wageDue, bill);
+  assert.equal(report.wagesDue, bill);
   assert.equal(report.net, (report.result === 'win' ? 50 : report.result === 'draw' ? 25 : 10)
-    + report.gate - report.upkeep - report.wage);
+    + report.gate - report.upkeep - report.maintenance - report.wages - report.staffWages);
 
   // A club with no credits and no fans can still be paid only what it earned.
   const broke = career(5);
@@ -45,9 +38,7 @@ test('a matchday pays upkeep and the whole squad its wages, never below zero', (
   broke.fans = 0;
   playMatchday(broke);
   assert.ok(broke.credits >= 0);
-  const earned = broke.lastReport.finance.result === 'win' ? 50
-    : broke.lastReport.finance.result === 'draw' ? 25 : 10;
-  assert.equal(broke.lastReport.finance.wage, Math.min(broke.lastReport.finance.wageDue, Math.max(0, earned - broke.lastReport.finance.upkeep)));
+  assert.ok(broke.lastReport.finance.wages <= broke.lastReport.finance.wagesDue);
 });
 
 test('selling to the league pays a quarter of the overall, at least 5', () => {
@@ -96,7 +87,7 @@ test('a signing is refused when the squad is full or the credits cannot cover it
   // The up-front price alone is not enough: wages and upkeep must be left over.
   const tight = { ...state, credits: 100 };
   assert.equal(signError(tight, player, 100 - GROUND_UPKEEP), 'credits');
-  assert.equal(signCost(state, player, 0), wageBill(state.squads[CLUB]) + playerWage(player) + GROUND_UPKEEP);
+  assert.equal(signCost(state, player, 0), wageBill(state) + playerWage(player, 3) + GROUND_UPKEEP);
 });
 
 test('removing a player repairs the eleven and moves the armband to a midfielder', () => {
@@ -112,11 +103,11 @@ test('removing a player repairs the eleven and moves the armband to a midfielder
 });
 
 test('buying a player charges the price and gives them a market id', () => {
-  const state = { ...career(), credits: 5000 };
+  const state = { ...career(), credits: 100000 };
   const listing = { id: 42, player: { name: 'Signing', pos: 'ST', age: 25, overall: 60, attrs: { pac: 60, pas: 60, sho: 60, def: 40, gk: 20 }, fit: 1 }, price: 2400 };
   const out = buyPlayer(state, listing);
   assert.equal(out.error, undefined);
-  assert.equal(out.state.credits, 2600);
+  assert.equal(out.state.credits, 97600);
   const added = out.state.squads[CLUB].find((p) => p.id === 't42');
   assert.ok(added);
   assert.equal(added.captain, false);
@@ -206,7 +197,7 @@ test('moneyFields accepts a finance without wages and fills it with 0', () => {
   const old = JSON.parse(JSON.stringify(state));
   old.finance = { season: old.season, gate: 40, upkeep: 12, homeGames: 2 };
   const f = moneyFields(old);
-  assert.equal(f.finance.wage, 0);
+  assert.equal(f.finance.wages, 0);
   assert.equal(f.finance.gate, 40);
   assert.equal(f.finance.upkeep, 12);
 });

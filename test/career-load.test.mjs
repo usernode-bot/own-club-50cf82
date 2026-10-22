@@ -114,7 +114,7 @@ test('repairCareer fills a partial career', () => {
 test('repairCareer gives a career saved before Club credits a balance of 0, and keeps a real one', () => {
   const state = buildInitialState('harbourside', 'Test manager', 42);
   playMatchday(state);
-  assert.equal(state.credits > 0, true);
+  assert.ok(Number.isInteger(state.credits) && state.credits >= 0);
 
   const old = JSON.parse(JSON.stringify(state));
   delete old.credits;

@@ -643,7 +643,9 @@ app.put('/api/career', async (req, res) => {
           THEN $3::jsonb || jsonb_build_object('wallet', careers.state->'wallet', 'purchase', careers.state->'purchase')
           ELSE $3::jsonb - 'wallet' - 'purchase' END)
           || jsonb_build_object('credits', COALESCE(careers.state->'credits', '0'::jsonb),
-                                'facilities', COALESCE(careers.state->'facilities', '{}'::jsonb)),
+                                'facilities', COALESCE(careers.state->'facilities', '{}'::jsonb),
+                                'staff', COALESCE(careers.state->'staff', '{}'::jsonb),
+                                'youth', COALESCE(careers.state->'youth', '[]'::jsonb)),
         version = version + 1, updated_at = now()
         WHERE user_id = $1 AND is_demo = $2 AND version = $4
         RETURNING version`,
@@ -949,6 +951,75 @@ app.post('/api/career/player/release', async (req, res) => {
   } catch (err) {
     console.error('player release failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
     return res.status(500).json({ error: 'player_action_failed' });
+  }
+});
+
+// Hiring or releasing a staff member. The page names the role and the
+// action; whether it can be afforded and the new balance are the server's.
+// Same shape as the facility upgrade: read, play any passed kick-off, one
+// version-checked UPDATE.
+app.post('/api/career/staff', async (req, res) => {
+  const demo = wantsDemo(req);
+  const { role, action } = req.body || {};
+  try {
+    const e = await engine();
+    if (!e.STAFF_BY_KEY[role] || (action !== 'hire' && action !== 'release')) {
+      return res.status(400).json({ error: 'staff', message: 'Choose a staff role and whether to hire or release.' });
+    }
+    const { rows } = await pool.query(
+      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
+      [req.user.id, demo]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'no_career' });
+    const up = await catchUpAndSave(req.user.id, demo, rows[0], req.now);
+    const state = e.repairCareer(up.state);
+    if (!state) return res.status(500).json({ error: 'staff_failed' });
+    const out = action === 'hire' ? e.hireStaff(state, role) : e.releaseStaff(state, role);
+    if (out.error === 'credits') return res.status(409).json({ error: 'credits' });
+    if (out.error === 'hired') return res.status(409).json({ error: 'hired' });
+    if (out.error === 'not_hired') return res.status(409).json({ error: 'not_hired' });
+    if (out.error) return res.status(400).json({ error: 'staff' });
+    const upd = await pool.query(
+      'UPDATE careers SET state = $3, version = version + 1, updated_at = now() WHERE user_id = $1 AND is_demo = $2 AND version = $4 RETURNING version',
+      [req.user.id, demo, out.state, up.version]
+    );
+    if (!upd.rows.length) return res.status(409).json({ error: 'version_mismatch' });
+    return res.json({ career: out.state, version: upd.rows[0].version });
+  } catch (err) {
+    console.error('staff change failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'staff_failed' });
+  }
+});
+
+// Promoting a prospect from the academy into the senior squad.
+app.post('/api/career/youth', async (req, res) => {
+  const demo = wantsDemo(req);
+  const { id } = req.body || {};
+  try {
+    const e = await engine();
+    if (typeof id !== 'string' || !id) {
+      return res.status(400).json({ error: 'youth', message: 'Choose a young player to promote.' });
+    }
+    const { rows } = await pool.query(
+      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
+      [req.user.id, demo]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'no_career' });
+    const up = await catchUpAndSave(req.user.id, demo, rows[0], req.now);
+    const state = e.repairCareer(up.state);
+    if (!state) return res.status(500).json({ error: 'youth_failed' });
+    const out = e.promoteYouth(state, id);
+    if (out.error === 'squad_full') return res.status(409).json({ error: 'squad_full' });
+    if (out.error) return res.status(409).json({ error: 'youth' });
+    const upd = await pool.query(
+      'UPDATE careers SET state = $3, version = version + 1, updated_at = now() WHERE user_id = $1 AND is_demo = $2 AND version = $4 RETURNING version',
+      [req.user.id, demo, out.state, up.version]
+    );
+    if (!upd.rows.length) return res.status(409).json({ error: 'version_mismatch' });
+    return res.json({ career: out.state, version: upd.rows[0].version });
+  } catch (err) {
+    console.error('promotion failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'youth_failed' });
   }
 });
 
