@@ -74,7 +74,8 @@ test('the facilities and the credits carry into the next season', () => {
   assert.equal(next.facilities.stadium, 3);
   assert.equal(next.facilities.hotel, 5);
   assert.equal(next.facilities.shop, 1);
-  assert.equal(next.credits, 40);
+  // The balance carries, plus the sponsor fee when its target was met.
+  assert.equal(next.credits, 40 + (next.lastSponsor.paid ? next.lastSponsor.fee : 0));
 });
 
 test('the demo club is partly built', () => {
