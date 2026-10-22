@@ -178,7 +178,7 @@ function engine() {
 const DEMO_SEED = 1;
 
 // The dummy money: a staging mock, never a real payment. Every new manager is
-// given this much to buy one Division 3 club. The values live here only, so
+// given this much to buy one Division 8 club. The values live here only, so
 // the browser never decides what a club costs or how much is in a wallet.
 const CURRENCY = 'Dummy USDC';
 const CLUB_PRICE = 100;
@@ -289,7 +289,7 @@ app.post('/api/career', async (req, res) => {
     // request body never gets through.
     const refusal = e.purchaseError(clubId, STARTING_BALANCE, CLUB_PRICE);
     if (refusal === 'club') {
-      return res.status(400).json({ error: 'club', message: 'That club is not in the shop. Choose a Division 3 club.' });
+      return res.status(400).json({ error: 'club', message: 'That club is not in the shop. Choose a Division 8 club.' });
     }
     if (refusal === 'balance') {
       return res.status(400).json({ error: 'balance', message: 'Your Dummy USDC does not cover this club.' });

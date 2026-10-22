@@ -4,9 +4,9 @@
 // server and draws the pitch on a canvas.
 
 import {
-  CLUBS, CLUB_BY_ID, LEAGUE_NAME, FORMATIONS, FORMATION_NAMES,
+  clubById, LEAGUE_NAME, FORMATIONS, FORMATION_NAMES,
   MENTALITY_NAMES, PRESSING_NAMES, ROLES, POS_GROUP,
-  GROUPS, TIER_COUNT, clubToGroup, groupName,
+  SHOP_GROUPS, SHOP_DIVISION, groupName,
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup, validateLineup, playMatchday,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
@@ -29,8 +29,7 @@ let screen = 'loading';
 // What the shop says a club costs and how much a new wallet holds. The server
 // sends these with every load; the defaults only stand in until it does.
 let shop = { price: 100, startingBalance: 1000, currency: 'Dummy USDC' };
-const SHOP_GROUPS = GROUPS.filter((g) => g.tier === TIER_COUNT);
-let pickedGroup = 'A';
+let pickedGroup = SHOP_GROUPS[0].label;
 let pickedClub = SHOP_GROUPS[0].clubIds[0];
 let menuKind = null;
 let sheetPlayerId = null;
@@ -142,7 +141,9 @@ async function load() {
 
 // ── New career ───────────────────────────────────────────────────────────
 const CLUB_PREVIEW = {};
-for (const c of CLUBS) CLUB_PREVIEW[c.id] = clubSummary(1, c, GROUPS[clubToGroup[c.id]].tier).avg;
+for (const g of SHOP_GROUPS) {
+  for (const id of g.clubIds) CLUB_PREVIEW[id] = clubSummary(1, clubById(id), SHOP_DIVISION).avg;
+}
 
 const usdc = (n) => Number(n).toLocaleString('en-US') + ' USDC';
 
@@ -170,16 +171,16 @@ function renderNew() {
     btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
   }
   $('wallet-balance').textContent = usdc(shop.startingBalance);
-  const group = SHOP_GROUPS.find((g) => g.group === pickedGroup) || SHOP_GROUPS[0];
+  const group = SHOP_GROUPS.find((g) => g.label === pickedGroup) || SHOP_GROUPS[0];
   const list = $('club-list');
-  list.innerHTML = group.clubIds.map((id) => CLUB_BY_ID[id]).map((c) => `
+  list.innerHTML = group.clubIds.map((id) => clubById(id)).map((c) => `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
       <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
       <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, ${esc(c.objective)}</small></span>
       <span class="price">${usdc(shop.price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`).join('');
-  const picked = CLUB_BY_ID[pickedClub];
+  const picked = clubById(pickedClub);
   $('start-career').textContent = picked ? 'Buy ' + picked.name + ' for ' + usdc(shop.price) : 'Buy a club';
 }
 
@@ -253,7 +254,7 @@ function playerStatus(p, starters) {
 function renderClub() {
   const table = leagueTable(career);
   const me = table.find((r) => r.id === career.clubId);
-  const club = CLUB_BY_ID[career.clubId];
+  const club = clubById(career.clubId);
   const total = career.fixtures.length;
   const next = nextFixture(career);
   const pyramid = career.version >= 2;
@@ -273,8 +274,8 @@ function renderClub() {
   if (next && !career.finished) {
     $('next-card').hidden = false;
     $('season-card').hidden = true;
-    const home = CLUB_BY_ID[next.home];
-    const away = CLUB_BY_ID[next.away];
+    const home = clubById(next.home);
+    const away = clubById(next.away);
     $('next-home-badge').outerHTML = badgeHtml(home).replace('<span ', '<span id="next-home-badge" ');
     $('next-home-name').textContent = displayName(home);
     $('next-away-badge').outerHTML = badgeHtml(away).replace('<span ', '<span id="next-away-badge" ');
@@ -300,7 +301,7 @@ function renderClub() {
     bits.push('The board asked you to ' + club.objective.toLowerCase() + '. That was ' + (met ? 'met.' : 'not met.'));
     bits.push('You took ' + me.points + ' points from ' + me.played + ' matches.');
     if (outcome.joinsNewLeague) {
-      bits.push('Next season the Coastal League becomes three tiers, and your club starts in ' + to + '.');
+      bits.push('Next season your club plays in the eight-division Coastal League, starting in ' + to + '.');
     }
     $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + place;
     $('season-text').textContent = bits.join(' ');
@@ -333,8 +334,8 @@ function renderClub() {
   const last = career.lastReport;
   if (last) {
     const ownHome = last.home.id === career.clubId;
-    const h = CLUB_BY_ID[last.home.id];
-    const a = CLUB_BY_ID[last.away.id];
+    const h = clubById(last.home.id);
+    const a = clubById(last.away.id);
     $('last-sec').hidden = false;
     $('last-md').textContent = 'Matchday ' + last.matchday;
     $('last-list').innerHTML = `<li class="list-row">
@@ -358,7 +359,7 @@ function renderClub() {
   if (career.wallet) {
     $('wallet-sec').hidden = false;
     $('club-wallet').textContent = usdc(career.wallet.balance);
-    const bought = career.purchase ? CLUB_BY_ID[career.purchase.clubId] : null;
+    const bought = career.purchase ? clubById(career.purchase.clubId) : null;
     $('club-wallet-note').textContent = bought
       ? 'You bought ' + bought.name + ' for ' + usdc(career.purchase.price) + '. No real payment was taken.'
       : 'No real payment was taken.';
@@ -820,14 +821,14 @@ function renderReport() {
   const opp = ownHome ? r.away : r.home;
   const ownSide = ownHome ? 'home' : 'away';
   const oppSide = ownHome ? 'away' : 'home';
-  const ownClub = CLUB_BY_ID[own.id];
-  const oppClub = CLUB_BY_ID[opp.id];
+  const ownClub = clubById(own.id);
+  const oppClub = clubById(opp.id);
 
   $('report-md').textContent = 'Full time, matchday ' + r.matchday;
-  $('report-home-badge').outerHTML = badgeHtml(CLUB_BY_ID[r.home.id]).replace('<span ', '<span id="report-home-badge" ');
-  $('report-home-name').textContent = CLUB_BY_ID[r.home.id].name;
-  $('report-away-badge').outerHTML = badgeHtml(CLUB_BY_ID[r.away.id]).replace('<span ', '<span id="report-away-badge" ');
-  $('report-away-name').textContent = CLUB_BY_ID[r.away.id].name;
+  $('report-home-badge').outerHTML = badgeHtml(clubById(r.home.id)).replace('<span ', '<span id="report-home-badge" ');
+  $('report-home-name').textContent = clubById(r.home.id).name;
+  $('report-away-badge').outerHTML = badgeHtml(clubById(r.away.id)).replace('<span ', '<span id="report-away-badge" ');
+  $('report-away-name').textContent = clubById(r.away.id).name;
   $('report-score').textContent = r.homeGoals + '–' + r.awayGoals;
 
   $('report-moments').innerHTML = r.moments.length ? r.moments.map((m) => {
@@ -959,7 +960,7 @@ async function doStartOver() {
     }
     career = null;
     version = null;
-    pickedGroup = 'A';
+    pickedGroup = SHOP_GROUPS[0].label;
     pickedClub = SHOP_GROUPS[0].clubIds[0];
     $('manager-name').value = '';
     closeSheet();
@@ -981,7 +982,7 @@ $('group-row').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-group]');
   if (!btn) return;
   pickedGroup = btn.dataset.group;
-  const group = SHOP_GROUPS.find((g) => g.group === pickedGroup);
+  const group = SHOP_GROUPS.find((g) => g.label === pickedGroup);
   if (group && !group.clubIds.includes(pickedClub)) pickedClub = group.clubIds[0];
   renderNew();
 });

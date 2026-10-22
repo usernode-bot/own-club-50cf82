@@ -96,31 +96,36 @@ tables you've marked private), etc.
 ## About Own Club
 
 A football management game. A new career starts with your manager name, a mock
-wallet of 1,000 Dummy USDC and a shop of the 72 Division 3 clubs at 100 each;
-then you set the eleven on a pitch diagram, choose formation, mentality,
+wallet of 1,000 Dummy USDC and a shop of Division 8's first four groups at 100
+a club; then you set the eleven on a pitch diagram, choose formation, mentality,
 pressing and each player's role, and play each of your group's 34 matchdays
 and read the report. Training, transfers, finances and cups come later.
 
-The Coastal League has three tiers and 162 clubs. Division 1 is one group of
-18; Divisions 2 and 3 have four groups, A to D, of 18. The bottom 8 of
-Division 1 go down, two into each Division 2 group; the top 2 of each
-Division 2 group go up to Division 1 and its bottom 2 go down into the
-same-letter Division 3 group; the top 2 of each Division 3 group go up. Nobody
-leaves Division 3, and every group stays at 18. Start next season carries your
-club, its players and their roles into its new group.
+The Coastal League is an eight-division pyramid of 78,714 clubs. Division 1 is
+one group of 18; Division 2 has 4 groups, Division 3 twelve, Division 4
+thirty-six, and every division below that three times the groups of the one
+above it, down to Division 8's 2,916. The top 2 of every group go up, and only
+Division 1 has a champion. The bottom 8 of Division 1 and the bottom 6 of every
+group in Divisions 2 to 7 go down, two into each of the groups below, and
+nobody leaves Division 8, so every group stays at 18. Start next season carries
+your club, its players and their roles into its new group.
 
-The ten original clubs make up most of Division 1; the other 152 are generated
-from a fixed seed in `engine.js`, so every career meets the same clubs, with
-squads that get weaker with each tier down. Only the manager's own group is
-saved; the other eight groups are played out from the career seed when a
-season rolls over. A career saved in the old eight divisions finishes its
-season and joins the three tiers at rollover.
+The ten original clubs make up most of Division 1, and the 162 clubs the flat
+league had keep their ids and names. Every other club is generated from its
+place in the pyramid in `engine.js`, so the same place always gives the same
+club, badge and strength, and squads get weaker with each division down. Only
+the manager's own group is saved; the groups around it are played out from the
+career seed when a season rolls over to decide who comes and goes. A career
+saved in the old flat divisions finishes its season and joins the pyramid in
+the same-numbered division at rollover.
 
 The simulation lives in `public/engine.js` as a pure, seeded ES module shared
 by the browser and the server: the same state and seed always produce the same
 match. `public/app.js` renders and saves; `server.js` owns the `careers` table
 and the `?demo=1` staging season. Careers saved before the pyramid (`version 1`)
-still play their ten-club, 18-matchday season and then join Division 1.
+still play their ten-club, 18-matchday season and then join Division 1; the
+three-tier and flat-division shapes (`version 3` and `version 2`) finish their
+season and join the eight divisions.
 A saved career that is missing something today's club screen reads passes
 through `repairCareer` in `engine.js` on load, which fills only what is missing.
 
@@ -189,7 +194,7 @@ Re-theme by changing the token values there, keeping every text pair at
   price and the starting balance live only in `server.js` (`CLUB_PRICE`,
   `STARTING_BALANCE`); the browser never sends an amount, and `PUT /api/career`
   never changes `wallet` or `purchase`.
-- The pyramid is capped at three tiers and 162 clubs (the early-stage maximum):
-  no Division 4. The shop lists Division 3 clubs only, and a manager owns one
-  club at a time. Selling a club, owning more than one and real USDC come
+- The pyramid is capped at eight divisions and 78,714 clubs (the early-stage
+  maximum): no Division 9. The shop lists Division 8 groups A to D only, and a
+  manager owns one club at a time. Selling a club, owning more than one and real USDC come
   later; the purchase is stored so selling can be added.
