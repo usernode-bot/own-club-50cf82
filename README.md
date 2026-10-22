@@ -1,26 +1,20 @@
 # Own Club
 
 A football management game for the browser. You name your manager, get a mock
-wallet of 1,000 Dummy USDC and buy a club in one of Division 8's first four
-groups for 100, then set your eleven on a pitch diagram, choose the formation,
-mentality and pressing, and play each of your group's 34 matchdays and read the
-match report. Squads tire, pick up cards and injuries, and the group table
-builds up as the season goes.
+wallet of 1,000 Dummy USDC and buy one of the 72 Division 3 clubs for 100, then
+set your eleven on a pitch diagram, choose the formation, mentality and pressing,
+and play each of your group's 34 matchdays and read the match report. Squads
+tire, pick up cards and injuries, and the group table builds up as the season
+goes.
 
-The Coastal League is an eight-division pyramid of 78,714 fictional clubs.
-Division 1 is one group of 18; Division 2 has four groups, Division 3 twelve,
-Division 4 thirty-six, and every division below that three times the groups of
-the one above it, down to Division 8's 2,916. The top 2 of every group go up
-(only Division 1 has a champion); the bottom 8 of Division 1 and the bottom 6 of
-every group in Divisions 2 to 7 go down, two into each of the groups below, so
-every group stays at 18. Nobody leaves Division 8. Start next season takes the
-same club and players into its new group. Lower divisions start with weaker
+The Coastal League has three tiers and 162 fictional clubs. Division 1 is one
+group of 18; Divisions 2 and 3 have four groups each, A to D, of 18. At the end
+of a season the bottom 8 of Division 1 go down (two into each Division 2 group),
+the top 2 of each Division 2 group go up and its bottom 2 go down into the
+same-letter Division 3 group, and the top 2 of each Division 3 group go up.
+Nobody leaves Division 3, and every group stays at 18. Start next season takes
+the same club and players into its new group. Lower tiers start with weaker
 players.
-
-Only the manager's own group is stored and played out in full. Its clubs below
-the first 162 are generated from their place in the pyramid, so the same place
-always gives the same club; the groups around it are played out from the
-career's seed at a rollover to decide who comes and goes.
 
 Dummy USDC is a mock: there is no crypto wallet, no payment and no real money
 anywhere in the app. The club price and the starting balance live only in
@@ -44,9 +38,9 @@ signed in, and keeps each person's career in its own Postgres table.
   starting balance, and the demo. A career saved by an earlier version of the
   app passes through `repairCareer` in `engine.js` as it loads, which fills in
   only what is missing, so it still opens. A career saved in the old eight
-  divisions finishes its season and joins the pyramid at Start next season, in
-  the same-numbered division (old Division 1 is Division 1, old Division 8 is
-  Division 8).
+  divisions finishes its season and joins the three tiers at Start next
+  season, in the tier its old division maps to (Division 1 to Division 1,
+  Division 2 to Division 2, Divisions 3 to 8 to Division 3).
 
 ## Running it
 
