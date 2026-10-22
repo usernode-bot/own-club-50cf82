@@ -60,6 +60,10 @@ button.chip[aria-expanded="true"] {
 /* Start a new career is the plain button under Start next season. */
 .next .btn-secondary { width: 100%; margin-top: 10px; }
 
+/* The net line of a match report's Club finances sits like your own row in
+   the league table: on the raised background, not a colour of its own. */
+.list-row.net { background: rgb(var(--raised)); }
+
 .menu { margin-top: 8px; }
 .menu .list-row {
   width: 100%;

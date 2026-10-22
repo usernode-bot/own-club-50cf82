@@ -237,15 +237,85 @@ export function saleValue(state, values) {
   return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
-// Club credits: the club's own in-game currency, earned by result and kept with
-// the career. Facility upgrades spend them; the player market and training
-// ground will spend them too.
+// Club credits: the club's own in-game currency, earned by result and by the
+// home gate, less ground upkeep, and kept with the career. Facility upgrades
+// spend them; the player market and training ground will spend them too.
 export const CREDIT_REWARDS = { win: 50, draw: 25, loss: 10 };
 
 export function creditsForResult(goalsFor, goalsAgainst) {
   if (goalsFor > goalsAgainst) return CREDIT_REWARDS.win;
   if (goalsFor < goalsAgainst) return CREDIT_REWARDS.loss;
   return CREDIT_REWARDS.draw;
+}
+
+// Fans and the ground they come to. Fans are per career, start at a figure set
+// by the division and carry across seasons; the ground's capacity sets how
+// many of them can buy a seat.
+export const FAN_SEED = { 1: 15000, 2: 6000, 3: 2500 };
+export const GROUND_CAPACITY = { 1: 30000, 2: 12000, 3: 5000 };
+export const TICKET_PRICE = 5;
+export const FAN_CHANGE = { win: 0.05, draw: 0.02, loss: -0.03 };
+// Flat for now: when stadium and facility buildings arrive, upkeep scales with
+// what has been built.
+export const GROUND_UPKEEP = 250;
+
+// One sponsor a season, paid at the rollover when its target was met. The fee
+// follows the division, about a quarter of a season's gate at its starting
+// fans.
+export const SPONSOR_FEES = { 1: 300000, 2: 120000, 3: 50000 };
+export const SPONSOR_NAMES = [
+  'Harbour Lights Bakery', 'Tidewater Ferries', 'Gull Rock Cycles',
+  'Saltmarsh Print Works', 'Lighthouse Radio', 'Pebble Bay Dairy',
+  'Driftwood Joinery', 'Seaglass Opticians',
+];
+export const SPONSOR_TARGETS = ['Win the league', 'Finish in the top half', 'Avoid finishing bottom'];
+
+export function sponsorFor(seed, season, tier) {
+  const h = hash(seed, 'sponsor', season);
+  return {
+    name: SPONSOR_NAMES[h % SPONSOR_NAMES.length],
+    target: SPONSOR_TARGETS[(h >>> 3) % SPONSOR_TARGETS.length],
+    fee: SPONSOR_FEES[tier] || SPONSOR_FEES[3],
+    season,
+    paid: false,
+  };
+}
+
+function validSponsor(s) {
+  return !!s && typeof s === 'object' && !Array.isArray(s)
+    && typeof s.name === 'string'
+    && typeof s.target === 'string'
+    && Number.isInteger(s.fee) && s.fee >= 0
+    && typeof s.paid === 'boolean';
+}
+
+// The career's money fields, filling only what is missing or unusable, so a
+// career saved before fans and sponsors existed still plays. Kept in one place
+// because the server and the page both read and settle them.
+export function moneyFields(state) {
+  const tier = clubTier(state);
+  const season = (state && state.season) || 1;
+  const credits = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
+  const fans = Number.isInteger(state.fans) && state.fans >= 0 ? state.fans : FAN_SEED[tier];
+  const sponsor = validSponsor(state.sponsor) ? state.sponsor : sponsorFor(state.seed, season, tier);
+  const lastSponsor = validSponsor(state.lastSponsor) ? state.lastSponsor : null;
+  const f = state.finance;
+  const financeOk = !!f && typeof f === 'object'
+    && f.season === season
+    && Number.isInteger(f.gate) && f.gate >= 0
+    && Number.isInteger(f.upkeep) && f.upkeep >= 0
+    && Number.isInteger(f.homeGames) && f.homeGames >= 0;
+  const finance = financeOk
+    ? { season: f.season, gate: f.gate, upkeep: f.upkeep, homeGames: f.homeGames }
+    : { season, gate: 0, upkeep: 0, homeGames: 0 };
+  return { credits, fans, sponsor, lastSponsor, finance };
+}
+
+export function fanChange(fans, goalsFor, goalsAgainst) {
+  const rate = goalsFor > goalsAgainst ? FAN_CHANGE.win
+    : goalsFor < goalsAgainst ? FAN_CHANGE.loss
+      : FAN_CHANGE.draw;
+  return Math.max(0, Math.round(fans * (1 + rate)));
 }
 
 // The club's facilities, each from level 1 to level 5. Upgrading one changes
@@ -720,8 +790,9 @@ export function repairCareer(state) {
     // The server owns the schedule; a career saved before it existed gets one
     // stamped by the server, not invented here.
     lastReport: reportOk ? report : null,
-    // A career saved before Club credits existed has none yet.
-    credits: Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0,
+    // A career saved before Club credits, fans or sponsors existed gets them
+    // now: credits 0, the division's starting fans and this season's sponsor.
+    ...moneyFields(state),
     // A career saved before facilities existed has every one at level 1.
     facilities: facilityLevels(state),
   };
@@ -1256,13 +1327,40 @@ export function playMatchday(state) {
   }
   const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
   state.lastReport = own;
-  // Only the manager's own fixture earns Club credits, from the manager's side.
+  // Only the manager's own fixture earns or pays Club credits, from the
+  // manager's side: the result, the home gate, less the ground's upkeep.
   if (own) {
     const atHome = own.home.id === state.clubId;
     const goalsFor = atHome ? own.homeGoals : own.awayGoals;
     const goalsAgainst = atHome ? own.awayGoals : own.homeGoals;
-    const held = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
-    state.credits = held + creditsForResult(goalsFor, goalsAgainst);
+    const m = moneyFields(state);
+    const result = creditsForResult(goalsFor, goalsAgainst);
+    const attendance = atHome ? Math.min(GROUND_CAPACITY[clubTier(state)], m.fans) : 0;
+    const gate = attendance * TICKET_PRICE;
+    const before = m.credits + result + gate;
+    const upkeep = Math.min(GROUND_UPKEEP, before);
+    state.credits = before - upkeep;
+    state.fans = fanChange(m.fans, goalsFor, goalsAgainst);
+    state.sponsor = m.sponsor;
+    state.lastSponsor = m.lastSponsor;
+    state.finance = {
+      ...m.finance,
+      gate: m.finance.gate + gate,
+      upkeep: m.finance.upkeep + upkeep,
+      homeGames: m.finance.homeGames + (atHome ? 1 : 0),
+    };
+    own.finance = {
+      venue: atHome ? 'Home' : 'Away',
+      result: goalsFor > goalsAgainst ? 'win' : goalsFor < goalsAgainst ? 'loss' : 'draw',
+      attendance,
+      price: TICKET_PRICE,
+      gate,
+      upkeep,
+      upkeepDue: GROUND_UPKEEP,
+      net: result + gate - upkeep,
+      fansBefore: m.fans,
+      fansAfter: state.fans,
+    };
   }
   state.matchday = md + 1;
   state.finished = state.matchday >= state.fixtures.length;
@@ -1480,6 +1578,10 @@ export function buildInitialState(clubId, managerName, seed) {
     finished: false,
     lastReport: null,
     credits: 0,
+    fans: FAN_SEED[tier],
+    sponsor: sponsorFor(seed, 1, tier),
+    lastSponsor: null,
+    finance: { season: 1, gate: 0, upkeep: 0, homeGames: 0 },
     facilities: facilityLevels({}),
   };
   state.lineup = autoLineup(squads[clubId], state.tactics.formation, state.roles);
@@ -1685,7 +1787,9 @@ export function startNextSeason(state) {
     matchday: 0,
     finished: false,
     lastReport: null,
-    credits: Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0,
+    // The money fields the finished season leaves: the sponsor fee if its
+    // target was met, the fans carried over, and a fresh season's totals.
+    ...seasonEndMoney(state),
     // The facilities stay with the club into the next season.
     facilities: facilityLevels(state),
   };
@@ -1703,6 +1807,28 @@ export function startNextSeason(state) {
   // The server stamps the next kick-off on the rollover save.
   next.nextMatchAt = null;
   return next;
+}
+
+// The money a finished season leaves for the next one: the sponsor's fee paid
+// if its target was met, fans carried over, and this season's totals reset.
+// The server settles a rollover save from the stored season with this, so the
+// page cannot award itself the fee.
+export function seasonEndMoney(state) {
+  const m = moneyFields(state);
+  const season = state.season || 1;
+  const table = leagueTable(state);
+  const size = divisionClubIds(state).length;
+  const me = table.find((r) => r.id === state.clubId);
+  const rank = me ? me.rank : size;
+  const met = objectiveMet(rank, m.sponsor.target, size);
+  const next = season + 1;
+  return {
+    credits: m.credits + (met ? m.sponsor.fee : 0),
+    fans: m.fans,
+    sponsor: sponsorFor(state.seed, next, nextPlacement(state).tier),
+    lastSponsor: { ...m.sponsor, paid: met },
+    finance: { season: next, gate: 0, upkeep: 0, homeGames: 0 },
+  };
 }
 
 // The staging demo: Harbourside seventeen matchdays into a Division 1 season,

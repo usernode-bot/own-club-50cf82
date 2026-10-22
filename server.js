@@ -572,8 +572,15 @@ app.put('/api/career', async (req, res) => {
     if (check === 'rollover' || (!stored.finished && !nextMatchAt)) {
       nextMatchAt = e.slotAfter(req.now, zone).toISOString();
     }
+    // The browser never sets the money: a career that has a wallet keeps the
+    // one already stored, and a career without one cannot gain one. Club
+    // credits, fans, the sponsor and this season's totals are the server's
+    // too. A played match adds them; a rollover settles the sponsor fee from
+    // the stored finished season, so the page cannot award itself one.
+    const money = check === 'rollover' ? e.seasonEndMoney(stored) : e.moneyFields(stored);
     const saved = {
       ...state,
+      ...money,
       plays: Array.isArray(stored.plays) ? stored.plays : [],
       nextMatchAt,
       timeZone: zone,
