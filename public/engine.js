@@ -238,8 +238,8 @@ export function saleValue(state, values) {
 }
 
 // Club credits: the club's own in-game currency, earned by result and by the
-// home gate, less ground upkeep, and kept with the career. The market, academy
-// and facilities will spend them.
+// home gate, less ground upkeep, and kept with the career. Facility upgrades
+// spend them; the player market and training ground will spend them too.
 export const CREDIT_REWARDS = { win: 50, draw: 25, loss: 10 };
 
 export function creditsForResult(goalsFor, goalsAgainst) {
@@ -316,6 +316,89 @@ export function fanChange(fans, goalsFor, goalsAgainst) {
     : goalsFor < goalsAgainst ? FAN_CHANGE.loss
       : FAN_CHANGE.draw;
   return Math.max(0, Math.round(fans * (1 + rate)));
+}
+
+// The club's facilities, each from level 1 to level 5. Upgrading one changes
+// what it says it has; income and costs come with later features.
+export const FACILITY_MAX_LEVEL = 5;
+
+export const FACILITIES = [
+  {
+    key: 'stadium',
+    name: 'Stadium',
+    levels: ['2,000 seats', '5,000 seats', '10,000 seats', '20,000 seats', '40,000 seats'],
+  },
+  {
+    key: 'training',
+    name: 'Training ground',
+    levels: [
+      '1 grass pitch',
+      '2 grass pitches',
+      '3 pitches and a gym',
+      '4 pitches, a gym and a physio room',
+      '6 pitches, a gym, a physio room and a recovery pool',
+    ],
+  },
+  {
+    key: 'academy',
+    name: 'Academy',
+    levels: [
+      'coaching for 10 young players',
+      'coaching for 20 young players',
+      'coaching for 30 young players',
+      'coaching for 45 young players',
+      'coaching for 60 young players',
+    ],
+  },
+  {
+    key: 'shop',
+    name: 'Shop',
+    levels: ['a kiosk on match days', 'a small club shop', 'a club shop open all week', 'a large club shop', 'a megastore'],
+  },
+  {
+    key: 'food',
+    name: 'Food stand',
+    levels: ['1 food stand', '3 food stands', '6 food stands', '10 food stands', '16 food stands'],
+  },
+  {
+    key: 'hotel',
+    name: 'Hotel',
+    levels: ['10 rooms', '25 rooms', '50 rooms', '100 rooms', '200 rooms'],
+  },
+];
+
+export const FACILITY_BY_KEY = Object.fromEntries(FACILITIES.map((f) => [f.key, f]));
+
+// What it costs to reach a level: the same for every facility.
+export const UPGRADE_COSTS = { 2: 100, 3: 250, 4: 500, 5: 1000 };
+
+export function upgradeCost(toLevel) {
+  return Number.isInteger(toLevel) && UPGRADE_COSTS[toLevel] != null ? UPGRADE_COSTS[toLevel] : null;
+}
+
+// Every facility's level, filling a missing or unusable one with 1.
+export function facilityLevels(state) {
+  const given = state && state.facilities && typeof state.facilities === 'object' && !Array.isArray(state.facilities)
+    ? state.facilities : {};
+  const out = {};
+  for (const f of FACILITIES) {
+    const n = given[f.key];
+    out[f.key] = Number.isInteger(n) && n >= 1 && n <= FACILITY_MAX_LEVEL ? n : 1;
+  }
+  return out;
+}
+
+// Raise one facility by one level in return for its cost in Club credits. The
+// level asked for must be the current one plus one. Never mutates its input.
+export function upgradeFacility(state, key, toLevel) {
+  if (!FACILITY_BY_KEY[key]) return { error: 'facility' };
+  const cost = upgradeCost(toLevel);
+  if (cost == null) return { error: 'level' };
+  const levels = facilityLevels(state);
+  if (levels[key] + 1 !== toLevel) return { error: 'level' };
+  const held = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
+  if (held < cost) return { error: 'credits' };
+  return { state: { ...state, facilities: { ...levels, [key]: toLevel }, credits: held - cost } };
 }
 
 // The money a person brings to the shop: the wallet already stored for them,
@@ -710,6 +793,8 @@ export function repairCareer(state) {
     // A career saved before Club credits, fans or sponsors existed gets them
     // now: credits 0, the division's starting fans and this season's sponsor.
     ...moneyFields(state),
+    // A career saved before facilities existed has every one at level 1.
+    facilities: facilityLevels(state),
   };
   if (typeof state.nextMatchAt === 'string' && !Number.isNaN(Date.parse(state.nextMatchAt))) {
     out.nextMatchAt = state.nextMatchAt;
@@ -1497,6 +1582,7 @@ export function buildInitialState(clubId, managerName, seed) {
     sponsor: sponsorFor(seed, 1, tier),
     lastSponsor: null,
     finance: { season: 1, gate: 0, upkeep: 0, homeGames: 0 },
+    facilities: facilityLevels({}),
   };
   state.lineup = autoLineup(squads[clubId], state.tactics.formation, state.roles);
   return state;
@@ -1704,6 +1790,8 @@ export function startNextSeason(state) {
     // The money fields the finished season leaves: the sponsor fee if its
     // target was met, the fans carried over, and a fresh season's totals.
     ...seasonEndMoney(state),
+    // The facilities stay with the club into the next season.
+    facilities: facilityLevels(state),
   };
   // The manager's players keep the roles they were given.
   for (const p of next.squads[next.clubId]) {
@@ -1763,6 +1851,8 @@ export function buildDemoState(seed) {
   // The demo bought its club, so the Wallet section has something to show.
   state.wallet = { currency: 'Dummy USDC', balance: 900 };
   state.purchase = { clubId: 'harbourside', price: 100, at: '2026-01-15T12:00:00.000Z', demo: true };
+  // A partly built club, so the Club tab shows a row it cannot yet afford.
+  state.facilities = { ...facilityLevels(state), stadium: 4, training: 2 };
   return state;
 }
 

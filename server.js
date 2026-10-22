@@ -586,9 +586,16 @@ app.put('/api/career', async (req, res) => {
       timeZone: zone,
     };
     const { rows } = await pool.query(
+      // The browser never sets the money: a career that has a wallet keeps
+      // the one already stored, and a career without one cannot gain one. Club
+      // credits and facilities are the server's too: only a played match adds
+      // credits and only an upgrade raises a facility, so both keep the stored
+      // values whatever the page sends.
       `UPDATE careers SET state = (CASE WHEN careers.state ? 'wallet'
           THEN $3::jsonb || jsonb_build_object('wallet', careers.state->'wallet', 'purchase', careers.state->'purchase')
-          ELSE $3::jsonb - 'wallet' - 'purchase' END),
+          ELSE $3::jsonb - 'wallet' - 'purchase' END)
+          || jsonb_build_object('credits', COALESCE(careers.state->'credits', '0'::jsonb),
+                                'facilities', COALESCE(careers.state->'facilities', '{}'::jsonb)),
         version = version + 1, updated_at = now()
         WHERE user_id = $1 AND is_demo = $2 AND version = $4
         RETURNING version`,
@@ -605,6 +612,44 @@ app.put('/api/career', async (req, res) => {
   } catch (err) {
     console.error('career save failed: ' + err.message);
     return res.status(500).json({ error: 'career_save_failed' });
+  }
+});
+
+// Upgrading a facility. The page names a facility and the level it wants;
+// whether it can be afforded, and the new balance, are the server's. One
+// UPDATE with the version check makes the deduction and the level change a
+// single write, so nothing is charged twice.
+app.post('/api/career/facility', async (req, res) => {
+  const demo = wantsDemo(req);
+  const { facility, level } = req.body || {};
+  try {
+    const e = await engine();
+    if (!e.FACILITY_BY_KEY[facility] || !Number.isInteger(level)
+      || level < 2 || level > e.FACILITY_MAX_LEVEL) {
+      return res.status(400).json({ error: 'facility', message: 'Choose a facility and the level after it.' });
+    }
+    const { rows } = await pool.query(
+      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
+      [req.user.id, demo]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'no_career' });
+    // A kick-off that has passed plays first, so its credits count.
+    const up = await catchUpAndSave(req.user.id, demo, rows[0], req.now);
+    const state = e.repairCareer(up.state);
+    if (!state) return res.status(500).json({ error: 'facility_upgrade_failed' });
+    const out = e.upgradeFacility(state, facility, level);
+    if (out.error === 'level') return res.status(409).json({ error: 'level' });
+    if (out.error === 'credits') return res.status(409).json({ error: 'credits' });
+    if (out.error) return res.status(400).json({ error: 'facility' });
+    const upd = await pool.query(
+      'UPDATE careers SET state = $3, version = version + 1, updated_at = now() WHERE user_id = $1 AND is_demo = $2 AND version = $4 RETURNING version',
+      [req.user.id, demo, out.state, up.version]
+    );
+    if (!upd.rows.length) return res.status(409).json({ error: 'version_mismatch' });
+    return res.json({ career: out.state, version: upd.rows[0].version });
+  } catch (err) {
+    console.error('facility upgrade failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'facility_upgrade_failed' });
   }
 });
 

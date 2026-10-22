@@ -12,6 +12,7 @@ import {
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
   repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
   moneyFields, creditsForResult, GROUND_CAPACITY, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
+  FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ let refreshFailed = false;
 // from. Cleared once a new club is bought.
 let lastSale = null;
 
-const TABS = ['home', 'squad', 'tactics', 'competition'];
+const TABS = ['home', 'squad', 'tactics', 'competition', 'club'];
 function hashTab() {
   const h = (location.hash || '').replace(/^#/, '');
   return TABS.includes(h) ? h : 'home';
@@ -68,7 +69,7 @@ async function refreshShop() {
   } catch (_) { /* the error already says the club is taken */ }
 }
 
-function apiUrl() { return '/api/career' + (DEMO ? '?demo=1' : ''); }
+function apiUrl(path) { return (path || '/api/career') + (DEMO ? '?demo=1' : ''); }
 
 // "Now" for anything that decides what shows: a staging preview can be shown
 // at another moment, and the platform's clock is the one that says which.
@@ -88,7 +89,7 @@ function ensureZone() {
   career.timeZone = DEMO ? 'Europe/London' : deviceZone();
 }
 
-async function api(method, body) {
+async function api(method, body, path) {
   const headers = {};
   if (body) headers['content-type'] = 'application/json';
   if (TOKEN) headers['x-usernode-token'] = TOKEN;
@@ -96,7 +97,7 @@ async function api(method, body) {
   if (window.usernode && window.usernode.previewNow) {
     headers['x-usernode-now'] = window.usernode.now().toISOString();
   }
-  const res = await fetch(apiUrl(), {
+  const res = await fetch(apiUrl(path), {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -622,7 +623,104 @@ function renderClub() {
       + (clubTier(career) === 3 ? ' ' + club.name + ' goes back in the shop.' : '');
   }
   $('save-error').hidden = !saveFailed;
+  renderFacilities();
   if (tab === 'tactics') drawPitch();
+}
+
+// ── Club: the facilities ─────────────────────────────────────────────────
+// Which facility's upgrade is in flight, which one failed, and which one just
+// went up a level (for the one-shot bar flash).
+let facilityBusy = null;
+let facilityError = null;
+let facilityRetry = null;
+let facilityNew = null;
+
+const creditsNote = () => 'Earned after each match: '
+  + CREDIT_REWARDS.win + ' for a win, ' + CREDIT_REWARDS.draw + ' for a draw, '
+  + CREDIT_REWARDS.loss + ' for a loss.';
+
+function facilityRow(f, level) {
+  const steps = Array.from({ length: FACILITY_MAX_LEVEL }, (_, i) =>
+    `<i class="${i < level ? 'on' : ''}${i === level - 1 && facilityNew === f.key ? ' new' : ''}"></i>`).join('');
+  const now = 'Level ' + level + ': ' + f.levels[level - 1] + '.';
+  const next = level < FACILITY_MAX_LEVEL ? ' Next: ' + f.levels[level] + '.' : '';
+  const cost = upgradeCost(level + 1);
+  let end;
+  if (level >= FACILITY_MAX_LEVEL) {
+    end = '<span class="need">Top level</span>';
+  } else if ((career.credits || 0) >= cost) {
+    end = `<button class="btn-secondary small" type="button" data-facility="${esc(f.key)}"${facilityBusy ? ' disabled' : ''}>${
+      facilityBusy === f.key ? 'Upgrading...' : 'Upgrade for ' + cost.toLocaleString('en-US')}</button>`;
+  } else {
+    end = `<span class="need">${cost.toLocaleString('en-US')} needed</span>`;
+  }
+  return `<li class="list-row fac-row">
+    <span class="nm">${esc(f.name)}<span class="lvl" aria-hidden="true">${steps}</span><small>${esc(now + next)}</small></span>
+    ${end}
+  </li>`;
+}
+
+function renderFacilities() {
+  $('club-tab-credits').textContent = credits(career.credits || 0);
+  $('club-tab-credits-note').textContent = creditsNote();
+  const levels = facilityLevels(career);
+  $('facility-list').innerHTML = FACILITIES.map((f) => facilityRow(f, levels[f.key])).join('');
+  const failed = FACILITIES.find((f) => f.key === facilityError);
+  $('facility-error').hidden = !failed;
+  if (failed) {
+    $('facility-error-text').textContent = 'The ' + failed.name.toLowerCase()
+      + ' upgrade did not go through, and no Club credits were spent. Your other facilities are unchanged.';
+  }
+  facilityNew = null;
+}
+
+// The page names the facility and the level; the server decides whether it can
+// be afforded and moves the credits. Goes through saveChain so it runs after a
+// pending save, with the version that save left behind.
+function upgrade(key) {
+  if (!career || facilityBusy) return saveChain;
+  const target = facilityLevels(career)[key] + 1;
+  facilityBusy = key;
+  facilityRetry = key;
+  facilityError = null;
+  renderFacilities();
+  saveChain = saveChain.then(() => upgradeNow(key, target), () => upgradeNow(key, target));
+  return saveChain;
+}
+
+async function upgradeNow(key, level) {
+  try {
+    const { status, data } = await api('POST', { facility: key, level }, '/api/career/facility');
+    facilityBusy = null;
+    if (status === 200 && data && data.career) {
+      const repaired = repairCareer(data.career);
+      if (repaired) {
+        career = repaired;
+        version = data.version;
+        facilityNew = key;
+        facilityError = null;
+        render();
+        return;
+      }
+    }
+    if (status === 401) {
+      renderFacilities();
+      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'upgrade a facility' });
+      return;
+    }
+    // The stored career moved on: show its real levels and balance, no error.
+    if (status === 409) {
+      renderFacilities();
+      await refresh();
+      return;
+    }
+    throw new Error('HTTP ' + status);
+  } catch (err) {
+    facilityBusy = null;
+    facilityNew = null;
+    facilityError = key;
+    renderFacilities();
+  }
 }
 
 function openReport(from) {
@@ -1285,6 +1383,13 @@ $('squad-list').addEventListener('keydown', (e) => {
   openSheet(row.dataset.playerId);
 });
 $('start-career').addEventListener('click', startCareer);
+$('facility-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-facility]');
+  if (btn && !btn.disabled) upgrade(btn.dataset.facility);
+});
+$('facility-retry').addEventListener('click', () => {
+  if (facilityRetry) upgrade(facilityRetry);
+});
 function openFromEvent(e) {
   const row = e.target.closest('[data-open-report]');
   if (!row) return;

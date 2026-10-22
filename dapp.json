@@ -55,6 +55,12 @@
       "expectSelector": "#table-list .list-row"
     },
     {
+      "name": "Demo club tab shows the facilities",
+      "path": "/?demo=1#club",
+      "expectText": "Facilities",
+      "expectSelector": "#facility-list .list-row"
+    },
+    {
       "name": "Health",
       "path": "/health",
       "expectText": "ok"
