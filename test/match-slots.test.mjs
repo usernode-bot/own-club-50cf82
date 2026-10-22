@@ -1,10 +1,11 @@
-// The daily match allowance: three matchdays a day, at 9 am, 3 pm and 9 pm on
-// the manager's own clock, checked on the page and again by the server.
+// The match schedule: three kick-offs a day at 9 am, 3 pm and 9 pm on the
+// manager's own clock, played by the server when they fall due.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MATCH_SLOTS, MATCHES_PER_DAY, validTimeZone, localClock, slotLabel,
-  matchAllowance, matchLimitError, repairCareer, buildInitialState,
+  slotAfter, firstSlotOfDay, upcomingSlots, playDueMatches, repairCareer,
+  buildInitialState,
 } from '../public/engine.js';
 
 const LONDON = 'Europe/London';
@@ -19,83 +20,88 @@ test('the slots are 9 am, 3 pm and 9 pm', () => {
   assert.equal(slotLabel(21), '9 pm');
 });
 
-test('before 9 am nothing is open', () => {
-  const allowance = matchAllowance([], london('2026-10-22T07:59:00'), LONDON);
-  assert.equal(allowance.open, 0);
-  assert.equal(allowance.canPlay, false);
-  assert.deepEqual(allowance.nextSlot, { hour: 9, tomorrow: false });
+test('slotAfter finds the next kick-off', () => {
+  assert.equal(slotAfter(london('2026-10-22T07:00:00'), LONDON).toISOString(), '2026-10-22T08:00:00.000Z');
+  assert.equal(slotAfter(london('2026-10-22T08:00:00'), LONDON).toISOString(), '2026-10-22T14:00:00.000Z');
+  assert.equal(slotAfter(london('2026-10-22T20:30:00'), LONDON).toISOString(), '2026-10-23T08:00:00.000Z');
 });
 
-test('at 9 am one match is open, then the next is 3 pm', () => {
-  const at9 = london('2026-10-22T08:00:00');
-  const fresh = matchAllowance([], at9, LONDON);
-  assert.equal(fresh.open, 1);
-  assert.equal(fresh.canPlay, true);
-  const played = matchAllowance([at9.toISOString()], at9, LONDON);
-  assert.equal(played.playedToday, 1);
-  assert.equal(played.canPlay, false);
-  assert.deepEqual(played.nextSlot, { hour: 15, tomorrow: false });
-});
-
-test('at 10:30 pm three are open and a fourth is refused', () => {
-  const at = london('2026-10-22T21:30:00');
-  let plays = [];
-  const stored = { matchday: 5, season: 1, plays };
-  for (let i = 0; i < 3; i++) {
-    const result = matchLimitError(stored, { matchday: 6 + i, season: 1 }, at, LONDON);
-    assert.equal(result.message, null);
-    plays = result.plays;
-    stored.matchday = 6 + i;
-    stored.plays = plays;
-  }
-  assert.equal(plays.length, 3);
-  const fourth = matchLimitError(stored, { matchday: 9, season: 1 }, at, LONDON);
-  assert.match(fourth.message, /9 am tomorrow/);
-  assert.equal(fourth.plays.length, 3);
-});
-
-test("yesterday's plays do not count today", () => {
-  const allowance = matchAllowance([london('2026-10-21T20:00:00').toISOString()], london('2026-10-22T08:30:00'), LONDON);
-  assert.equal(allowance.playedToday, 0);
-  assert.equal(allowance.canPlay, true);
+test('a kick-off keeps its wall-clock time across the clocks going back', () => {
+  // London leaves BST in the early hours of 25 Oct 2026, so 9 am that day is 09:00 UTC.
+  const slot = slotAfter(london('2026-10-24T21:00:00'), LONDON);
+  assert.equal(slot.toISOString(), '2026-10-25T09:00:00.000Z');
+  assert.equal(localClock(slot, LONDON).hour, 9);
 });
 
 test('the same instant is a different day and slot elsewhere', () => {
   const instant = london('2026-10-22T22:30:00'); // 21:30 UTC
   assert.equal(localClock(instant, 'Asia/Jakarta').day, '2026-10-23');
   assert.equal(localClock(instant, 'Asia/Jakarta').hour, 5);
-  assert.equal(localClock(instant, 'America/New_York').day, '2026-10-22');
   assert.equal(localClock(instant, 'America/New_York').hour, 18);
-  assert.equal(matchAllowance([], instant, 'Asia/Jakarta').open, 0);
-  assert.equal(matchAllowance([], instant, 'America/New_York').open, 2);
+  assert.notEqual(slotAfter(london('2026-10-22T22:00:00'), 'Asia/Jakarta').toISOString(),
+    slotAfter(london('2026-10-22T22:00:00'), LONDON).toISOString());
+  assert.notEqual(slotAfter(london('2026-10-22T07:00:00'), 'America/New_York').toISOString(),
+    slotAfter(london('2026-10-22T07:00:00'), LONDON).toISOString());
 });
 
-test('a save within the allowance records the play', () => {
-  const at = london('2026-10-22T10:00:00');
-  const result = matchLimitError({ matchday: 3, season: 1, plays: [] }, { matchday: 4 }, at, LONDON);
-  assert.equal(result.message, null);
-  assert.deepEqual(result.plays, [at.toISOString()]);
+test('firstSlotOfDay and upcomingSlots walk every kick-off', () => {
+  assert.equal(firstSlotOfDay(london('2026-10-22T12:00:00'), LONDON).toISOString(), '2026-10-22T08:00:00.000Z');
+  const slots = upcomingSlots('2026-10-22T08:00:00.000Z', 4, LONDON).map((d) => d.toISOString());
+  assert.deepEqual(slots, [
+    '2026-10-22T08:00:00.000Z',
+    '2026-10-22T14:00:00.000Z',
+    '2026-10-22T20:00:00.000Z',
+    '2026-10-23T08:00:00.000Z',
+  ]);
 });
 
-test('a save past the open slots is refused, naming the slot', () => {
-  const at = london('2026-10-22T10:00:00');
-  const play = at.toISOString();
-  const result = matchLimitError({ matchday: 3, season: 1, plays: [play] }, { matchday: 4 }, at, LONDON);
-  assert.equal(result.message, 'The 3 pm match is not open yet.');
+function careerWithSchedule() {
+  const state = buildInitialState('harbourside', 'Test manager', 7);
+  state.nextMatchAt = '2026-10-22T08:00:00.000Z';
+  return state;
+}
+
+test('nothing due plays nothing, and one slot due plays one match', () => {
+  const state = careerWithSchedule();
+  assert.equal(playDueMatches(state, london('2026-10-22T07:59:00'), LONDON), 0);
+  assert.equal(state.matchday, 0);
+  assert.equal(playDueMatches(state, london('2026-10-22T08:05:00'), LONDON), 1);
+  assert.equal(state.matchday, 1);
+  assert.deepEqual(state.plays, ['2026-10-22T08:00:00.000Z']);
+  assert.equal(state.nextMatchAt, '2026-10-22T14:00:00.000Z');
 });
 
-test('starting next season does not spend a match', () => {
-  const at = london('2026-10-22T08:30:00');
-  const result = matchLimitError(
-    { matchday: 34, season: 1, plays: [london('2026-10-21T20:00:00').toISOString()] },
-    { matchday: 0, season: 2 },
-    at, LONDON
-  );
-  assert.equal(result.message, null);
-  assert.deepEqual(result.plays, [london('2026-10-21T20:00:00').toISOString()]);
+test('two days away plays six matches, three a day', () => {
+  const state = careerWithSchedule();
+  // 23 Oct 22:00 London = 21:00 UTC: the 22nd's three and the 23rd's three.
+  assert.equal(playDueMatches(state, london('2026-10-23T21:00:00'), LONDON), 6);
+  assert.equal(state.matchday, 6);
+  assert.equal(state.plays.length, 3);
 });
 
-test('repairCareer fills plays, filters junk and keeps the last three', () => {
+test('a near-finished season stops at its last fixture', () => {
+  const state = careerWithSchedule();
+  while (state.fixtures.length - state.matchday > 2) state.matchday++;
+  state.results = [];
+  // Play up to the last fixture, then the schedule stops.
+  const played = playDueMatches(state, london('2026-10-30T22:00:00'), LONDON);
+  assert.equal(played, 2);
+  assert.equal(state.finished, true);
+  assert.equal(state.nextMatchAt, null);
+  assert.equal(playDueMatches(state, london('2026-11-30T22:00:00'), LONDON), 0);
+});
+
+test('an injured starter still lets the match play, with the best eleven', () => {
+  const state = careerWithSchedule();
+  const starter = state.squads[state.clubId].find((p) => state.lineup.includes(p.id));
+  starter.injury = 2;
+  const before = state.lineup.slice();
+  assert.equal(playDueMatches(state, london('2026-10-22T08:05:00'), LONDON), 1);
+  assert.notDeepEqual(state.lineup, before);
+  assert.equal(state.lineup.includes(starter.id), false);
+});
+
+test('repairCareer fills plays, filters junk, keeps the last three and the schedule', () => {
   const base = buildInitialState('harbourside', 'Test manager', 7);
   assert.deepEqual(repairCareer(base).plays, []);
   const one = '2026-10-22T08:00:00.000Z';
@@ -105,6 +111,9 @@ test('repairCareer fills plays, filters junk and keeps the last three', () => {
   assert.deepEqual(repairCareer({ ...base, plays: [one, 'nonsense', 5, null, two] }).plays, [one, two]);
   assert.deepEqual(repairCareer({ ...base, plays: [one, two, three, four] }).plays, [two, three, four]);
   assert.deepEqual(repairCareer({ ...base, plays: 'junk' }).plays, []);
+  assert.equal(repairCareer({ ...base, nextMatchAt: two }).nextMatchAt, two);
+  assert.equal(repairCareer({ ...base, nextMatchAt: null }).nextMatchAt, null);
+  assert.equal('nextMatchAt' in repairCareer({ ...base, nextMatchAt: 'junk' }), false);
 });
 
 test('an unusable zone reads as UTC', () => {

@@ -109,9 +109,9 @@
       media.addEventListener('change', applyTheme);
     })();
   </script>
-  <!-- The staging preview shows the demo season at 10:30 pm London time, when
-       all three of the day's matches are open. -->
-  <!-- usernode:preview-at 2026-10-22T22:30 Europe/London -->
+  <!-- The staging preview shows the demo season at 3:10 pm London time: the
+       9 am and 3 pm matches have played by themselves, and 9 pm is next. -->
+  <!-- usernode:preview-at 2026-10-22T15:10 Europe/London -->
 </head>
 <body class="min-h-screen bg-ground text-fg">
   <!-- usernode-spec-screens@1: the screens the spec drew. Screen 1 is the
@@ -133,20 +133,13 @@
           <div class="mid"><span class="skeleton sk-line"></span></div>
           <div class="team"><span class="skeleton sk-badge"></span><span class="skeleton sk-line"></span></div>
         </div>
-        <div class="skeleton sk-btn"></div>
+        <div class="kick"><span class="skeleton sk-line"></span></div>
       </div>
       <div class="sec">
-        <div class="section-label"><span>Your lineup</span><span></span></div>
-        <div class="pitch"><div class="pitch-skeleton"><span class="skeleton sk-pitch"></span></div></div>
-        <div class="formrow">
-          <div class="chip"><span class="skeleton sk-line"></span></div>
-          <div class="chip"><span class="skeleton sk-line"></span></div>
-          <div class="chip"><span class="skeleton sk-line"></span></div>
-        </div>
-      </div>
-      <div class="sec">
-        <div class="section-label"><span>Squad</span><span></span></div>
-        <ul class="list" id="loading-squad"></ul>
+        <div class="section-label"><span>Last result</span><span></span></div>
+        <ul class="list">
+          <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+        </ul>
       </div>
     </div>
 
@@ -205,85 +198,127 @@
       </div>
     </div>
 
-    <!-- The club screen. -->
-    <div class="app" id="view-club" hidden>
-      <div class="top">
-        <div class="sm" id="club-md"></div>
-        <h1 id="club-name"></h1>
-        <div class="sm" id="club-pos"></div>
-      </div>
+    <!-- The club screen: four tabs, a bottom bar on a phone and a sidebar
+         on a wider window. -->
+    <div class="app club-app" id="view-club" hidden>
+      <nav class="tabnav" id="tabnav" aria-label="Club">
+        <div class="tab-club" id="tab-club"><span class="badge" id="tab-badge"></span><span id="tab-name"></span></div>
+        <a class="tab" href="#home" data-tab="home" aria-current="page">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg><span>Home</span>
+        </a>
+        <a class="tab" href="#squad" data-tab="squad">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14c2.8 0 5 2.2 5 5"/></svg><span>Squad</span>
+        </a>
+        <a class="tab" href="#tactics" data-tab="tactics">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 12h16"/><circle cx="12" cy="12" r="3"/></svg><span>Tactics</span>
+        </a>
+        <a class="tab" href="#competition" data-tab="competition">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 20h8"/></svg><span>Competition</span>
+        </a>
+      </nav>
 
-      <div class="next" id="next-card">
-        <div class="row">
-          <div class="team"><span class="badge" id="next-home-badge"></span><span id="next-home-name"></span></div>
-          <div class="mid"><span id="next-label"></span><b>vs</b><span id="next-venue"></span></div>
-          <div class="team"><span class="badge" id="next-away-badge"></span><span id="next-away-name"></span></div>
+      <div class="club-main">
+        <div class="top">
+          <div class="sm" id="club-md"></div>
+          <h1 id="club-name"></h1>
+          <div class="sm" id="club-pos"></div>
         </div>
-        <button class="btn-primary" id="play-btn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/></svg>Play match
-        </button>
-        <p class="play-note" id="play-note" role="alert" hidden></p>
-      </div>
 
-      <div class="next" id="season-card" hidden>
-        <div class="season-head">
-          <h2 class="season-title" id="season-title">Season complete</h2>
-          <p class="season-text" id="season-text"></p>
-        </div>
-        <button class="btn-primary" id="next-season" type="button">Start next season</button>
-        <button class="btn-secondary" id="new-from-season" type="button">Start a new career</button>
-      </div>
+        <!-- Home -->
+        <div class="panel" id="tab-home">
+          <div class="next" id="next-card">
+            <div class="row">
+              <div class="team"><span class="badge" id="next-home-badge"></span><span id="next-home-name"></span></div>
+              <div class="mid"><span id="next-label"></span><b>vs</b><span id="next-venue"></span></div>
+              <div class="team"><span class="badge" id="next-away-badge"></span><span id="next-away-name"></span></div>
+            </div>
+            <div class="kick" id="kickoff"><b id="kickoff-when"></b>Matches play by themselves at 9 am, 3 pm and 9 pm your time, with your saved lineup and tactics.</div>
+          </div>
 
-      <div class="sec">
-        <div class="section-label"><span>Your lineup</span><span>Drag a player to swap</span></div>
-        <div class="pitch" id="pitch-wrap" data-formation="" data-starters="">
-          <canvas id="pitch-canvas" role="img" aria-label="Your lineup"></canvas>
-        </div>
-        <div class="formrow">
-          <button class="chip" id="chip-formation" type="button" aria-expanded="false">Formation<b id="val-formation"></b></button>
-          <button class="chip" id="chip-mentality" type="button" aria-expanded="false">Mentality<b id="val-mentality"></b></button>
-          <button class="chip" id="chip-pressing" type="button" aria-expanded="false">Pressing<b id="val-pressing"></b></button>
-        </div>
-        <div class="menu" id="menu" hidden>
-          <ul class="list" id="menu-list"></ul>
-        </div>
-      </div>
+          <p class="away-note" id="away-note" hidden></p>
 
-      <div class="sec">
-        <div class="section-label"><span>Squad</span><span>Fitness</span></div>
-        <ul class="list" id="squad-list"></ul>
-      </div>
+          <div class="next" id="season-card" hidden>
+            <div class="season-head">
+              <h2 class="season-title" id="season-title">Season complete</h2>
+              <p class="season-text" id="season-text"></p>
+            </div>
+            <button class="btn-primary" id="next-season" type="button">Start next season</button>
+            <button class="btn-secondary" id="new-from-season" type="button">Start a new career</button>
+          </div>
 
-      <div class="sec" id="last-sec">
-        <div class="section-label"><span>Last result</span><span id="last-md"></span></div>
-        <ul class="list" id="last-list"></ul>
-      </div>
+          <div class="sec" id="last-sec">
+            <div class="section-label"><span>Last result</span><span id="last-md"></span></div>
+            <ul class="list" id="last-list"></ul>
+          </div>
 
-      <div class="sec">
-        <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
-        <ul class="list tbl" id="table-list"></ul>
-      </div>
+          <div class="sec">
+            <div class="section-label"><span>Board objective</span><span id="objective-season"></span></div>
+            <ul class="list"><li class="list-row"><span class="nm" id="objective-text"></span></li></ul>
+          </div>
 
-      <div class="sec" id="wallet-sec" hidden>
-        <div class="section-label"><span>Wallet</span><span>Dummy USDC (staging mock)</span></div>
-        <ul class="list">
-          <li class="list-row"><span class="nm"><span class="bal" id="club-wallet"></span><small id="club-wallet-note"></small></span></li>
-        </ul>
-      </div>
+          <div class="sec" id="wallet-sec" hidden>
+            <div class="section-label"><span>Wallet</span><span>Dummy USDC (staging mock)</span></div>
+            <ul class="list">
+              <li class="list-row"><span class="nm"><span class="bal" id="club-wallet"></span><small id="club-wallet-note"></small></span></li>
+            </ul>
+          </div>
 
-      <div class="sec">
-        <div class="state-error" id="save-error" hidden>
-          <p class="state-text" id="save-error-text">Your last change was not saved. Your last saved matchday is kept.</p>
-          <button class="btn-secondary" id="save-retry">Retry save</button>
-        </div>
-        <div class="confirm" id="confirm-over" hidden>
-          <p class="state-text">Start a new career? This career and its results will be deleted.</p>
-          <div class="confirm-row">
-            <button class="btn-primary" id="confirm-over-yes" type="button">Delete career</button>
-            <button class="btn-secondary" id="confirm-over-no" type="button">Cancel</button>
+          <div class="sec" id="home-actions">
+            <div class="confirm" id="confirm-over" hidden>
+              <p class="state-text" id="confirm-text">Start a new career? This career and its results will be deleted.</p>
+              <div class="confirm-row">
+                <button class="btn-primary" id="confirm-over-yes" type="button">Delete career</button>
+                <button class="btn-secondary" id="confirm-over-no" type="button">Cancel</button>
+              </div>
+            </div>
+            <button class="btn-secondary wide" id="start-over" type="button">Start a new career</button>
           </div>
         </div>
-        <button class="btn-secondary wide" id="start-over" type="button">Start a new career</button>
+
+        <!-- Squad -->
+        <div class="panel" id="tab-squad" hidden>
+          <div class="sec">
+            <div class="section-label"><span>Squad</span><span>Fitness</span></div>
+            <ul class="list" id="squad-list"></ul>
+          </div>
+        </div>
+
+        <!-- Tactics -->
+        <div class="panel" id="tab-tactics" hidden>
+          <div class="sec">
+            <div class="section-label"><span>Your lineup</span><span>Drag a player to swap</span></div>
+            <div class="pitch" id="pitch-wrap" data-formation="" data-starters="">
+              <canvas id="pitch-canvas" role="img" aria-label="Your lineup"></canvas>
+            </div>
+            <div class="formrow">
+              <button class="chip" id="chip-formation" type="button" aria-expanded="false">Formation<b id="val-formation"></b></button>
+              <button class="chip" id="chip-mentality" type="button" aria-expanded="false">Mentality<b id="val-mentality"></b></button>
+              <button class="chip" id="chip-pressing" type="button" aria-expanded="false">Pressing<b id="val-pressing"></b></button>
+            </div>
+            <div class="menu" id="menu" hidden>
+              <ul class="list" id="menu-list"></ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Competition -->
+        <div class="panel" id="tab-competition" hidden>
+          <div class="sec">
+            <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
+            <ul class="list tbl" id="table-list"></ul>
+          </div>
+          <div class="sec">
+            <div class="section-label"><span>Fixtures and results</span><span>Season <span id="fixtures-season"></span></span></div>
+            <ul class="list" id="fixtures-list"></ul>
+          </div>
+        </div>
+
+        <div class="sec" id="save-sec">
+          <div class="state-error" id="save-error" hidden>
+            <p class="state-text" id="save-error-text">Your last change was not saved. Your last saved matchday is kept.</p>
+            <button class="btn-secondary" id="save-retry">Retry save</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -293,7 +328,7 @@
     <div class="app">
       <div class="top">
         <div class="back" id="report-back" role="button" tabindex="0">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Club
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg><span id="report-back-label">Back to Home</span>
         </div>
         <div class="sm" id="report-md">Full time</div>
         <div class="score">
@@ -319,7 +354,7 @@
       </div>
 
       <div class="sec">
-        <button class="btn-primary" id="report-close">Back to club</button>
+        <button class="btn-primary" id="report-close">Back to Home</button>
       </div>
     </div>
   </div>

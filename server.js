@@ -186,10 +186,11 @@ const DEMO_SEED = 1;
 
 // The demo season is always shown in London time, so every voter sees the
 // same day and the same three match times.
-function demoCareer(e) {
+function demoCareer(e, now) {
   const state = e.buildDemoState(DEMO_SEED);
   state.timeZone = 'Europe/London';
   state.plays = [];
+  state.nextMatchAt = e.firstSlotOfDay(now, 'Europe/London').toISOString();
   return state;
 }
 
@@ -241,6 +242,74 @@ async function boot() {
       throw wrapped;
     }
   }
+  // One manager per Division 3 club. This table holds no names, so it is
+  // public. It has no foreign key to careers: that table is private.
+  await pool.query(`CREATE TABLE IF NOT EXISTS club_owners (
+    club_id text PRIMARY KEY,
+    user_id text NOT NULL,
+    acquired_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  // Careers saved before this change keep their club: a club several managers
+  // already share stays with all of them and is simply taken for new buyers.
+  await pool.query(`INSERT INTO club_owners (club_id, user_id, acquired_at)
+    SELECT DISTINCT ON (club_id) club_id, user_id, updated_at
+      FROM careers WHERE NOT is_demo AND club_id <> ''
+      ORDER BY club_id, updated_at
+    ON CONFLICT (club_id) DO NOTHING`);
+  if (IS_STAGING) {
+    await pool.query(`INSERT INTO club_owners (club_id, user_id) VALUES
+      ('wrenfield-wanderers', 'staging-demo-owner-1'),
+      ('torcross-rovers', 'staging-demo-owner-2')
+      ON CONFLICT (club_id) DO NOTHING`);
+  }
+}
+
+// Play every kick-off that has passed since the career's nextMatchAt, using
+// the saved lineup and tactics. The demo always uses London time. A career
+// with no saved zone is left alone until the page sends one.
+async function catchUp(row, now, demo, fallbackZone) {
+  const e = await engine();
+  const state = row.state;
+  const zone = demo ? 'Europe/London'
+    : e.validTimeZone(state.timeZone) ? state.timeZone
+      : fallbackZone && e.validTimeZone(fallbackZone) ? fallbackZone : null;
+  if (!zone) return { state, version: row.version, autoPlayed: 0, changed: false, zone };
+  let changed = false;
+  if (!state.finished && !state.nextMatchAt) {
+    // A career with no schedule starts at the next kick-off, not at one it
+    // missed before this change shipped.
+    state.nextMatchAt = (demo ? e.firstSlotOfDay(now, zone) : e.slotAfter(now, zone)).toISOString();
+    changed = true;
+  }
+  const played = e.playDueMatches(state, now, zone);
+  if (played) changed = true;
+  return { state, version: row.version, autoPlayed: played, changed, zone };
+}
+
+async function catchUpAndSave(userId, demo, row, now, fallbackZone) {
+  const out = await catchUp(row, now, demo, fallbackZone);
+  if (!out.changed) return out;
+  const upd = await pool.query(
+    'UPDATE careers SET state = $3, version = version + 1 WHERE user_id = $1 AND is_demo = $2 AND version = $4 RETURNING version',
+    [userId, demo, out.state, row.version]
+  );
+  if (upd.rows.length) {
+    out.version = upd.rows[0].version;
+    return out;
+  }
+  // Another request won the race. Every career is deterministic from its
+  // seed, so re-reading gives the same matches.
+  const again = await pool.query('SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2', [userId, demo]);
+  if (again.rows.length) {
+    out.state = again.rows[0].state;
+    out.version = again.rows[0].version;
+  }
+  return out;
+}
+
+async function takenClubs() {
+  const { rows } = await pool.query('SELECT club_id FROM club_owners');
+  return rows.map((r) => r.club_id);
 }
 
 // ?demo=1 acts on the viewer's demo career, and only in staging.
@@ -256,14 +325,16 @@ app.get('/api/career', async (req, res) => {
   const demo = wantsDemo(req);
   try {
     if (!req.user) {
-      // A guest looking around in staging sees the demo season, unread-only.
+      // A guest looking around in staging sees the demo season, read-only.
       if (demo) {
         const e = await engine();
+        const state = demoCareer(e, req.now);
+        const out = await catchUp({ state, version: 1 }, req.now, true);
         return res.json({
-          career: demoCareer(e), version: 1, demo: true, shop: SHOP,
+          career: out.state, version: 1, demo: true, shop: SHOP, autoPlayed: out.autoPlayed,
         });
       }
-      return res.json({ career: null, version: 0, demo: false, shop: SHOP });
+      return res.json({ career: null, version: 0, demo: false, shop: { ...SHOP, taken: await takenClubs() } });
     }
     const { rows } = await queryWithRetry(
       pool,
@@ -277,31 +348,48 @@ app.get('/api/career', async (req, res) => {
         console.error('career load failed [' + requestId + '] career_unreadable state is not an object');
         return res.status(500).json({ error: 'career_unreadable', requestId, message: 'The saved career could not be shown.' });
       }
-      return res.json({ career: state, version: rows[0].version, demo, shop: SHOP });
+      // Every kick-off that has passed is played now, with the saved lineup
+      // and tactics, and the result is stored before the page sees it.
+      const out = await catchUpAndSave(req.user.id, demo, { state, version: rows[0].version }, req.now);
+      return res.json({ career: out.state, version: out.version, demo, shop: SHOP, autoPlayed: out.autoPlayed });
     }
     if (demo) {
       const e = await engine();
-      const state = demoCareer(e);
+      const state = demoCareer(e, req.now);
+      const out = await catchUp({ state, version: 1 }, req.now, true);
       await pool.query(
         `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
          VALUES ($1, true, $2, $3, $4, $5, 1)
          ON CONFLICT (user_id, is_demo) DO NOTHING`,
-        [req.user.id, 'Demo Manager', state.clubId, DEMO_SEED, state]
+        [req.user.id, 'Demo Manager', state.clubId, DEMO_SEED, out.state]
       );
       const again = await pool.query(
         'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = true',
         [req.user.id]
       );
-      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP });
+      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP, autoPlayed: out.autoPlayed });
     }
     // No career yet is an ordinary answer: the page shows New career.
-    return res.json({ career: null, version: 0, demo: false, shop: SHOP });
+    return res.json({ career: null, version: 0, demo: false, shop: { ...SHOP, taken: await takenClubs() } });
   } catch (err) {
     const requestId = crypto.randomUUID().slice(0, 8);
     console.error('career load failed [' + requestId + '] ' + ((err && err.code) || '') + ' ' + (err && err.message));
     return res.status(500).json(loadFailureBody(err, requestId));
   }
 });
+
+// A career that replaces another club gives the old one back to the shop,
+// then passes it on to any other grandfathered manager who still runs it.
+async function releaseClub(client, clubId, userId) {
+  if (!clubId) return;
+  await client.query('DELETE FROM club_owners WHERE club_id = $1 AND user_id = $2', [clubId, userId]);
+  await client.query(
+    `INSERT INTO club_owners (club_id, user_id)
+     SELECT club_id, user_id FROM careers WHERE club_id = $1 AND NOT is_demo AND user_id <> $2 LIMIT 1
+     ON CONFLICT (club_id) DO NOTHING`,
+    [clubId, userId]
+  );
+}
 
 app.post('/api/career', async (req, res) => {
   const demo = wantsDemo(req);
@@ -320,25 +408,77 @@ app.post('/api/career', async (req, res) => {
     if (refusal === 'balance') {
       return res.status(400).json({ error: 'balance', message: 'Your Dummy USDC does not cover this club.' });
     }
+    const zone = e.validTimeZone(req.body && req.body.timeZone) ? req.body.timeZone : 'UTC';
     const seed = crypto.randomInt(1, 2147483647);
     const state = e.buildInitialState(clubId, managerName.trim(), seed);
     state.managerName = managerName.trim();
+    state.timeZone = demo ? 'Europe/London' : zone;
+    state.nextMatchAt = e.slotAfter(req.now, state.timeZone).toISOString();
     state.wallet = { currency: CURRENCY, balance: STARTING_BALANCE - CLUB_PRICE };
-    state.purchase = { clubId, price: CLUB_PRICE, at: new Date().toISOString() };
-    const { rows } = await pool.query(
-      `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
-       VALUES ($1, $2, $3, $4, $5, $6, 1)
-       ON CONFLICT (user_id, is_demo) DO UPDATE SET
-         manager_name = EXCLUDED.manager_name,
-         club_id = EXCLUDED.club_id,
-         seed = EXCLUDED.seed,
-         state = EXCLUDED.state,
-         version = careers.version + 1,
-         updated_at = now()
-       RETURNING state, version`,
-      [req.user.id, demo, state.managerName, clubId, seed, state]
-    );
-    return res.json({ career: rows[0].state, version: rows[0].version, demo });
+    state.purchase = { clubId, price: CLUB_PRICE, at: req.now.toISOString() };
+
+    if (demo) {
+      const demoState = demoCareer(e, req.now);
+      demoState.managerName = managerName.trim();
+      const out = await catchUp({ state: demoState, version: 1 }, req.now, true);
+      const { rows } = await pool.query(
+        `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
+         VALUES ($1, true, $2, $3, $4, $5, 1)
+         ON CONFLICT (user_id, is_demo) DO UPDATE SET
+           manager_name = EXCLUDED.manager_name, club_id = EXCLUDED.club_id,
+           seed = EXCLUDED.seed, state = EXCLUDED.state,
+           version = careers.version + 1, updated_at = now()
+         RETURNING state, version`,
+        [req.user.id, demoState.managerName, demoState.clubId, DEMO_SEED, out.state]
+      );
+      return res.json({ career: rows[0].state, version: rows[0].version, demo });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const old = await client.query(
+        'SELECT club_id FROM careers WHERE user_id = $1 AND is_demo = false',
+        [req.user.id]
+      );
+      if (old.rows.length && old.rows[0].club_id && old.rows[0].club_id !== clubId) {
+        await releaseClub(client, old.rows[0].club_id, req.user.id);
+      }
+      const claim = await client.query(
+        'INSERT INTO club_owners (club_id, user_id) VALUES ($1, $2) ON CONFLICT (club_id) DO NOTHING RETURNING club_id',
+        [clubId, req.user.id]
+      );
+      if (!claim.rows.length) {
+        const owner = await client.query('SELECT user_id FROM club_owners WHERE club_id = $1', [clubId]);
+        if (owner.rows.length && owner.rows[0].user_id !== req.user.id) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: 'owned',
+            message: 'Another manager already runs ' + e.CLUB_BY_ID[clubId].name + '. Choose another club.',
+          });
+        }
+      }
+      const { rows } = await client.query(
+        `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
+         VALUES ($1, false, $2, $3, $4, $5, 1)
+         ON CONFLICT (user_id, is_demo) DO UPDATE SET
+           manager_name = EXCLUDED.manager_name,
+           club_id = EXCLUDED.club_id,
+           seed = EXCLUDED.seed,
+           state = EXCLUDED.state,
+           version = careers.version + 1,
+           updated_at = now()
+         RETURNING state, version`,
+        [req.user.id, state.managerName, clubId, seed, state]
+      );
+      await client.query('COMMIT');
+      return res.json({ career: rows[0].state, version: rows[0].version, demo });
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     console.error('career create failed: ' + err.message);
     return res.status(500).json({ error: 'career_create_failed' });
@@ -354,31 +494,33 @@ app.put('/api/career', async (req, res) => {
   try {
     const e = await engine();
     if (!e.CLUB_BY_ID[state.clubId]) return res.status(400).json({ error: 'club' });
-    // The three matchdays a day are the server's record, the way the wallet
-    // is: read what was stored, count the matchdays the incoming state has
-    // advanced and refuse one the day has no slot for. A staging preview
-    // reads req.now, so ?un-now shows another moment.
     const { rows: storedRows } = await pool.query(
-      `SELECT state->'plays' AS plays, state->'timeZone' AS zone,
-              state->'matchday' AS matchday, state->'season' AS season
-         FROM careers WHERE user_id = $1 AND is_demo = $2`,
+      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
       [req.user.id, demo]
     );
     if (!storedRows.length) return res.status(404).json({ error: 'no_career' });
-    const stored = storedRows[0];
-    // The demo always uses London time, so every voter sees the same day. A
-    // career keeps the first zone it saved; an unusable one reads as UTC.
+    const incomingZone = e.validTimeZone(state.timeZone) ? state.timeZone : null;
+    // A kick-off that passed before this save plays first. The page reloads
+    // and shows the new result.
+    const up = await catchUpAndSave(req.user.id, demo, storedRows[0], req.now, incomingZone);
+    if (up.autoPlayed > 0) return res.status(409).json({ error: 'version_mismatch' });
+    const stored = up.state;
     const zone = demo ? 'Europe/London'
-      : e.validTimeZone(stored.zone) ? stored.zone
-        : e.validTimeZone(state.timeZone) ? state.timeZone
-          : 'UTC';
-    const limit = e.matchLimitError({
-      matchday: Number(stored.matchday) || 0,
-      season: Number(stored.season) || 1,
+      : e.validTimeZone(stored.timeZone) ? stored.timeZone
+        : incomingZone || 'UTC';
+    // The page never decides how far the season has advanced.
+    const check = e.saveCheck(stored, state);
+    if (check === 'stale') return res.status(409).json({ error: 'version_mismatch' });
+    let nextMatchAt = stored.nextMatchAt === undefined ? null : stored.nextMatchAt;
+    if (check === 'rollover' || (!stored.finished && !nextMatchAt)) {
+      nextMatchAt = e.slotAfter(req.now, zone).toISOString();
+    }
+    const saved = {
+      ...state,
       plays: Array.isArray(stored.plays) ? stored.plays : [],
-    }, state, req.now, zone);
-    if (limit.message) return res.status(400).json({ error: 'match_limit', message: limit.message });
-    const saved = { ...state, plays: limit.plays, timeZone: zone };
+      nextMatchAt,
+      timeZone: zone,
+    };
     const { rows } = await pool.query(
       // The browser never sets the money: a career that has a wallet keeps
       // the one already stored, and a career without one cannot gain one.
@@ -388,7 +530,7 @@ app.put('/api/career', async (req, res) => {
         version = version + 1, updated_at = now()
         WHERE user_id = $1 AND is_demo = $2 AND version = $4
         RETURNING version`,
-      [req.user.id, demo, saved, version]
+      [req.user.id, demo, saved, up.version]
     );
     if (rows.length) return res.json({ version: rows[0].version });
     const exists = await pool.query(
@@ -407,10 +549,28 @@ app.put('/api/career', async (req, res) => {
 app.delete('/api/career', async (req, res) => {
   const demo = wantsDemo(req);
   try {
-    await pool.query(
-      'DELETE FROM careers WHERE user_id = $1 AND is_demo = $2',
-      [req.user.id, demo]
-    );
+    if (demo) {
+      await pool.query('DELETE FROM careers WHERE user_id = $1 AND is_demo = true', [req.user.id]);
+      return res.json({ ok: true });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const found = await client.query(
+        'SELECT club_id FROM careers WHERE user_id = $1 AND is_demo = false',
+        [req.user.id]
+      );
+      if (found.rows.length && found.rows[0].club_id) {
+        await releaseClub(client, found.rows[0].club_id, req.user.id);
+      }
+      await client.query('DELETE FROM careers WHERE user_id = $1 AND is_demo = false', [req.user.id]);
+      await client.query('COMMIT');
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
     return res.json({ ok: true });
   } catch (err) {
     console.error('career delete failed: ' + err.message);

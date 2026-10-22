@@ -235,3 +235,119 @@ button.chip[aria-expanded="true"] {
 .ico { display: flex; align-items: center; color: rgb(var(--muted)); flex: none; }
 .ico.own { color: rgb(var(--fg)); }
 .min, .big, .rt, .ovr, .tbl, .stat .h { font-variant-numeric: tabular-nums; }
+
+/* ── The four club tabs ────────────────────────────────────────────────── */
+
+/* The tab bar is a bar along the bottom of a phone: fixed, above the
+   safe-area inset, with the panels padded to match. */
+.tabnav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  background: rgb(var(--surface));
+  border-top: 1px solid rgb(var(--line));
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tabnav[hidden] { display: none; }
+.tab {
+  flex: 1;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: rgb(var(--muted));
+  text-decoration: none;
+}
+.tab svg { display: block; }
+.tab[aria-current="page"] { color: rgb(var(--pitch-ink)); }
+.tab:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: -2px; }
+.tab-club { display: none; }
+.club-app { width: 100%; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+
+/* Home's kick-off line replaces Play match. */
+.kick {
+  margin-top: 14px;
+  border-top: 1px solid rgb(var(--line));
+  padding-top: 12px;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--muted));
+}
+.kick b {
+  display: block;
+  font-size: 20px;
+  line-height: 28px;
+  color: rgb(var(--fg));
+  font-variant-numeric: tabular-nums;
+}
+#kickoff[hidden] { display: none; }
+.away-note {
+  margin: 10px 16px 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--muted));
+}
+.away-note[hidden] { display: none; }
+.chev { color: rgb(var(--muted)); }
+
+/* A club another manager runs is not selectable. */
+.taken-row { cursor: default; }
+.taken-row .nm, .taken-row .badge { opacity: .6; }
+.taken { font-weight: 600; color: rgb(var(--muted)); white-space: nowrap; }
+
+/* From a tablet up the same tabs are a sidebar on the left. */
+@media (min-width: 768px) {
+  .club-app {
+    display: flex;
+    max-width: 68rem;
+    margin-inline: auto;
+    padding-bottom: 32px;
+    align-items: flex-start;
+  }
+  .club-app[hidden] { display: none; }
+  .club-app .tabnav {
+    position: sticky;
+    top: 0;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: 240px;
+    flex: none;
+    flex-direction: column;
+    height: 100vh;
+    padding: 20px 12px;
+    gap: 4px;
+    border-top: 0;
+    border-right: 1px solid rgb(var(--line));
+  }
+  .club-app .tab {
+    flex: none;
+    min-height: 44px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 24px;
+  }
+  .club-app .tab[aria-current="page"] { background: rgb(var(--raised)); }
+  .club-app .tab-club {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 8px 16px;
+    font-weight: 700;
+    color: rgb(var(--fg));
+  }
+  .club-app .club-main { flex: 1; min-width: 0; max-width: 42rem; margin-inline: auto; }
+  .club-app .app { width: 100%; }
+}

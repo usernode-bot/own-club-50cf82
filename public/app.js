@@ -8,9 +8,9 @@ import {
   MENTALITY_NAMES, PRESSING_NAMES, ROLES, POS_GROUP,
   GROUPS, TIER_COUNT, clubToGroup, groupName,
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
-  arrangeLineup, autoLineup, validateLineup, playMatchday,
+  arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
-  repairCareer, matchAllowance, slotLabel, MATCHES_PER_DAY,
+  repairCareer, slotLabel, upcomingSlots,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -37,6 +37,32 @@ let sheetPlayerId = null;
 let saveFailed = false;
 let loadError = '';
 let busy = false;
+let autoPlayed = 0;
+let tab = 'home';
+let reportFrom = 'home';
+let refreshFailed = false;
+
+const TABS = ['home', 'squad', 'tactics', 'competition'];
+function hashTab() {
+  const h = (location.hash || '').replace(/^#/, '');
+  return TABS.includes(h) ? h : 'home';
+}
+function showTab(next) {
+  tab = TABS.includes(next) ? next : 'home';
+  for (const t of TABS) $('tab-' + t).hidden = t !== tab;
+  for (const a of $('tabnav').querySelectorAll('[data-tab]')) {
+    if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  }
+  if (tab === 'tactics' && career) drawPitch();
+}
+
+async function refreshShop() {
+  try {
+    const { status, data } = await api('GET');
+    if (status === 200 && data && data.shop) { shop = data.shop; renderNew(); }
+  } catch (_) { /* the error already says the club is taken */ }
+}
 
 function apiUrl() { return '/api/career' + (DEMO ? '?demo=1' : ''); }
 
@@ -83,7 +109,10 @@ function showView(name) {
     $('view-' + v).hidden = v !== name;
   }
   $('view-report').hidden = name !== 'report';
+  const nav = $('tabnav');
+  nav.hidden = !(career && (name === 'club' || name === 'report'));
   $('demo-note').hidden = !(DEMO && career && (name === 'club' || name === 'report' || name === 'error'));
+  if (name === 'club') showTab(tab === 'report' ? 'home' : tab);
 }
 
 function render() {
@@ -128,6 +157,7 @@ async function load() {
   }
 
   if (answer && answer.data && answer.data.shop) shop = answer.data.shop;
+  autoPlayed = answer && answer.data && Number(answer.data.autoPlayed) > 0 ? Number(answer.data.autoPlayed) : 0;
 
   if (!cause && answer) {
     if (answer.status === 404 || (answer.status === 200 && answer.data && answer.data.career === null)) {
@@ -148,10 +178,12 @@ async function load() {
     } else {
       career = repaired;
       version = answer.data.version;
-      ensureZone();
       screen = 'club';
+      tab = hashTab();
       try {
         render();
+        // A career saved before the zone was stored gets one now, once.
+        if (!career.timeZone) { ensureZone(); save(); }
         return;
       } catch (err) {
         console.error('career render failed', err);
@@ -198,17 +230,52 @@ function renderNew() {
     btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
   }
   $('wallet-balance').textContent = usdc(shop.startingBalance);
-  const group = SHOP_GROUPS.find((g) => g.group === pickedGroup) || SHOP_GROUPS[0];
+  const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
+  const groups = SHOP_GROUPS.map((g) => ({ group: g.group, clubIds: g.clubIds, free: g.clubIds.filter((id) => !taken.has(id)) }));
+  const freeTotal = groups.reduce((n, g) => n + g.free.length, 0);
   const list = $('club-list');
-  list.innerHTML = group.clubIds.map((id) => CLUB_BY_ID[id]).map((c) => `
+  const buy = $('start-career');
+  const errBox = $('career-error');
+  if (!freeTotal) {
+    list.innerHTML = '<li class="list-row"><span class="nm">No Division 3 club is free right now. A club comes free when its manager starts a new career.</span></li>';
+    $('group-row').hidden = true;
+    buy.disabled = true;
+    buy.textContent = 'No club is free right now';
+    pickedClub = null;
+    return;
+  }
+  $('group-row').hidden = false;
+  const group = groups.find((g) => g.group === pickedGroup) || groups[0];
+  if (!group.free.includes(pickedClub)) pickedClub = group.free[0] || null;
+  if (!group.free.length) {
+    list.innerHTML = '<li class="list-row"><span class="nm">Every club in Group ' + esc(group.group) + ' has a manager. Choose another group.</span></li>';
+    buy.disabled = true;
+    buy.textContent = 'Choose another group';
+    return;
+  }
+  buy.disabled = false;
+  list.innerHTML = group.clubIds.map((id) => CLUB_BY_ID[id]).map((c) => {
+    const isTaken = taken.has(c.id);
+    if (isTaken) {
+      return `
+    <li class="list-row club-row taken-row" aria-disabled="true">
+      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
+      <span class="nm">${esc(c.name)}<small>Another manager runs this club</small></span>
+      <span class="taken">Taken</span>
+      <span class="tick" aria-hidden="true"></span>
+    </li>`;
+    }
+    return `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
       <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
       <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, ${esc(c.objective)}</small></span>
       <span class="price">${usdc(shop.price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
-    </li>`).join('');
+    </li>`;
+  }).join('');
   const picked = CLUB_BY_ID[pickedClub];
-  $('start-career').textContent = picked ? 'Buy ' + picked.name + ' for ' + usdc(shop.price) : 'Buy a club';
+  buy.textContent = picked ? 'Buy ' + picked.name + ' for ' + usdc(shop.price) : 'Buy a club';
+  if (errBox.hidden) errBox.hidden = true;
 }
 
 async function startCareer() {
@@ -237,23 +304,26 @@ async function startCareer() {
   const btn = $('start-career');
   btn.disabled = true;
   try {
-    const { status, data } = await api('POST', { managerName: name, clubId: pickedClub });
+    const { status, data } = await api('POST', { managerName: name, clubId: pickedClub, timeZone: DEMO ? 'Europe/London' : deviceZone() });
     if (status === 401 && data && data.error === 'account_required') {
       if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'start a career' });
       errBox.hidden = false;
       errText.textContent = 'Make an account to start a career.';
       return;
     }
-    if (status === 400 && data && data.message) {
+    if ((status === 400 || status === 409) && data && data.message) {
       errBox.hidden = false;
       errText.textContent = data.message;
+      if (data.error === 'owned') await refreshShop();
       return;
     }
     if (status !== 200) throw new Error('HTTP ' + status);
     career = data.career;
     version = data.version;
-    ensureZone();
+    autoPlayed = 0;
     screen = 'club';
+    tab = 'home';
+    if (!location.hash) location.hash = '#home';
     render();
   } catch (err) {
     errBox.hidden = false;
@@ -289,40 +359,40 @@ function clockText(date, zone) {
   }
 }
 
-// What the note under Play match says while the next match is not open.
-function matchWaitText(allowance, zone, now) {
-  if (allowance.playedToday >= MATCHES_PER_DAY) {
-    return "Today's " + MATCHES_PER_DAY + ' matches are played. Next match at 9 am tomorrow.';
+function resultLetter(report, clubId) {
+  const gf = report.home.id === clubId ? report.homeGoals : report.awayGoals;
+  const ga = report.home.id === clubId ? report.awayGoals : report.homeGoals;
+  return gf > ga ? 'W' : gf < ga ? 'L' : 'D';
+}
+function resultClass(report, clubId) { return resultLetter(report, clubId).toLowerCase(); }
+
+function localHm(date, zone) {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' }).format(date).toLowerCase().replace(':00', '');
+  } catch (_) {
+    return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date).toLowerCase().replace(':00', '');
   }
-  const next = allowance.nextSlot;
-  let text = 'Next match at ' + slotLabel(next.hour) + (next.tomorrow ? ' tomorrow' : '')
-    + '. It is ' + clockText(now, zone) + ' where you are';
-  if (allowance.playedToday > 0) {
-    text += ', and ' + allowance.playedToday + " of today's " + MATCHES_PER_DAY + ' matches '
-      + (allowance.playedToday === 1 ? 'is' : 'are') + ' played.';
-  } else {
-    text += '.';
-  }
-  return text;
 }
 
-// Play match is the screen's one action: disabled until the day's next slot.
-function renderPlayGate(zone, now) {
-  const allowance = matchAllowance(career.plays, now, zone);
-  const note = $('play-note');
-  const btn = $('play-btn');
-  btn.hidden = false;
-  if (allowance.canPlay) {
-    btn.disabled = false;
-    note.hidden = true;
-    note.classList.remove('is-wait');
-  } else {
-    btn.disabled = true;
-    const text = matchWaitText(allowance, zone, now);
-    // The note refreshes on a timer: leave it alone when it says the same.
-    if (note.textContent !== text) note.textContent = text;
-    note.classList.add('is-wait');
-    note.hidden = false;
+function kickoffText(nextAt, zone, now) {
+  if (!nextAt) return '';
+  const at = new Date(nextAt);
+  const diff = at.getTime() - now.getTime();
+  const clock = localHm(at, zone);
+  if (diff <= 0) return 'Kicking off now';
+  if (diff < 60000) return 'Kick-off at ' + clock + ', in under a minute';
+  const hours = Math.floor(diff / 3600000);
+  const mins = Math.round((diff % 3600000) / 60000);
+  const gap = hours > 0 ? hours + ' h' + (mins ? ' ' + mins + ' min' : '') : mins + ' min';
+  return 'Kick-off at ' + clock + ', in ' + gap;
+}
+
+function fixtureDate(date, zone) {
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: zone, weekday: 'short', day: 'numeric', month: 'short' }).format(date)
+      + ', ' + localHm(date, zone);
+  } catch (_) {
+    return date.toISOString();
   }
 }
 
@@ -344,8 +414,9 @@ function renderClub() {
   }
   $('club-name').textContent = club.name;
   $('club-pos').textContent = ordinal(me.rank) + ' in ' + place;
+  $('tab-badge').outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
+  $('tab-name').textContent = club.name;
 
-  // Next match, or the wrap-up.
   if (next && !career.finished) {
     $('next-card').hidden = false;
     $('season-card').hidden = true;
@@ -357,13 +428,12 @@ function renderClub() {
     $('next-away-name').textContent = displayName(away);
     $('next-venue').textContent = next.venue;
     $('next-label').textContent = 'Next match';
-    ensureZone();
-    renderPlayGate(career.timeZone, nowDate());
+    $('kickoff-when').textContent = kickoffText(career.nextMatchAt, career.timeZone, nowDate());
   } else {
     $('next-card').hidden = true;
     $('season-card').hidden = false;
     const outcome = seasonOutcome(career);
-    const met = objectiveMet(me.rank, club.objective, divisionClubIds(career).length);
+    const okay = objectiveMet(me.rank, club.objective, divisionClubIds(career).length);
     const to = groupName(outcome.toDivision, outcome.toGroup);
     const bits = [];
     if (pyramid) {
@@ -372,20 +442,34 @@ function renderClub() {
           : outcome.kind === 'relegated' ? 'Relegated to ' + to + '.'
             : 'You stay in ' + to + '.');
     }
-    bits.push('The board asked you to ' + club.objective.toLowerCase() + '. That was ' + (met ? 'met.' : 'not met.'));
+    bits.push('The board asked you to ' + club.objective.toLowerCase() + '. That was ' + (okay ? 'met.' : 'not met.'));
     bits.push('You took ' + me.points + ' points from ' + me.played + ' matches.');
-    if (outcome.joinsNewLeague) {
-      bits.push('Next season the Coastal League becomes three tiers, and your club starts in ' + to + '.');
-    }
+    if (outcome.joinsNewLeague) bits.push('Next season the Coastal League becomes three tiers, and your club starts in ' + to + '.');
     $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + place;
     $('season-text').textContent = bits.join(' ');
   }
+
+  const awayNote = $('away-note');
+  if (refreshFailed) {
+    awayNote.hidden = false;
+    awayNote.textContent = 'The latest result could not be loaded. Your club is shown as it was at your last visit.';
+  } else if (autoPlayed > 0) {
+    awayNote.hidden = false;
+    awayNote.textContent = autoPlayed + (autoPlayed === 1 ? ' match was' : ' matches were') + ' played since your last visit.';
+    autoPlayed = 0;
+  } else {
+    awayNote.hidden = true;
+  }
+
+  const okay = objectiveMet(me.rank, club.objective, divisionClubIds(career).length);
+  $('objective-season').textContent = 'Season ' + career.season;
+  $('objective-text').innerHTML = esc(club.objective)
+    + '<small>' + (okay ? 'On track' : 'Off track') + ': ' + ordinal(me.rank) + ' of ' + divisionClubIds(career).length + '</small>';
 
   $('val-formation').textContent = career.tactics.formation;
   $('val-mentality').textContent = career.tactics.mentality;
   $('val-pressing').textContent = career.tactics.pressing;
 
-  // Squad: starters first, then the rest by rating.
   const squad = career.squads[career.clubId];
   const starters = new Set(career.lineup);
   const ordered = [...squad].sort((a, b) => {
@@ -404,7 +488,6 @@ function renderClub() {
     </li>`;
   }).join('');
 
-  // Last result.
   const last = career.lastReport;
   if (last) {
     const ownHome = last.home.id === career.clubId;
@@ -412,15 +495,15 @@ function renderClub() {
     const a = CLUB_BY_ID[last.away.id];
     $('last-sec').hidden = false;
     $('last-md').textContent = 'Matchday ' + last.matchday;
-    $('last-list').innerHTML = `<li class="list-row">
+    $('last-list').innerHTML = `<li class="list-row row-btn" data-open-report="1" tabindex="0" role="button" aria-label="Open the match report">
       <span class="nm">${esc(h.name)} ${last.homeGoals}–${last.awayGoals} ${esc(a.name)}<small>Shots ${last.stats.shots[0]}–${last.stats.shots[1]}, possession ${last.stats.possession[0]}%–${last.stats.possession[1]}%</small></span>
       <span class="form"><i class="${resultClass(last, career.clubId)}">${resultLetter(last, career.clubId, ownHome)}</i></span>
+      <span class="chev" aria-hidden="true">›</span>
     </li>`;
   } else {
     $('last-sec').hidden = true;
   }
 
-  // Form and league table.
   $('club-form').innerHTML = formOf(career, career.clubId).map((r) => `<i class="${r.toLowerCase()}">${r}</i>`).join('');
   $('table-list').innerHTML = table.map((r) => `
     <li class="list-row${r.id === career.clubId ? ' me' : ''}">
@@ -429,6 +512,34 @@ function renderClub() {
       <span class="g">${r.gd > 0 ? '+' : ''}${r.gd}</span>
       <span class="p">${r.points}</span>
     </li>`).join('');
+
+  $('fixtures-season').textContent = career.season;
+  const remainder = Math.max(0, career.fixtures.length - career.matchday);
+  const dates = career.nextMatchAt && remainder ? upcomingSlots(career.nextMatchAt, remainder, career.timeZone) : [];
+  const mine = [];
+  career.fixtures.forEach((fixtures, md) => {
+    const f = fixtures.find((x) => x.home === career.clubId || x.away === career.clubId);
+    if (f) mine.push({ md, home: f.home, away: f.away });
+  });
+  const resultFor = (md) => career.results.find((r) => r.matchday === md + 1
+    && (r.home.id === career.clubId || r.away.id === career.clubId));
+  $('fixtures-list').innerHTML = mine.map((f) => {
+    const r = resultFor(f.md);
+    const h = CLUB_BY_ID[f.home];
+    const a = CLUB_BY_ID[f.away];
+    if (r) {
+      const latest = career.lastReport && career.lastReport.matchday === f.md + 1;
+      return `<li class="list-row${latest ? ' row-btn' : ''}"${latest ? ' data-open-report="1" tabindex="0" role="button"' : ''}>
+        <span class="nm">${esc(h.name)} ${r.homeGoals}–${r.awayGoals} ${esc(a.name)}<small>Matchday ${f.md + 1}</small></span>
+        <span class="form"><i class="${resultClass(r, career.clubId)}">${resultLetter(r, career.clubId)}</i></span>
+        ${latest ? '<span class="chev" aria-hidden="true">›</span>' : ''}
+      </li>`;
+    }
+    const when = dates[f.md - career.matchday];
+    return `<li class="list-row">
+      <span class="nm">Matchday ${f.md + 1}, ${esc(displayName(h))} v ${esc(displayName(a))}<small>${when ? esc(fixtureDate(when, career.timeZone)) : 'To be played'}</small></span>
+    </li>`;
+  }).join('');
 
   if (career.wallet) {
     $('wallet-sec').hidden = false;
@@ -441,16 +552,49 @@ function renderClub() {
     $('wallet-sec').hidden = true;
   }
 
+  $('confirm-text').textContent = 'Start a new career? This career and its results will be deleted, and '
+    + club.name + ' goes back in the shop.';
   $('save-error').hidden = !saveFailed;
-  drawPitch();
+  if (tab === 'tactics') drawPitch();
 }
 
-function resultLetter(report, clubId) {
-  const gf = report.home.id === clubId ? report.homeGoals : report.awayGoals;
-  const ga = report.home.id === clubId ? report.awayGoals : report.homeGoals;
-  return gf > ga ? 'W' : gf < ga ? 'L' : 'D';
+function openReport(from) {
+  if (!career || !career.lastReport) return;
+  reportFrom = from || tab;
+  const label = reportFrom === 'competition' ? 'Back to Competition' : 'Back to Home';
+  $('report-back-label').textContent = label;
+  $('report-close').textContent = label;
+  screen = 'report';
+  render();
+  window.scrollTo(0, 0);
 }
-function resultClass(report, clubId) { return resultLetter(report, clubId).toLowerCase(); }
+
+// The summer: promotion and relegation, then a fresh season in the new
+// division. The other eight groups are played out from the career's seed.
+async function nextSeason() {
+  if (!career || busy || !career.finished) return;
+  busy = true;
+  const btn = $('next-season');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Starting next season...';
+  try {
+    career = startNextSeason(career);
+    saveFailed = false;
+    render();
+    await save();
+    await refresh();
+    window.scrollTo(0, 0);
+  } catch (err) {
+    saveFailed = true;
+    $('save-error').hidden = false;
+  } finally {
+    busy = false;
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+$('next-season').addEventListener('click', nextSeason);
 
 // ── The pitch, drawn on a canvas ─────────────────────────────────────────
 const canvas = $('pitch-canvas');
@@ -806,69 +950,6 @@ $('sheet-bench').addEventListener('click', (e) => {
   }
 });
 
-// ── Playing a match ──────────────────────────────────────────────────────
-function playMatch() {
-  if (!career || busy) return;
-  const note = $('play-note');
-  const at = nowDate();
-  const allowance = matchAllowance(career.plays, at, career.timeZone);
-  // The screen may be stale: another tab, or a slot that is not open yet.
-  if (!allowance.canPlay) {
-    renderClub();
-    return;
-  }
-  const check = validateLineup(career);
-  if (!check.ok) {
-    note.textContent = check.message;
-    note.classList.remove('is-wait');
-    note.hidden = false;
-    return;
-  }
-  note.hidden = true;
-  busy = true;
-  try {
-    playMatchday(career);
-    career.plays = (Array.isArray(career.plays) ? career.plays : [])
-      .concat(at.toISOString()).slice(-MATCHES_PER_DAY);
-    screen = 'report';
-    render();
-    save();
-  } catch (err) {
-    note.textContent = 'The match could not be played. Try again.';
-    note.hidden = false;
-  } finally {
-    busy = false;
-  }
-}
-
-$('play-btn').addEventListener('click', playMatch);
-
-// The summer: promotion and relegation, then a fresh season in the new
-// division. The other eight groups are played out from the career's seed.
-async function nextSeason() {
-  if (!career || busy || !career.finished) return;
-  busy = true;
-  const btn = $('next-season');
-  const label = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Starting next season...';
-  try {
-    career = startNextSeason(career);
-    saveFailed = false;
-    render();
-    save();
-    window.scrollTo(0, 0);
-  } catch (err) {
-    saveFailed = true;
-    $('save-error').hidden = false;
-  } finally {
-    busy = false;
-    btn.disabled = false;
-    btn.textContent = label;
-  }
-}
-$('next-season').addEventListener('click', nextSeason);
-
 // ── Match report ─────────────────────────────────────────────────────────
 const ICONS = {
   goal: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg>',
@@ -970,7 +1051,11 @@ function renderReport() {
 
 function backToClub() {
   if (!career) return;
+  closeSheet();
+  closeMenu();
   screen = 'club';
+  tab = reportFrom;
+  if (location.hash !== '#' + tab) location.hash = '#' + tab;
   render();
   window.scrollTo(0, 0);
 }
@@ -1005,29 +1090,6 @@ async function saveNow() {
         render();
         return;
       }
-    }
-    // The server refused a matchday for the day's allowance. The career goes
-    // back to what was saved, and the club screen says why.
-    if (status === 400 && data && data.error === 'match_limit') {
-      const res = await api('GET');
-      const reloaded = res.status === 200 && res.data && res.data.career
-        ? repairCareer(res.data.career) : null;
-      if (reloaded) {
-        career = reloaded;
-        version = res.data.version;
-        ensureZone();
-      }
-      saveFailed = false;
-      screen = 'club';
-      render();
-      const note = $('play-note');
-      if (note) {
-        note.textContent = data.message;
-        note.classList.add('is-wait');
-        note.hidden = false;
-      }
-      if ($('save-error')) $('save-error').hidden = true;
-      return;
     }
     if (status === 200 && data && data.version) {
       version = data.version;
@@ -1073,6 +1135,8 @@ async function doStartOver() {
     $('manager-name').value = '';
     closeSheet();
     closeMenu();
+    tab = 'home';
+    history.replaceState(null, '', location.pathname + location.search);
     screen = 'new';
     render();
   } catch (_) {
@@ -1091,19 +1155,22 @@ $('group-row').addEventListener('click', (e) => {
   if (!btn) return;
   pickedGroup = btn.dataset.group;
   const group = SHOP_GROUPS.find((g) => g.group === pickedGroup);
-  if (group && !group.clubIds.includes(pickedClub)) pickedClub = group.clubIds[0];
+  const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
+  if (group && (!group.clubIds.includes(pickedClub) || taken.has(pickedClub))) {
+    pickedClub = group.clubIds.find((id) => !taken.has(id)) || null;
+  }
   renderNew();
 });
 $('club-list').addEventListener('click', (e) => {
   const row = e.target.closest('[data-club-id]');
-  if (!row) return;
+  if (!row || row.getAttribute('aria-disabled') === 'true') return;
   pickedClub = row.dataset.clubId;
   renderNew();
 });
 $('club-list').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
   const row = e.target.closest('[data-club-id]');
-  if (!row) return;
+  if (!row || row.getAttribute('aria-disabled') === 'true') return;
   e.preventDefault();
   pickedClub = row.dataset.clubId;
   renderNew();
@@ -1120,24 +1187,58 @@ $('squad-list').addEventListener('keydown', (e) => {
   openSheet(row.dataset.playerId);
 });
 $('start-career').addEventListener('click', startCareer);
+function openFromEvent(e) {
+  const row = e.target.closest('[data-open-report]');
+  if (!row) return;
+  if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.type === 'keydown') e.preventDefault();
+  openReport(row.closest('#tab-competition') ? 'competition' : 'home');
+}
+$('last-list').addEventListener('click', openFromEvent);
+$('last-list').addEventListener('keydown', openFromEvent);
+$('fixtures-list').addEventListener('click', openFromEvent);
+$('fixtures-list').addEventListener('keydown', openFromEvent);
+window.addEventListener('hashchange', () => {
+  if (!career) return;
+  if (screen === 'report') { screen = 'club'; render(); return; }
+  if (screen === 'club') showTab(hashTab());
+});
 $('retry-btn').addEventListener('click', load);
 
 // The wait line opens by itself when a match time passes, or when the manager
 // comes back to the app.
+async function refresh() {
+  if (!career) return;
+  try {
+    const { status, data } = await api('GET');
+    if (status === 200 && data && data.career) {
+      const repaired = repairCareer(data.career);
+      if (repaired) {
+        career = repaired;
+        version = data.version;
+        autoPlayed = Number(data.autoPlayed) || 0;
+        refreshFailed = false;
+        if (data.shop) shop = data.shop;
+        render();
+        return;
+      }
+    }
+    refreshFailed = true;
+  } catch (_) {
+    refreshFailed = true;
+  }
+  render();
+}
+
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && screen === 'club' && career) renderClub();
+  if (!document.hidden && screen === 'club' && career) refresh();
 });
 setInterval(() => {
-  if (screen === 'club' && career) renderClub();
+  if (screen !== 'club' || !career) return;
+  if (tab === 'home' && career.nextMatchAt) {
+    $('kickoff-when').textContent = kickoffText(career.nextMatchAt, career.timeZone, nowDate());
+    if (nowDate().getTime() >= Date.parse(career.nextMatchAt)) refresh();
+  }
 }, 30000);
-
-// The loading skeleton's squad rows, so the shape matches the real list.
-$('loading-squad').innerHTML = Array.from({ length: 6 }).map(() => `
-  <li class="list-row">
-    <span class="skeleton sk-pos"></span>
-    <span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span>
-    <span class="skeleton sk-fit"></span>
-    <span class="skeleton sk-ovr"></span>
-  </li>`).join('');
 
 load();

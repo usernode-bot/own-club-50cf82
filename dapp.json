@@ -22,16 +22,21 @@
     {
       "name": "Demo club screen",
       "path": "/?demo=1",
-      "expectText": "Play match",
-      "expectSelector": "[data-formation]",
+      "expectText": "Kick-off",
+      "expectSelector": "nav.tabnav [aria-current=\"page\"]",
       "visual": true,
       "impact": [
         "public/**"
       ]
     },
     {
-      "name": "Demo club screen shows the league table",
-      "path": "/?demo=1",
+      "name": "Demo tactics tab",
+      "path": "/?demo=1#tactics",
+      "expectSelector": "[data-formation]"
+    },
+    {
+      "name": "Demo competition tab",
+      "path": "/?demo=1#competition",
       "expectSelector": "#table-list .list-row"
     },
     {
