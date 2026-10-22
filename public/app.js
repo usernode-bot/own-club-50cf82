@@ -10,7 +10,7 @@ import {
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup, validateLineup, playMatchday,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
-  repairCareer,
+  repairCareer, matchAllowance, slotLabel, MATCHES_PER_DAY,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -40,10 +40,32 @@ let busy = false;
 
 function apiUrl() { return '/api/career' + (DEMO ? '?demo=1' : ''); }
 
+// "Now" for anything that decides what shows: a staging preview can be shown
+// at another moment, and the platform's clock is the one that says which.
+function nowDate() {
+  return window.usernode && window.usernode.now ? window.usernode.now() : new Date();
+}
+
+// The manager's own clock, saved with the career so their match times stay
+// where they were even if their device's zone changes later.
+function deviceZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) { return 'UTC'; }
+}
+
+function ensureZone() {
+  if (!career || career.timeZone) return;
+  // The demo season is always London time, so every viewer sees the same day.
+  career.timeZone = DEMO ? 'Europe/London' : deviceZone();
+}
+
 async function api(method, body) {
   const headers = {};
   if (body) headers['content-type'] = 'application/json';
   if (TOKEN) headers['x-usernode-token'] = TOKEN;
+  // A staging preview's moment, so the server checks the same day as the page.
+  if (window.usernode && window.usernode.previewNow) {
+    headers['x-usernode-now'] = window.usernode.now().toISOString();
+  }
   const res = await fetch(apiUrl(), {
     method,
     headers,
@@ -126,6 +148,7 @@ async function load() {
     } else {
       career = repaired;
       version = answer.data.version;
+      ensureZone();
       screen = 'club';
       try {
         render();
@@ -229,6 +252,7 @@ async function startCareer() {
     if (status !== 200) throw new Error('HTTP ' + status);
     career = data.career;
     version = data.version;
+    ensureZone();
     screen = 'club';
     render();
   } catch (err) {
@@ -253,6 +277,53 @@ function playerStatus(p, starters) {
   if (p.yellow > 0 && p.injury <= 0) parts.push(p.yellow + (p.yellow === 1 ? ' yellow card' : ' yellow cards'));
   if (p.goals > 0) parts.push(p.goals + (p.goals === 1 ? ' goal' : ' goals'));
   return parts.join(', ');
+}
+
+// The wall-clock time where the manager is, e.g. "11:42 am".
+function clockText(date, zone) {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit' })
+      .format(date).toLowerCase();
+  } catch (_) {
+    return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date).toLowerCase();
+  }
+}
+
+// What the note under Play match says while the next match is not open.
+function matchWaitText(allowance, zone, now) {
+  if (allowance.playedToday >= MATCHES_PER_DAY) {
+    return "Today's " + MATCHES_PER_DAY + ' matches are played. Next match at 9 am tomorrow.';
+  }
+  const next = allowance.nextSlot;
+  let text = 'Next match at ' + slotLabel(next.hour) + (next.tomorrow ? ' tomorrow' : '')
+    + '. It is ' + clockText(now, zone) + ' where you are';
+  if (allowance.playedToday > 0) {
+    text += ', and ' + allowance.playedToday + " of today's " + MATCHES_PER_DAY + ' matches '
+      + (allowance.playedToday === 1 ? 'is' : 'are') + ' played.';
+  } else {
+    text += '.';
+  }
+  return text;
+}
+
+// Play match is the screen's one action: disabled until the day's next slot.
+function renderPlayGate(zone, now) {
+  const allowance = matchAllowance(career.plays, now, zone);
+  const note = $('play-note');
+  const btn = $('play-btn');
+  btn.hidden = false;
+  if (allowance.canPlay) {
+    btn.disabled = false;
+    note.hidden = true;
+    note.classList.remove('is-wait');
+  } else {
+    btn.disabled = true;
+    const text = matchWaitText(allowance, zone, now);
+    // The note refreshes on a timer: leave it alone when it says the same.
+    if (note.textContent !== text) note.textContent = text;
+    note.classList.add('is-wait');
+    note.hidden = false;
+  }
 }
 
 function renderClub() {
@@ -286,9 +357,8 @@ function renderClub() {
     $('next-away-name').textContent = displayName(away);
     $('next-venue').textContent = next.venue;
     $('next-label').textContent = 'Next match';
-    $('play-note').hidden = true;
-    $('play-btn').hidden = false;
-    $('play-btn').disabled = false;
+    ensureZone();
+    renderPlayGate(career.timeZone, nowDate());
   } else {
     $('next-card').hidden = true;
     $('season-card').hidden = false;
@@ -739,10 +809,18 @@ $('sheet-bench').addEventListener('click', (e) => {
 // ── Playing a match ──────────────────────────────────────────────────────
 function playMatch() {
   if (!career || busy) return;
-  const check = validateLineup(career);
   const note = $('play-note');
+  const at = nowDate();
+  const allowance = matchAllowance(career.plays, at, career.timeZone);
+  // The screen may be stale: another tab, or a slot that is not open yet.
+  if (!allowance.canPlay) {
+    renderClub();
+    return;
+  }
+  const check = validateLineup(career);
   if (!check.ok) {
     note.textContent = check.message;
+    note.classList.remove('is-wait');
     note.hidden = false;
     return;
   }
@@ -750,6 +828,8 @@ function playMatch() {
   busy = true;
   try {
     playMatchday(career);
+    career.plays = (Array.isArray(career.plays) ? career.plays : [])
+      .concat(at.toISOString()).slice(-MATCHES_PER_DAY);
     screen = 'report';
     render();
     save();
@@ -920,10 +1000,34 @@ async function saveNow() {
       if (reloaded) {
         career = reloaded;
         version = res.data.version;
+        ensureZone();
         saveFailed = false;
         render();
         return;
       }
+    }
+    // The server refused a matchday for the day's allowance. The career goes
+    // back to what was saved, and the club screen says why.
+    if (status === 400 && data && data.error === 'match_limit') {
+      const res = await api('GET');
+      const reloaded = res.status === 200 && res.data && res.data.career
+        ? repairCareer(res.data.career) : null;
+      if (reloaded) {
+        career = reloaded;
+        version = res.data.version;
+        ensureZone();
+      }
+      saveFailed = false;
+      screen = 'club';
+      render();
+      const note = $('play-note');
+      if (note) {
+        note.textContent = data.message;
+        note.classList.add('is-wait');
+        note.hidden = false;
+      }
+      if ($('save-error')) $('save-error').hidden = true;
+      return;
     }
     if (status === 200 && data && data.version) {
       version = data.version;
@@ -1017,6 +1121,15 @@ $('squad-list').addEventListener('keydown', (e) => {
 });
 $('start-career').addEventListener('click', startCareer);
 $('retry-btn').addEventListener('click', load);
+
+// The wait line opens by itself when a match time passes, or when the manager
+// comes back to the app.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && screen === 'club' && career) renderClub();
+});
+setInterval(() => {
+  if (screen === 'club' && career) renderClub();
+}, 30000);
 
 // The loading skeleton's squad rows, so the shape matches the real list.
 $('loading-squad').innerHTML = Array.from({ length: 6 }).map(() => `

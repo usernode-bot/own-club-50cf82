@@ -584,6 +584,10 @@ export function repairCareer(state) {
     roles,
     lineup,
     matchday,
+    // Today's match times, kept by the server. A career saved before this
+    // field existed counts as none played today. The zone is the page's to
+    // send: the engine cannot know the manager's clock.
+    plays: Array.isArray(state.plays) ? state.plays.filter(isIsoString).slice(-MATCHES_PER_DAY) : [],
     finished: Boolean(state.finished),
     lastReport: reportOk ? report : null,
   };
@@ -1114,6 +1118,105 @@ export function playMatchday(state) {
   return reports;
 }
 
+// ── The daily match allowance ────────────────────────────────────────────
+// Three matchdays a day open on the manager's own clock, at mealtimes. The
+// page gates Play match with this, and the server re-checks it when a career
+// is saved, so no reload, second tab or second device adds a fourth. Times
+// are read in the career's saved IANA zone, so 9 am stays 9 am through a
+// daylight-saving change. Nothing here reads the clock itself: `now` and
+// `zone` are arguments.
+export const MATCH_SLOTS = [9, 15, 21];
+export const MATCHES_PER_DAY = 3;
+
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function isIsoString(value) {
+  return typeof value === 'string' && ISO_INSTANT.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+export function validTimeZone(zone) {
+  if (typeof zone !== 'string' || !zone) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// The wall clock in `zone`: the local day as YYYY-MM-DD, and the hour and
+// minute (h23, so midnight is 0). An unusable zone reads as UTC.
+export function localClock(date, zone) {
+  const tz = validTimeZone(zone) ? zone : 'UTC';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(date);
+  const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+  return {
+    day: get('year') + '-' + get('month') + '-' + get('day'),
+    hour: Number(get('hour')),
+    minute: Number(get('minute')),
+  };
+}
+
+// '9 am', '3 pm', '9 pm'.
+export function slotLabel(hour) {
+  if (hour < 12) return hour + ' am';
+  if (hour === 12) return '12 pm';
+  return (hour - 12) + ' pm';
+}
+
+// What today allows. `open` is how many of the day's slots have passed, so a
+// time that has passed stays open until local midnight.
+export function matchAllowance(plays, now, zone) {
+  const clock = localClock(now, zone);
+  const today = (Array.isArray(plays) ? plays : [])
+    .filter(isIsoString)
+    .filter((iso) => localClock(new Date(iso), zone).day === clock.day);
+  const open = MATCH_SLOTS.filter((hour) => hour <= clock.hour).length;
+  return {
+    day: clock.day,
+    hour: clock.hour,
+    minute: clock.minute,
+    playedToday: today.length,
+    open,
+    canPlay: today.length < open,
+    nextSlot: open < MATCHES_PER_DAY
+      ? { hour: MATCH_SLOTS[open], tomorrow: false }
+      : { hour: MATCH_SLOTS[0], tomorrow: true },
+  };
+}
+
+// The server's check on a save: how many matchdays the incoming state has
+// played beyond the stored one, and whether the day still has room for them.
+// Returns the refusal message (or null) and the plays list to store.
+export function matchLimitError(stored, incoming, now, zone) {
+  const storedPlays = (Array.isArray(stored && stored.plays) ? stored.plays : []).filter(isIsoString).slice(-MATCHES_PER_DAY);
+  const allowance = matchAllowance(storedPlays, now, zone);
+  const sameSeason = ((incoming && incoming.season) || 1) === ((stored && stored.season) || 1);
+  const advanced = Math.max(0, sameSeason
+    ? (incoming.matchday || 0) - (stored.matchday || 0)
+    : (incoming.matchday || 0));
+  const plays = advanced > 0
+    ? storedPlays.concat(Array.from({ length: advanced }, () => now.toISOString())).slice(-MATCHES_PER_DAY)
+    : storedPlays;
+  if (advanced === 0 || allowance.playedToday + advanced <= allowance.open) {
+    return { message: null, plays };
+  }
+  if (allowance.playedToday >= MATCHES_PER_DAY) {
+    return { message: "Today's " + MATCHES_PER_DAY + ' matches are already played. The next one is at '
+      + slotLabel(MATCH_SLOTS[0]) + ' tomorrow.', plays: storedPlays };
+  }
+  const hour = MATCH_SLOTS[Math.min(allowance.open, MATCHES_PER_DAY - 1)];
+  return { message: 'The ' + slotLabel(hour) + ' match is not open yet.', plays: storedPlays };
+}
+
 // ── A career ─────────────────────────────────────────────────────────────
 function squadsFor(seed, clubIds, division) {
   const squads = {};
@@ -1157,6 +1260,9 @@ export function buildInitialState(clubId, managerName, seed) {
     roles: rolesFor(squads),
     lineup: [],
     matchday: 0,
+    // No match played yet today, on the manager's clock (the server saves
+    // the zone the first time the page sends one).
+    plays: [],
     finished: false,
     lastReport: null,
   };
@@ -1369,9 +1475,12 @@ export function startNextSeason(state) {
     if (state.roles && state.roles[p.id]) next.roles[p.id] = state.roles[p.id];
   }
   next.lineup = autoLineup(next.squads[next.clubId], next.tactics.formation, next.roles);
-  // The wallet and the purchase belong to the career, not the season.
+  // The wallet, the purchase, the day's matches and the manager's clock
+  // belong to the career, not the season.
   if (state.wallet) next.wallet = { ...state.wallet };
   if (state.purchase) next.purchase = { ...state.purchase };
+  next.plays = Array.isArray(state.plays) ? state.plays.slice(-MATCHES_PER_DAY) : [];
+  if (state.timeZone) next.timeZone = state.timeZone;
   return next;
 }
 
