@@ -70,7 +70,12 @@ function render() {
 // brackets name the exact failure in a report.
 const LOAD_CAUSE = {
   signin: 'Your Homeroom sign-in has run out. Close Own Club and open it again from Homeroom.',
-  server: (code) => 'The server could not read your career (' + code + '). Try again in a moment.',
+  server: (data, status) => {
+    const parts = [(data && data.error) || 'HTTP ' + status];
+    if (data && typeof data.code === 'string' && data.code) parts.push('database ' + data.code);
+    if (data && typeof data.requestId === 'string' && data.requestId) parts.push('ref ' + data.requestId);
+    return 'The server could not read your career (' + parts.join(', ') + '). Try again in a moment.';
+  },
   network: 'Own Club could not reach the server. Check your connection, then press Retry.',
   shown: 'Your saved career was read but could not be shown on this screen (career_unreadable).',
 };
@@ -103,7 +108,7 @@ async function load() {
     }
     if (answer.status === 401) cause = LOAD_CAUSE.signin;
     else if (answer.status !== 200 || !answer.data || !answer.data.career) {
-      cause = LOAD_CAUSE.server((answer.data && answer.data.error) || 'HTTP ' + answer.status);
+      cause = LOAD_CAUSE.server(answer.data, answer.status);
     }
   }
 
