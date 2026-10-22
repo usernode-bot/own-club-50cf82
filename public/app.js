@@ -11,6 +11,7 @@ import {
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
   repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
+  moneyFields, creditsForResult, GROUND_CAPACITY, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -209,6 +210,9 @@ for (const c of CLUBS) CLUB_PREVIEW[c.id] = clubSummary(1, c, GROUPS[clubToGroup
 
 const usdc = (n) => Number(n).toLocaleString('en-US') + ' USDC';
 const credits = (n) => Number(n).toLocaleString('en-US') + ' Club credits';
+const num = (n) => Number(n).toLocaleString('en-US');
+// A figure with an explicit direction: +50, −250, 0.
+const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + num(Math.abs(n));
 
 const STAR_PATH = 'M12 3.2l2.7 5.47 6.04.88-4.37 4.26 1.03 6.02L12 16.99l-5.4 2.84 1.03-6.02L3.26 9.55l6.04-.88z';
 
@@ -455,6 +459,12 @@ function renderClub() {
             : 'You stay in ' + to + '.');
     }
     bits.push('The board asked you to ' + club.objective.toLowerCase() + '. That was ' + (okay ? 'met.' : 'not met.'));
+    // The sponsor's own target is settled at the rollover, not by the board.
+    const settle = moneyFields(career);
+    const sponsorMet = objectiveMet(me.rank, settle.sponsor.target, divisionClubIds(career).length);
+    bits.push(sponsorMet
+      ? settle.sponsor.name + '\'s target is met: Start next season pays ' + num(settle.sponsor.fee) + ' Club credits.'
+      : settle.sponsor.name + '\'s target was missed, so no sponsor fee is paid.');
     bits.push('You took ' + me.points + ' points from ' + me.played + ' matches.');
     if (outcome.joinsNewLeague) bits.push('Next season the Coastal League becomes three tiers, and your club starts in ' + to + '.');
     $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + place;
@@ -561,12 +571,39 @@ function renderClub() {
       ? 'You bought ' + bought.name + ' for ' + usdc(career.purchase.price) + '. No real payment was taken.'
       : 'No real payment was taken.';
     $('club-credits').textContent = credits(career.credits || 0);
-    $('club-credits-note').textContent = 'Earned after each match: '
-      + CREDIT_REWARDS.win + ' for a win, ' + CREDIT_REWARDS.draw + ' for a draw, '
-      + CREDIT_REWARDS.loss + ' for a loss.';
+    $('club-credits-note').textContent = 'Earned from results ('
+      + CREDIT_REWARDS.win + ' a win, ' + CREDIT_REWARDS.draw + ' a draw, '
+      + CREDIT_REWARDS.loss + ' a loss) and home gates, less ground upkeep.';
   } else {
     $('wallet-sec').hidden = true;
   }
+
+  // Finances: where the club's credits come from and go. The figures arrive
+  // with the career; moneyFields fills any a saved career predates.
+  const money = moneyFields(career);
+  const capacity = GROUND_CAPACITY[clubTier(career)] || GROUND_CAPACITY[3];
+  const seated = Math.min(capacity, money.fans);
+  const size = divisionClubIds(career).length;
+  const sponsor = money.sponsor;
+  const sponsorMet = objectiveMet(me.rank, sponsor.target, size);
+  const fanRate = (r) => Math.round(r * 100);
+  const sponsorNote = sponsor.target + ': ' + (sponsorMet ? 'on track' : 'off track')
+    + ', ' + ordinal(me.rank) + ' of ' + size + '. Paid when you start next season.'
+    + (money.lastSponsor
+      ? ' Last season ' + money.lastSponsor.name + (money.lastSponsor.paid
+        ? ' paid ' + num(money.lastSponsor.fee) + '.'
+        : ' missed its target.')
+      : '');
+  $('finance-sec').hidden = false;
+  $('finance-season').textContent = 'Season ' + (career.season || 1);
+  $('finance-list').innerHTML = `
+    <li class="list-row"><span class="nm">Fans<small>Wins add ${fanRate(FAN_CHANGE.win)}%, draws ${fanRate(FAN_CHANGE.draw)}%, losses take ${fanRate(-FAN_CHANGE.loss)}%.</small></span><span class="price">${num(money.fans)}</span></li>
+    <li class="list-row"><span class="nm">Home gate<small>${num(seated)} of ${num(capacity)} seats at ${TICKET_PRICE} Club credits. Away matches earn no gate.</small></span><span class="price">${num(seated * TICKET_PRICE)}</span></li>
+    <li class="list-row"><span class="nm">Gate this season<small>${money.finance.homeGames
+      ? money.finance.homeGames + (money.finance.homeGames === 1 ? ' home match' : ' home matches')
+      : 'No home match yet this season'}</small></span><span class="price">${num(money.finance.gate)}</span></li>
+    <li class="list-row"><span class="nm">Ground upkeep this season<small>${GROUND_UPKEEP} Club credits every matchday, home or away</small></span><span class="price">${money.finance.upkeep ? '−' + num(money.finance.upkeep) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Sponsor: ${esc(sponsor.name)}<small>${esc(sponsorNote)}</small></span><span class="price">${num(sponsor.fee)}</span></li>`;
 
   // Selling the club: the price comes from the division it is in today, and
   // the money stays in the manager's wallet for their next club.
@@ -1052,6 +1089,29 @@ function renderReport() {
     statRow('Red cards', pick(s.red)[0], pick(s.red)[1]),
   ];
   $('report-stats').innerHTML = rows.join('');
+
+  // Club finances: what this match earned and cost, for a report saved with
+  // them. A report from before they existed keeps the section hidden.
+  const fin = r.finance;
+  $('report-finance-sec').hidden = !fin;
+  if (fin) {
+    const resultCredits = creditsForResult(
+      fin.result === 'win' ? 1 : 0,
+      fin.result === 'loss' ? 1 : 0
+    );
+    const gateNote = fin.venue === 'Home'
+      ? num(fin.attendance) + ' fans at ' + fin.price + ' each'
+      : 'Away match: no gate';
+    const upkeepNote = fin.upkeep < fin.upkeepDue
+      ? fin.upkeepDue + ' due; the balance never goes below 0'
+      : '';
+    $('report-finance').innerHTML = `
+      <li class="list-row"><span class="nm">Result<small>${fin.result === 'win' ? 'A win' : fin.result === 'loss' ? 'A loss' : 'A draw'}</small></span><span class="price">${signed(resultCredits)}</span></li>
+      <li class="list-row"><span class="nm">Gate<small>${gateNote}</small></span><span class="price">${signed(fin.gate)}</span></li>
+      <li class="list-row"><span class="nm">Ground upkeep${upkeepNote ? '<small>' + upkeepNote + '</small>' : ''}</span><span class="price">${fin.upkeep ? '−' + num(fin.upkeep) : '0'}</span></li>
+      <li class="list-row net"><span class="nm">Net</span><span class="price">${signed(fin.net)}</span></li>
+      <li class="list-row"><span class="nm">Fans<small>Now ${num(fin.fansAfter)}</small></span><span class="price">${signed(fin.fansAfter - fin.fansBefore)}</span></li>`;
+  }
 
   $('report-ratings-team').textContent = ownClub.name;
   const ratings = r.ratings[ownSide] || {};

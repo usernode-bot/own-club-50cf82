@@ -40,6 +40,11 @@
       "expectText": "Sell Harbourside"
     },
     {
+      "name": "Demo club shows its finances",
+      "path": "/?demo=1",
+      "expectText": "Ground upkeep this season"
+    },
+    {
       "name": "Demo tactics tab",
       "path": "/?demo=1#tactics",
       "expectSelector": "[data-formation]"

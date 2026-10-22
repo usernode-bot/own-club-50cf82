@@ -9,6 +9,7 @@ import {
   buildInitialState, buildFixtures, buildSquad, buildDemoState,
   leagueTable, playMatchday, objectiveMet, clubSummary, defaultRole, autoLineup,
   openingBalance, CREDIT_REWARDS, creditsForResult,
+  GROUND_CAPACITY, TICKET_PRICE, clubTier,
 } from '../public/engine.js';
 
 const avgOverall = (squad) => squad.reduce((s, p) => s + p.overall, 0) / squad.length;
@@ -364,11 +365,15 @@ test('a career starts with no Club credits and earns them from its own result', 
     (r) => r.home.id === state.clubId || r.away.id === state.clubId
   );
   const atHome = own.home.id === state.clubId;
-  const expected = creditsForResult(
+  const f = state.lastReport.finance;
+  const result = creditsForResult(
     atHome ? own.homeGoals : own.awayGoals,
     atHome ? own.awayGoals : own.homeGoals
   );
-  assert.equal(state.credits, expected);
+  // The result, the home gate (nothing away), less the ground's upkeep.
+  const gate = atHome ? Math.min(GROUND_CAPACITY[clubTier(state)], f.fansBefore) * TICKET_PRICE : 0;
+  assert.equal(f.gate, gate);
+  assert.equal(state.credits, result + gate - f.upkeep);
   // Only the manager's club keeps a balance: the other clubs earn nothing.
   for (const id of Object.keys(state.squads)) {
     if (id !== state.clubId) assert.equal(state.squads[id].credits, undefined);
@@ -389,9 +394,10 @@ test('the staging demo shows Harbourside third in Division 1 with 900 USDC', () 
   assert.equal(demo.purchase.clubId, 'harbourside');
   assert.equal(demo.purchase.price, 100);
   assert.equal(demo.purchase.demo, true);
-  // 9 wins, 5 draws and 3 losses in its 17 matchdays.
-  assert.equal(demo.credits, 9 * CREDIT_REWARDS.win + 5 * CREDIT_REWARDS.draw + 3 * CREDIT_REWARDS.loss);
-  assert.equal(demo.credits, 605);
+  // Its 17 matchdays: 9 wins, 5 draws and 3 losses, plus the home gates its
+  // own season totals recorded, less ground upkeep.
+  const results = 9 * CREDIT_REWARDS.win + 5 * CREDIT_REWARDS.draw + 3 * CREDIT_REWARDS.loss;
+  assert.equal(demo.credits, results + demo.finance.gate - demo.finance.upkeep);
 });
 
 test('Club credits stay with the club when the season rolls over', () => {
@@ -400,7 +406,8 @@ test('Club credits stay with the club when the season rolls over', () => {
   const earned = state.credits;
   const next = startNextSeason(state);
   assert.equal(next.matchday, 0);
-  assert.equal(next.credits, earned);
+  // The balance carries, plus the sponsor fee when its target was met.
+  assert.equal(next.credits, earned + (next.lastSponsor.paid ? next.lastSponsor.fee : 0));
 });
 
 test('the wallet a first-time manager is given, and the one an earlier career kept', () => {

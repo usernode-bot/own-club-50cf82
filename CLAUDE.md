@@ -148,8 +148,22 @@ them, and a sale deletes the career so they end with it. `PUT /api/career` keeps
 the stored balance whatever the page sends. Nothing spends them yet; the player
 market, academy, stadium upgrades and training ground will. Home shows the
 balance as the second row of the Wallet section, and that section's tag reads
-"Staging mock" rather than "Dummy USDC (staging mock)". Facility income and costs
-(tianbuyung's lists) come with the stadium and facilities features.
+"Staging mock" rather than "Dummy USDC (staging mock)".
+
+The finances are Club credits only; the wallet and Dummy USDC are never
+touched. A career has fans (`state.fans`, seeded by tier at 15,000 / 6,000 /
+2,500 and carried across seasons), which move after each of the club's matches
+(+5% win, +2% draw, −3% loss, floored at 0). Only a home match earns a gate:
+the smaller of the fans and the ground's capacity (30,000 / 12,000 / 5,000 by
+tier) times 5 credits a seat; away matches earn nothing. Every club matchday
+pays a flat ground upkeep of 250 credits, home or away, never taking the
+balance below 0. The engine's `moneyFields` fills these for an older career and
+`playMatchday` applies them, so catch-up, a watched kick-off and the demo all
+earn the same. Each season has one sponsor (`state.sponsor`: name, target, fee)
+chosen deterministically at purchase and at every rollover; when its target
+(reusing the board objective's wording) was met, `startNextSeason` pays its fee
+once and records the result in `state.lastSponsor`. Upkeep is a placeholder
+until stadium and facility buildings arrive and scale it.
 
 The ten original clubs make up most of Division 1; the other 152 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with

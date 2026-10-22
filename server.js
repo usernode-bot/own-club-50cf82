@@ -572,21 +572,23 @@ app.put('/api/career', async (req, res) => {
     if (check === 'rollover' || (!stored.finished && !nextMatchAt)) {
       nextMatchAt = e.slotAfter(req.now, zone).toISOString();
     }
+    // The browser never sets the money: a career that has a wallet keeps the
+    // one already stored, and a career without one cannot gain one. Club
+    // credits, fans, the sponsor and this season's totals are the server's
+    // too. A played match adds them; a rollover settles the sponsor fee from
+    // the stored finished season, so the page cannot award itself one.
+    const money = check === 'rollover' ? e.seasonEndMoney(stored) : e.moneyFields(stored);
     const saved = {
       ...state,
+      ...money,
       plays: Array.isArray(stored.plays) ? stored.plays : [],
       nextMatchAt,
       timeZone: zone,
     };
     const { rows } = await pool.query(
-      // The browser never sets the money: a career that has a wallet keeps
-      // the one already stored, and a career without one cannot gain one. Club
-      // credits are the server's too: only a played match adds to them, so the
-      // stored balance is kept whatever the page sends.
       `UPDATE careers SET state = (CASE WHEN careers.state ? 'wallet'
           THEN $3::jsonb || jsonb_build_object('wallet', careers.state->'wallet', 'purchase', careers.state->'purchase')
-          ELSE $3::jsonb - 'wallet' - 'purchase' END)
-          || jsonb_build_object('credits', COALESCE(careers.state->'credits', '0'::jsonb)),
+          ELSE $3::jsonb - 'wallet' - 'purchase' END),
         version = version + 1, updated_at = now()
         WHERE user_id = $1 AND is_demo = $2 AND version = $4
         RETURNING version`,
