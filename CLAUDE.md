@@ -124,10 +124,18 @@ quietly when a kick-off passes.
 One manager per Division 3 club: the public `club_owners` table
 (`club_id` primary key, `user_id`) records who bought a club. `GET /api/career`
 sends taken ids with the shop, `POST` claims a club in the same transaction
-that saves the career (409 `owned` if taken), and `DELETE` or a replacement
-career frees it. Careers that predate the table are grandfathered on boot, so
-nobody loses a club; a club several managers already share stays with all of
-them. Staging seeds two fake owners in Division 3 Group A.
+that saves the career (409 `owned` if taken, 409 `has_club` while a career
+exists), and a sale (`DELETE`) frees it. Careers that predate the table are
+grandfathered on boot, so nobody loses a club; a club several managers already
+share stays with all of them. Staging seeds two fake owners in Division 3 Group
+A.
+
+Selling is how a career ends. `DELETE /api/career` pays the club's sale value
+into the person's wallet (`wallets`, one row per person) in the same
+transaction that frees the club and deletes the career, and the New career
+screen shows the kept balance. The sale value comes from the division the club
+is in when it is sold: `SALE_VALUE` in `server.js` pays 900/300/100 for
+Divisions 1/2/3.
 
 The ten original clubs make up most of Division 1; the other 152 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
@@ -214,9 +222,14 @@ Re-theme by changing the token values there, keeping every text pair at
 ## App-specific conventions
 
 - Dummy USDC is a mock: no payment, wallet or crypto integration. The club
-  price and the starting balance live only in `server.js` (`CLUB_PRICE`,
-  `STARTING_BALANCE`); the browser never sends an amount, and `PUT /api/career`
-  never changes `wallet` or `purchase`.
+  price, the starting balance and the sale values live only in `server.js`
+  (`CLUB_PRICE`, `STARTING_BALANCE`, `SALE_VALUE`). The server owns the
+  `wallets` table (staging:private) and changes a balance only on a purchase
+  (debit, inside `POST`'s transaction) or a sale (credit, inside `DELETE`'s).
+  The browser never sends an amount, `PUT /api/career` never changes money, and
+  `state.wallet` in a career is only a display copy written at purchase. A
+  first-time manager's row is seeded with `STARTING_BALANCE`; careers saved
+  before the table grandfather their `state.wallet.balance` on boot.
 - The pyramid is capped at three tiers and 162 clubs (the early-stage maximum):
   no Division 4. The shop lists Division 3 clubs only, and a manager owns one
   club at a time. Selling a club, owning more than one and real USDC come

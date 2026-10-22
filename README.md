@@ -11,7 +11,13 @@ season takes about twelve days. Squads tire, pick up cards and injuries, and the
 group table builds up as the season goes.
 
 A Division 3 club has one manager, so a taken club shows as Taken in the shop.
-A club comes free when its manager starts a new career.
+A club comes free when its manager sells it.
+
+Starting a new career means selling your club. The sale pays Dummy USDC into a
+wallet you keep: 100 in Division 3, 300 in Division 2 and 900 in Division 1, so
+a club taken up the league is worth more than you paid for it. The money stays
+in your wallet after you buy your next club, and a first-time manager still
+starts with 1,000 USDC.
 
 The Coastal League has three tiers and 162 fictional clubs. Division 1 is one
 group of 18; Divisions 2 and 3 have four groups each, A to D, of 18. At the end
@@ -23,8 +29,10 @@ the same club and players into its new group. Lower tiers start with weaker
 players.
 
 Dummy USDC is a mock: there is no crypto wallet, no payment and no real money
-anywhere in the app. The club price and the starting balance live only in
-`server.js`, and a save never changes them.
+anywhere in the app. The club price and the sale values live only in
+`server.js`, which owns the `wallets` table and the only two places a balance
+changes: a purchase debits it and a sale credits it. The browser never sends an
+amount, and a save never changes one.
 
 There is no sign-in of its own: the app runs on Homeroom, which tells it who is
 signed in, and keeps each person's career in its own Postgres table.
@@ -41,9 +49,10 @@ signed in, and keeps each person's career in its own Postgres table.
 - `public/index.html` and `public/screens.css` carry the drawn club screen and
   match report; `public/app.css` adds the pitch canvas, the player sheet and
   the rest of the interaction.
-- `server.js` boots the `careers` table, serves the API, the shop's price and
-  starting balance, the `club_owners` table (one manager per club), and the
-  demo. A career saved by an earlier version of the
+- `server.js` boots the `careers` table, serves the API, the shop's price, the
+  balances and sale values, the `club_owners` table (one manager per club), the
+  `wallets` table (the money a person keeps between careers, credited on a
+  sale), and the demo. A career saved by an earlier version of the
   app passes through `repairCareer` in `engine.js` as it loads, which fills in
   only what is missing, so it still opens. A career saved in the old eight
   divisions finishes its season and joins the three tiers at Start next

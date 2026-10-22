@@ -209,6 +209,40 @@ export function purchaseError(clubId, balance, price) {
   return null;
 }
 
+// The tier the manager's club plays in today, which sets what a sale pays.
+// A version 3 career knows the division it is in; a version 2 career's old
+// division maps the way its rollover maps it (Division 1 stays, Division 2
+// stays, every other division becomes Division 3). A version 1 career is the
+// old ten-club league, which became Division 1.
+export function clubTier(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return 1;
+  if (state.version >= 3) {
+    const known = Array.isArray(state.groups) && state.groups[state.groupIndex];
+    const division = state.division;
+    return known && Number.isInteger(division) && division >= 1 && division <= TIER_COUNT
+      ? division : 1;
+  }
+  if (state.version >= 2) {
+    if (state.division === 1) return 1;
+    if (state.division === 2) return 2;
+    return 3;
+  }
+  return 1;
+}
+
+// What selling the club pays, by the tier it is in when it is sold. The
+// values are the server's; a tier with no value pays nothing.
+export function saleValue(state, values) {
+  const value = values ? values[clubTier(state)] : null;
+  return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+// The money a person brings to the shop: the wallet already stored for them,
+// or the starting balance a first-time manager is given.
+export function openingBalance(stored, startingBalance) {
+  return Number.isInteger(stored) && stored >= 0 ? stored : startingBalance;
+}
+
 export const MENTALITIES = {
   Defensive: { att: 0.86, mid: 0.98, def: 1.12 },
   Balanced: { att: 1.0, mid: 1.0, def: 1.0 },

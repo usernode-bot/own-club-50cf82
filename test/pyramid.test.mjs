@@ -8,6 +8,7 @@ import {
   divisionClubIds, placeName, seasonSeed, seasonOutcome, nextPlacement, startNextSeason,
   buildInitialState, buildFixtures, buildSquad, buildDemoState,
   leagueTable, playMatchday, objectiveMet, clubSummary, defaultRole, autoLineup,
+  openingBalance,
 } from '../public/engine.js';
 
 const avgOverall = (squad) => squad.reduce((s, p) => s + p.overall, 0) / squad.length;
@@ -362,4 +363,18 @@ test('the staging demo shows Harbourside third in Division 1 with 900 USDC', () 
   assert.equal(demo.purchase.clubId, 'harbourside');
   assert.equal(demo.purchase.price, 100);
   assert.equal(demo.purchase.demo, true);
+});
+
+test('the wallet a first-time manager is given, and the one an earlier career kept', () => {
+  // No wallet row yet: a first-time manager gets the starting balance.
+  assert.equal(openingBalance(undefined, 1000), 1000);
+  assert.equal(openingBalance(null, 1000), 1000);
+  assert.equal(openingBalance(-5, 1000), 1000);
+  assert.equal(openingBalance(1.5, 1000), 1000);
+  assert.equal(openingBalance('900', 1000), 1000);
+  // A balance kept from an earlier career is the one the shop spends.
+  assert.equal(openingBalance(0, 1000), 0);
+  assert.equal(openingBalance(900, 1000), 900);
+  assert.equal(purchaseError(SHOP_CLUB_IDS[0], openingBalance(null, 1000), 100), null);
+  assert.equal(purchaseError(SHOP_CLUB_IDS[0], openingBalance(0, 1000), 100), 'balance');
 });

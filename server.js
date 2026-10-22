@@ -195,12 +195,21 @@ function demoCareer(e, now) {
 }
 
 // The dummy money: a staging mock, never a real payment. Every new manager is
-// given this much to buy one Division 3 club. The values live here only, so
-// the browser never decides what a club costs or how much is in a wallet.
+// given this much to buy one Division 3 club, and a sale pays back by the tier
+// the club is in. The server owns the wallet in `wallets` and is the only
+// place a balance changes (a purchase debits it, a sale credits it); the
+// browser never sends an amount.
 const CURRENCY = 'Dummy USDC';
 const CLUB_PRICE = 100;
 const STARTING_BALANCE = 1000;
-const SHOP = { price: CLUB_PRICE, startingBalance: STARTING_BALANCE, currency: CURRENCY };
+// What selling pays, by the division the club is in on the day it is sold.
+const SALE_VALUE = { 1: 900, 2: 300, 3: 100 };
+const SHOP = {
+  price: CLUB_PRICE,
+  startingBalance: STARTING_BALANCE,
+  currency: CURRENCY,
+  saleValues: SALE_VALUE,
+};
 
 // ── The career table ─────────────────────────────────────────────────────
 // One row per person (and one demo row per person), holding the whole saved
@@ -262,6 +271,22 @@ async function boot() {
       ('torcross-rovers', 'staging-demo-owner-2')
       ON CONFLICT (club_id) DO NOTHING`);
   }
+  // The money a person keeps across careers. It holds a balance, so it is
+  // staging:private. It has a user_id column, so usernode-user-data.js erases
+  // it and exports it by default.
+  await pool.query(`CREATE TABLE IF NOT EXISTS wallets (
+    user_id text PRIMARY KEY,
+    usdc integer NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("COMMENT ON TABLE wallets IS 'staging:private'");
+  // Careers that already exist keep the balance their career shows: nobody
+  // loses money when the wallet moves out of the career.
+  await pool.query(`INSERT INTO wallets (user_id, usdc)
+    SELECT user_id, round((state->'wallet'->>'balance')::numeric)::integer
+      FROM careers
+     WHERE NOT is_demo AND jsonb_typeof(state->'wallet'->'balance') = 'number'
+    ON CONFLICT (user_id) DO NOTHING`);
 }
 
 // Play every kick-off that has passed since the career's nextMatchAt, using
@@ -369,8 +394,23 @@ app.get('/api/career', async (req, res) => {
       );
       return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP, autoPlayed: out.autoPlayed });
     }
-    // No career yet is an ordinary answer: the page shows New career.
-    return res.json({ career: null, version: 0, demo: false, shop: { ...SHOP, taken: await takenClubs() } });
+    // No career yet is an ordinary answer: the page shows New career, with the
+    // wallet this person already has (a first-time manager gets the starting
+    // balance). A guest gets none.
+    const e = await engine();
+    const wallet = await queryWithRetry(pool, 'SELECT usdc FROM wallets WHERE user_id = $1', [req.user.id]);
+    const stored = wallet.rows[0];
+    return res.json({
+      career: null,
+      version: 0,
+      demo: false,
+      shop: {
+        ...SHOP,
+        taken: await takenClubs(),
+        balance: e.openingBalance(stored && stored.usdc, STARTING_BALANCE),
+        kept: !!stored,
+      },
+    });
   } catch (err) {
     const requestId = crypto.randomUUID().slice(0, 8);
     console.error('career load failed [' + requestId + '] ' + ((err && err.code) || '') + ' ' + (err && err.message));
@@ -378,8 +418,8 @@ app.get('/api/career', async (req, res) => {
   }
 });
 
-// A career that replaces another club gives the old one back to the shop,
-// then passes it on to any other grandfathered manager who still runs it.
+// A sold club goes back to the shop, then passes on to any other grandfathered
+// manager who still runs it.
 async function releaseClub(client, clubId, userId) {
   if (!clubId) return;
   await client.query('DELETE FROM club_owners WHERE club_id = $1 AND user_id = $2', [clubId, userId]);
@@ -400,13 +440,11 @@ app.post('/api/career', async (req, res) => {
   try {
     const e = await engine();
     // The shop and the price are the server's: a forged club or balance in the
-    // request body never gets through.
-    const refusal = e.purchaseError(clubId, STARTING_BALANCE, CLUB_PRICE);
+    // request body never gets through. The balance is checked inside the
+    // transaction, against the wallet that is being debited.
+    const refusal = e.purchaseError(clubId, CLUB_PRICE, CLUB_PRICE);
     if (refusal === 'club') {
       return res.status(400).json({ error: 'club', message: 'That club is not in the shop. Choose a Division 3 club.' });
-    }
-    if (refusal === 'balance') {
-      return res.status(400).json({ error: 'balance', message: 'Your Dummy USDC does not cover this club.' });
     }
     const zone = e.validTimeZone(req.body && req.body.timeZone) ? req.body.timeZone : 'UTC';
     const seed = crypto.randomInt(1, 2147483647);
@@ -414,7 +452,6 @@ app.post('/api/career', async (req, res) => {
     state.managerName = managerName.trim();
     state.timeZone = demo ? 'Europe/London' : zone;
     state.nextMatchAt = e.slotAfter(req.now, state.timeZone).toISOString();
-    state.wallet = { currency: CURRENCY, balance: STARTING_BALANCE - CLUB_PRICE };
     state.purchase = { clubId, price: CLUB_PRICE, at: req.now.toISOString() };
 
     if (demo) {
@@ -437,12 +474,14 @@ app.post('/api/career', async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const old = await client.query(
-        'SELECT club_id FROM careers WHERE user_id = $1 AND is_demo = false',
+      // One club at a time: a manager sells before buying another.
+      const existing = await client.query(
+        'SELECT 1 FROM careers WHERE user_id = $1 AND is_demo = false FOR UPDATE',
         [req.user.id]
       );
-      if (old.rows.length && old.rows[0].club_id && old.rows[0].club_id !== clubId) {
-        await releaseClub(client, old.rows[0].club_id, req.user.id);
+      if (existing.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'has_club', message: 'Sell your club before you buy another.' });
       }
       const claim = await client.query(
         'INSERT INTO club_owners (club_id, user_id) VALUES ($1, $2) ON CONFLICT (club_id) DO NOTHING RETURNING club_id',
@@ -458,6 +497,24 @@ app.post('/api/career', async (req, res) => {
           });
         }
       }
+      // A first-time manager is given the starting balance; the club is paid
+      // for out of the wallet the person keeps between careers.
+      await client.query(
+        'INSERT INTO wallets (user_id, usdc) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING',
+        [req.user.id, STARTING_BALANCE]
+      );
+      const wallet = await client.query('SELECT usdc FROM wallets WHERE user_id = $1 FOR UPDATE', [req.user.id]);
+      const storedBalance = wallet.rows.length ? wallet.rows[0].usdc : STARTING_BALANCE;
+      if (e.purchaseError(clubId, storedBalance, CLUB_PRICE) === 'balance') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'balance', message: 'Your Dummy USDC does not cover this club.' });
+      }
+      const debit = await client.query(
+        'UPDATE wallets SET usdc = usdc - $2, updated_at = now() WHERE user_id = $1 RETURNING usdc',
+        [req.user.id, CLUB_PRICE]
+      );
+      // The career's wallet is a display copy of the row, written here only.
+      state.wallet = { currency: CURRENCY, balance: debit.rows[0].usdc };
       const { rows } = await client.query(
         `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
          VALUES ($1, false, $2, $3, $4, $5, 1)
@@ -553,17 +610,33 @@ app.delete('/api/career', async (req, res) => {
       await pool.query('DELETE FROM careers WHERE user_id = $1 AND is_demo = true', [req.user.id]);
       return res.json({ ok: true });
     }
+    // Selling the club: the sale pays by the tier it is in, into the wallet the
+    // person keeps, and the career ends. One transaction, so a sale is either
+    // paid and complete or not made at all.
+    const e = await engine();
     const client = await pool.connect();
+    let sale = null;
     try {
       await client.query('BEGIN');
       const found = await client.query(
-        'SELECT club_id FROM careers WHERE user_id = $1 AND is_demo = false',
+        'SELECT club_id, state FROM careers WHERE user_id = $1 AND is_demo = false FOR UPDATE',
         [req.user.id]
       );
-      if (found.rows.length && found.rows[0].club_id) {
-        await releaseClub(client, found.rows[0].club_id, req.user.id);
+      if (found.rows.length) {
+        const row = found.rows[0];
+        const price = e.saleValue(row.state, SALE_VALUE);
+        // A career from before the wallet existed is credited the starting
+        // balance as well, so selling never loses the money it never stored.
+        const credit = await client.query(
+          `INSERT INTO wallets (user_id, usdc) VALUES ($1, $2::integer + $3::integer)
+           ON CONFLICT (user_id) DO UPDATE SET usdc = wallets.usdc + $3::integer, updated_at = now()
+           RETURNING usdc`,
+          [req.user.id, STARTING_BALANCE, price]
+        );
+        if (row.club_id) await releaseClub(client, row.club_id, req.user.id);
+        await client.query('DELETE FROM careers WHERE user_id = $1 AND is_demo = false', [req.user.id]);
+        sale = { clubId: row.club_id, price, balance: credit.rows[0].usdc };
       }
-      await client.query('DELETE FROM careers WHERE user_id = $1 AND is_demo = false', [req.user.id]);
       await client.query('COMMIT');
     } catch (err) {
       try { await client.query('ROLLBACK'); } catch (_) {}
@@ -571,7 +644,8 @@ app.delete('/api/career', async (req, res) => {
     } finally {
       client.release();
     }
-    return res.json({ ok: true });
+    // No career is not a second sale: nothing is credited twice.
+    return res.json(sale ? { ok: true, sale } : { ok: true });
   } catch (err) {
     console.error('career delete failed: ' + err.message);
     return res.status(500).json({ error: 'career_delete_failed' });
