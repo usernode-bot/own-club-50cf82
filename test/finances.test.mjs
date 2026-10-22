@@ -8,7 +8,7 @@ import {
   moneyFields, fanChange, sponsorFor, creditsForResult, objectiveMet,
   leagueTable, divisionClubIds, nextPlacement, repairCareer, clubTier,
   FAN_SEED, GROUND_CAPACITY, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
-  SPONSOR_FEES, SPONSOR_TARGETS,
+  SPONSOR_FEES, SPONSOR_TARGETS, MATCHDAY_SALES, matchdaySales,
 } from '../public/engine.js';
 
 const CLUB = GROUPS[8].clubIds[5]; // a Division 3 club
@@ -41,12 +41,75 @@ test('an away match earns no gate', () => {
   assert.equal(f.venue, 'Away');
   assert.equal(f.attendance, 0);
   assert.equal(f.gate, 0);
+  assert.equal(f.shop, 0);
+  assert.equal(f.food, 0);
+  assert.equal(f.hotel, 0);
   assert.equal(state.credits, 1000 + creditsForResult(
     f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0)
     - f.upkeep - f.maintenance - f.wages - f.staffWages);
   assert.equal(f.net, creditsForResult(
     f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0)
+    + f.shop + f.food + f.hotel
     - f.upkeep - f.maintenance - f.wages - f.staffWages);
+});
+
+test('a home crowd spends at the shop, food stand and hotel, by level', () => {
+  const state = careerBefore(CLUB, 9, 'Home');
+  assert.ok(state, 'the career has a home matchday');
+  state.fans = 2700;
+  state.credits = 100000;
+  state.facilities = { ...state.facilities, stadium: 2, shop: 1, food: 1, hotel: 1 };
+  const before = state.credits;
+  playMatchday(state);
+  const f = state.lastReport.finance;
+  assert.equal(f.venue, 'Home');
+  assert.equal(f.attendance, 2700);
+  assert.equal(f.shop, 1080);
+  assert.equal(f.food, 810);
+  assert.equal(f.hotel, 270);
+  assert.equal(f.gate, 2700 * TICKET_PRICE);
+  assert.deepEqual(f.levels, { shop: 1, food: 1, hotel: 1 });
+  assert.deepEqual(f.salesRates, { shop: 4, food: 3, hotel: 1 });
+  assert.equal(f.net, creditsForResult(
+    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0)
+    + f.gate + f.shop + f.food + f.hotel
+    - f.upkeep - f.maintenance - f.wages - f.staffWages);
+  assert.equal(state.credits, before + f.net);
+  assert.equal(f.balanceAfter, state.credits);
+  assert.equal(state.finance.shop, f.shop);
+  assert.equal(state.finance.food, f.food);
+  assert.equal(state.finance.hotel, f.hotel);
+
+  // A higher level earns more from the same crowd.
+  const upgraded = careerBefore(CLUB, 9, 'Home');
+  upgraded.fans = 2700;
+  upgraded.facilities = { ...upgraded.facilities, stadium: 2, shop: 3 };
+  playMatchday(upgraded);
+  assert.equal(upgraded.lastReport.finance.shop, 2700);
+  assert.equal(matchdaySales({ facilities: { ...upgraded.facilities, shop: 3 } }, 0).shop, 0);
+});
+
+test('every sales rate stays below the ticket price and rises with level', () => {
+  for (const key of ['shop', 'food', 'hotel']) {
+    const rates = MATCHDAY_SALES[key];
+    assert.equal(rates.length, 5);
+    rates.forEach((rate, i) => {
+      assert.ok(rate / 10 < TICKET_PRICE, key + ' level ' + (i + 1));
+      if (i) assert.ok(rate > rates[i - 1], key + ' rises with level');
+    });
+  }
+});
+
+test('credits never go below zero with every facility at its top level', () => {
+  const state = buildInitialState(CLUB, 'Test manager', 33);
+  state.credits = 0;
+  state.facilities = { shop: 5, food: 5, hotel: 5, stadium: 5, training: 5, academy: 5 };
+  state.staff = { coach: { name: 'A Coach', season: 1, matchday: 0 } };
+  for (let i = 0; i < 5; i++) {
+    playMatchday(state);
+    assert.ok(state.credits >= 0);
+    assert.equal(state.lastReport.finance.balanceAfter, state.credits);
+  }
 });
 
 test('a home gate is the smaller of the fans and the seats, at 5 each', () => {
@@ -155,7 +218,7 @@ test('a sponsor pays once at the rollover when its target was met', () => {
   assert.equal(next.lastSponsor.name, met.sponsor.name);
   assert.equal(next.sponsor.season, met.season + 1);
   assert.equal(next.sponsor.fee, SPONSOR_FEES[nextPlacement(met).tier]);
-  assert.deepEqual(next.finance, { season: met.season + 1, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 });
+  assert.deepEqual(next.finance, { season: met.season + 1, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 });
   assert.deepEqual(seasonEndMoney(met), {
     credits: next.credits,
     fans: next.fans,
@@ -199,7 +262,7 @@ test('moneyFields fills what a saved career is missing, and leaves a filled one 
   assert.equal(filled.fans, FAN_SEED[clubTier(old)]);
   assert.equal(filled.sponsor.season, old.season);
   assert.equal(filled.lastSponsor, null);
-  assert.deepEqual(filled.finance, { season: old.season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 });
+  assert.deepEqual(filled.finance, { season: old.season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 });
   const repaired = repairCareer(old);
   assert.deepEqual(moneyFields(repaired), filled);
 
@@ -212,4 +275,15 @@ test('moneyFields fills what a saved career is missing, and leaves a filled one 
     finance: state.finance,
   });
   assert.equal(repairCareer(state).fans, state.fans);
+
+  // A finance object from before the shop earned keeps its gate and totals,
+  // and gets 0 for each new income line.
+  const older = JSON.parse(JSON.stringify(state));
+  older.finance = { season: older.season, gate: 400, upkeep: 250, homeGames: 1 };
+  const kept = moneyFields(older).finance;
+  assert.equal(kept.gate, 400);
+  assert.equal(kept.homeGames, 1);
+  assert.equal(kept.shop, 0);
+  assert.equal(kept.food, 0);
+  assert.equal(kept.hotel, 0);
 });

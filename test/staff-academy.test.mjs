@@ -41,7 +41,7 @@ test('the balance never goes below zero when the costs are due', () => {
   const paid = f.upkeep + f.maintenance + f.wages + f.staffWages;
   assert.ok(paid < f.upkeepDue + f.maintenanceDue + f.wagesDue + f.staffDue);
   assert.equal(f.net, creditsForResult(
-    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0) + f.gate - paid);
+    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0) + f.gate + f.shop + f.food + f.hotel - paid);
 });
 
 test('fans never grow past the division limit', () => {

@@ -14,6 +14,7 @@ import {
   moneyFields, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
   STAFF_ROLES, staffFields, staffWagesDue, MAINTENANCE, maintenanceDue,
+  MATCHDAY_SALES, matchdaySales,
   wageBill, playerWage, stadiumSeats, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
 } from './engine.js';
@@ -590,7 +591,7 @@ function renderClub() {
     $('club-credits').textContent = credits(career.credits || 0);
     $('club-credits-note').textContent = 'Earned from results ('
       + CREDIT_REWARDS.win + ' a win, ' + CREDIT_REWARDS.draw + ' a draw, '
-      + CREDIT_REWARDS.loss + ' a loss) and home gates, less upkeep, maintenance and wages.';
+      + CREDIT_REWARDS.loss + ' a loss), home gates and the shop, food stand and hotel, less upkeep, maintenance and wages.';
   } else {
     $('wallet-sec').hidden = true;
   }
@@ -621,17 +622,30 @@ function renderClub() {
       : '');
   $('finance-sec').hidden = false;
   $('finance-season').textContent = 'Season ' + (career.season || 1);
+  // What the home crowd spends at each earning facility, at today's crowd and
+  // its level; the season totals come from the saved career.
+  const levels = facilityLevels(career);
+  const salesNow = matchdaySales(career, seated);
+  const salesRow = (key, name) => `<li class="list-row"><span class="nm">${name} this season<small>${num(salesNow[key])} Club credits from a home crowd of ${num(seated)} at level ${levels[key]}</small></span><span class="price">${num(money.finance[key])}</span></li>`;
+  const lastFin = career.lastReport && career.lastReport.finance;
+  const netRow = lastFin
+    ? `<li class="list-row net"><span class="nm">Net last matchday<small>Matchday ${career.lastReport.matchday}, at ${lastFin.venue === 'Home' ? 'home' : 'away'}.${Number.isInteger(lastFin.balanceAfter) ? ' Your balance is ' + num(lastFin.balanceAfter) + ' Club credits and never goes below 0.' : ''}</small></span><span class="price">${signed(lastFin.net)}</span></li>`
+    : '';
   $('finance-list').innerHTML = `
     <li class="list-row"><span class="nm">Fans<small>Division ${tier} holds at most ${num(capacity)} fans. Wins add ${fanRate(FAN_CHANGE.win)}%, draws ${fanRate(FAN_CHANGE.draw)}%, losses take ${fanRate(-FAN_CHANGE.loss)}%.</small></span><span class="price">${num(money.fans)}</span></li>
     <li class="list-row"><span class="nm">Home gate<small>${num(seated)} of ${num(seats)} seats at ${TICKET_PRICE} Club credits. Away matches earn no gate.</small></span><span class="price">${num(seated * TICKET_PRICE)}</span></li>
     <li class="list-row"><span class="nm">Gate this season<small>${money.finance.homeGames
       ? money.finance.homeGames + (money.finance.homeGames === 1 ? ' home match' : ' home matches')
       : 'No home match yet this season'}</small></span><span class="price">${num(money.finance.gate)}</span></li>
+    ${salesRow('shop', 'Shop')}
+    ${salesRow('food', 'Food stand')}
+    ${salesRow('hotel', 'Hotel')}
     <li class="list-row"><span class="nm">Ground upkeep this season<small>${upkeepDue} Club credits every matchday, home or away</small></span><span class="price">${money.finance.upkeep ? '−' + num(money.finance.upkeep) : '0'}</span></li>
     <li class="list-row"><span class="nm">Maintenance this season<small>${num(maintenanceNow)} Club credits every matchday for facilities above level 1</small></span><span class="price">${money.finance.maintenance ? '−' + num(money.finance.maintenance) : '0'}</span></li>
     <li class="list-row"><span class="nm">Player wages this season<small>${num(wagesNow)} Club credits every matchday for ${squadSize} players</small></span><span class="price">${money.finance.wages ? '−' + num(money.finance.wages) : '0'}</span></li>
     <li class="list-row"><span class="nm">Staff wages this season<small>${num(staffNow)} Club credits every matchday for ${staffCount} staff</small></span><span class="price">${money.finance.staffWages ? '−' + num(money.finance.staffWages) : '0'}</span></li>
-    <li class="list-row"><span class="nm">Sponsor: ${esc(sponsor.name)}<small>${esc(sponsorNote)}</small></span><span class="price">${num(sponsor.fee)}</span></li>`;
+    <li class="list-row"><span class="nm">Sponsor: ${esc(sponsor.name)}<small>${esc(sponsorNote)}</small></span><span class="price">${num(sponsor.fee)}</span></li>
+    ${netRow}`;
 
   // Selling the club: the price comes from the division it is in today, and
   // the money stays in the manager's wallet for their next club.
@@ -664,7 +678,7 @@ let facilityError = null;
 let facilityRetry = null;
 let facilityNew = null;
 
-const creditsNote = () => 'Earned from results and home gates, less upkeep, maintenance and wages.';
+const creditsNote = () => 'Earned from results, home gates and the shop, food stand and hotel, less upkeep, maintenance and wages.';
 
 function facilityRow(f, level) {
   const steps = Array.from({ length: FACILITY_MAX_LEVEL }, (_, i) =>
@@ -1726,14 +1740,28 @@ function renderReport() {
       const note = short(paid, due, label);
       return `<li class="list-row"><span class="nm">${label}${note ? '<small>' + note + '</small>' : ''}</span><span class="price">${paid ? '−' + num(paid) : '0'}</span></li>`;
     };
+    // What the crowd spent at each earning facility. A report saved before
+    // these existed has no shop, so it keeps its old lines.
+    const salesLine = (key, label) => {
+      const rate = fin.salesRates[key];
+      const note = fin.venue === 'Home'
+        ? 'Level ' + fin.levels[key] + ', ' + num(rate) + ' Club credit' + (rate === 1 ? '' : 's') + ' for every 10 fans'
+        : 'Away match: no crowd';
+      return `<li class="list-row"><span class="nm">${label}<small>${note}</small></span><span class="price">${signed(fin[key])}</span></li>`;
+    };
+    const balanceNote = Number.isInteger(fin.balanceAfter)
+      ? '<small>Balance now ' + num(fin.balanceAfter) + ' Club credits</small>' : '';
     $('report-finance').innerHTML = `
       <li class="list-row"><span class="nm">Result<small>${fin.result === 'win' ? 'A win' : fin.result === 'loss' ? 'A loss' : 'A draw'}</small></span><span class="price">${signed(resultCredits)}</span></li>
       <li class="list-row"><span class="nm">Gate<small>${gateNote}</small></span><span class="price">${signed(fin.gate)}</span></li>
+      ${fin.shop != null ? salesLine('shop', 'Shop') : ''}
+      ${fin.food != null ? salesLine('food', 'Food stand') : ''}
+      ${fin.hotel != null ? salesLine('hotel', 'Hotel') : ''}
       <li class="list-row"><span class="nm">Ground upkeep${upkeepNote ? '<small>' + upkeepNote + '</small>' : ''}</span><span class="price">${fin.upkeep ? '−' + num(fin.upkeep) : '0'}</span></li>
       ${fin.maintenanceDue != null ? line('Maintenance', fin.maintenance, fin.maintenanceDue) : ''}
       ${fin.wagesDue != null ? line('Player wages', fin.wages, fin.wagesDue) : ''}
       ${fin.staffDue != null ? line('Staff wages', fin.staffWages, fin.staffDue) : ''}
-      <li class="list-row net"><span class="nm">Net</span><span class="price">${signed(fin.net)}</span></li>
+      <li class="list-row net"><span class="nm">Net${balanceNote}</span><span class="price">${signed(fin.net)}</span></li>
       <li class="list-row"><span class="nm">Fans<small>Now ${num(fin.fansAfter)}</small></span><span class="price">${signed(fin.fansAfter - fin.fansBefore)}</span></li>`;
   }
 
