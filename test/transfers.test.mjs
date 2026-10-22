@@ -30,7 +30,8 @@ test('a matchday pays upkeep and the whole squad its wages, never below zero', (
   const report = state.lastReport.finance;
   assert.equal(report.wagesDue, bill);
   assert.equal(report.net, (report.result === 'win' ? 50 : report.result === 'draw' ? 25 : 10)
-    + report.gate - report.upkeep - report.maintenance - report.wages - report.staffWages);
+    + report.gate + report.shop + report.food + report.hotel
+    - report.upkeep - report.maintenance - report.wages - report.staffWages);
 
   // A club with no credits and no fans can still be paid only what it earned.
   const broke = career(5);

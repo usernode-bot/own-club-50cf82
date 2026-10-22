@@ -164,7 +164,10 @@ bonus adds to the crowd only, never to `state.fans`, and the crowd still cannot
 pass `STADIUM_SEATS` or the division's `FAN_CAP`, so it pays only while the
 ground has empty seats; away matches earn nothing. Home's Home gate row shows
 the extra fans when there are any. Each level above 1 also adds its share of
-`MAINTENANCE` on every matchday, like every other facility. Home shows the
+`MAINTENANCE` on every matchday, like every other facility. The shop, food stand
+and hotel also earn on a home matchday (`MATCHDAY_SALES` and `matchdaySales`:
+Club credits for every 10 fans in the ground, 4/6/10/15/22 at the shop,
+3/5/8/12/18 at the food stand and 1/2/4/7/12 at the hotel, by level). Home shows the
 balance as the second row of the Wallet section, and that section's tag reads
 "Staging mock" rather than "Dummy USDC (staging mock)".
 
@@ -192,7 +195,11 @@ division (30,000 / 12,000 / 5,000, the same figures as `GROUND_CAPACITY`);
 `moneyFields` and the rollover clamp a stored value, and a relegated club drops
 to its new limit. Only a home match earns a gate: the smaller of the fans, the
 stadium's own seats (`STADIUM_SEATS`, 2,000 to 40,000 by level) and the
-division's cap, times 5 credits a seat; away matches earn nothing. Every club
+division's cap, times 5 credits a seat; away matches earn nothing. That same
+home crowd also spends at the shop, food stand and hotel, which pay
+`matchdaySales` on top of the gate and are recorded as `finance.shop`, `food`
+and `hotel` and on the match report with the balance it left (`balanceAfter`);
+away matches earn none of it. Every club
 matchday pays a flat ground upkeep of 250 credits, home or away, then facility
 maintenance (`MAINTENANCE`, nothing at level 1 and 150/500/1,500/4,000 per
 facility at levels 2 to 5, summed by `maintenanceDue`), then player wages

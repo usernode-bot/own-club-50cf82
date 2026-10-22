@@ -237,9 +237,10 @@ export function saleValue(state, values) {
   return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
-// Club credits: the club's own in-game currency, earned by result and by the
-// home gate, less ground upkeep, and kept with the career. Facility upgrades
-// spend them; the player market and training ground will spend them too.
+// Club credits: the club's own in-game currency, earned by result, by the
+// home gate and by what the crowd spends at the shop, food stand and hotel,
+// less ground upkeep, and kept with the career. Facility upgrades spend them;
+// the training ground will spend them too.
 export const CREDIT_REWARDS = { win: 50, draw: 25, loss: 10 };
 
 export function creditsForResult(goalsFor, goalsAgainst) {
@@ -295,6 +296,21 @@ export const MAINTENANCE = { 1: 0, 2: 150, 3: 500, 4: 1500, 5: 4000 };
 export function maintenanceDue(state) {
   const levels = facilityLevels(state);
   return FACILITIES.reduce((sum, f) => sum + (MAINTENANCE[levels[f.key]] || 0), 0);
+}
+
+// What the crowd spends at the shop, the food stand and the hotel on a home
+// matchday: Club credits for every 10 fans in the ground, by facility level.
+export const MATCHDAY_SALES = {
+  shop: [4, 6, 10, 15, 22],
+  food: [3, 5, 8, 12, 18],
+  hotel: [1, 2, 4, 7, 12],
+};
+
+export function matchdaySales(state, attendance) {
+  const levels = facilityLevels(state);
+  const crowd = Number.isInteger(attendance) && attendance > 0 ? attendance : 0;
+  const earned = (key) => Math.floor(crowd * MATCHDAY_SALES[key][levels[key] - 1] / 10);
+  return { shop: earned('shop'), food: earned('food'), hotel: earned('hotel') };
 }
 
 // Every player earns a wage each matchday, worked out from the squad and the
@@ -509,8 +525,11 @@ export function moneyFields(state) {
       maintenance: zeroTotal('maintenance'),
       wages: zeroTotal('wages'),
       staffWages: zeroTotal('staffWages'),
+      shop: zeroTotal('shop'),
+      food: zeroTotal('food'),
+      hotel: zeroTotal('hotel'),
     }
-    : { season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 };
+    : { season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 };
   return { credits, fans, sponsor, lastSponsor, finance };
 }
 
@@ -523,8 +542,9 @@ export function fanChange(fans, goalsFor, goalsAgainst, cap) {
 }
 
 // The club's facilities, each from level 1 to level 5. Upgrading one changes
-// what it says it has; the toilets, parking and VIP room add fans at home and
-// above level 1 every facility adds its maintenance.
+// what it says it has; the toilets, parking and VIP room add fans at home, the
+// shop, food stand and hotel also earn from a home crowd, and every level above
+// the first costs maintenance.
 export const FACILITY_MAX_LEVEL = 5;
 
 export const FACILITIES = [
@@ -1757,9 +1777,9 @@ export function playMatchday(state) {
   const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
   state.lastReport = own;
   // Only the manager's own fixture earns or pays Club credits, from the
-  // manager's side: the result, the home gate, less ground upkeep,
-  // maintenance, player wages and staff wages, each paid only as far as the
-  // balance reaches.
+  // manager's side: the result, the home gate and what the home crowd spends
+  // at the shop, food stand and hotel, less ground upkeep, maintenance, player
+  // wages and staff wages, each paid only as far as the balance reaches.
   if (own) {
     const atHome = own.home.id === state.clubId;
     const goalsFor = atHome ? own.homeGoals : own.awayGoals;
@@ -1771,7 +1791,9 @@ export function playMatchday(state) {
     const seats = stadiumSeats(state);
     const attendance = atHome ? homeCrowd(state, m.fans, fanCap).attendance : 0;
     const gate = attendance * TICKET_PRICE;
-    let left = m.credits + result + gate;
+    const sales = matchdaySales(state, attendance);
+    const levels = facilityLevels(state);
+    let left = m.credits + result + gate + sales.shop + sales.food + sales.hotel;
     const pay = (due) => { const paid = Math.min(due, left); left -= paid; return paid; };
     const upkeep = pay(GROUND_UPKEEP);
     const maintenanceDueNow = maintenanceDue(state);
@@ -1791,6 +1813,9 @@ export function playMatchday(state) {
       maintenance: m.finance.maintenance + maintenance,
       wages: m.finance.wages + wages,
       staffWages: m.finance.staffWages + staffWages,
+      shop: m.finance.shop + sales.shop,
+      food: m.finance.food + sales.food,
+      hotel: m.finance.hotel + sales.hotel,
       homeGames: m.finance.homeGames + (atHome ? 1 : 0),
     };
     own.finance = {
@@ -1801,6 +1826,15 @@ export function playMatchday(state) {
       gate,
       seats,
       fanCap,
+      shop: sales.shop,
+      food: sales.food,
+      hotel: sales.hotel,
+      levels: { shop: levels.shop, food: levels.food, hotel: levels.hotel },
+      salesRates: {
+        shop: MATCHDAY_SALES.shop[levels.shop - 1],
+        food: MATCHDAY_SALES.food[levels.food - 1],
+        hotel: MATCHDAY_SALES.hotel[levels.hotel - 1],
+      },
       upkeep,
       upkeepDue: GROUND_UPKEEP,
       maintenance,
@@ -1809,7 +1843,9 @@ export function playMatchday(state) {
       wagesDue,
       staffWages,
       staffDue,
-      net: result + gate - upkeep - maintenance - wages - staffWages,
+      net: result + gate + sales.shop + sales.food + sales.hotel
+        - upkeep - maintenance - wages - staffWages,
+      balanceAfter: state.credits,
       fansBefore: m.fans,
       fansAfter: state.fans,
     };
@@ -2036,7 +2072,7 @@ export function buildInitialState(clubId, managerName, seed) {
     fans: FAN_SEED[tier],
     sponsor: sponsorFor(seed, 1, tier),
     lastSponsor: null,
-    finance: { season: 1, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 },
+    finance: { season: 1, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 },
     facilities: facilityLevels({}),
     staff: staffFields({}),
     youth: [],
@@ -2300,7 +2336,7 @@ export function seasonEndMoney(state) {
     fans: Math.min(m.fans, fanCap),
     sponsor: sponsorFor(state.seed, next, nextTier),
     lastSponsor: { ...m.sponsor, paid: met },
-    finance: { season: next, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 },
+    finance: { season: next, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 },
   };
 }
 
