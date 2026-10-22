@@ -5,6 +5,7 @@ const { pathToFileURL } = require('url');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const { queryWithRetry, loadFailureBody } = require('./career-db');
+const { buyListing } = require('./transfers-db');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -287,6 +288,39 @@ async function boot() {
       FROM careers
      WHERE NOT is_demo AND jsonb_typeof(state->'wallet'->'balance') = 'number'
     ON CONFLICT (user_id) DO NOTHING`);
+  // The transfer market. It holds fictional players and ids, no names of
+  // people, and no foreign key to the private careers table, so it is public.
+  await pool.query(`CREATE TABLE IF NOT EXISTS transfer_listings (
+    id serial PRIMARY KEY,
+    seller_user_id text NOT NULL,
+    seller_club_id text NOT NULL,
+    player jsonb NOT NULL,
+    asking_price integer NOT NULL CHECK (asking_price BETWEEN 1 AND 1000000),
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query('CREATE INDEX IF NOT EXISTS transfer_listings_seller ON transfer_listings (seller_user_id)');
+  if (IS_STAGING) {
+    // Three obviously fake players from the two fake staging clubs, put back
+    // whenever one has been bought.
+    const seeds = [
+      ['staging-demo-owner-1', 'wrenfield-wanderers', 'Staging Demo Striker', 'ST', 31, 58, 3200],
+      ['staging-demo-owner-2', 'torcross-rovers', 'Staging Demo Midfielder', 'CM', 24, 55, 2400],
+      ['staging-demo-owner-1', 'wrenfield-wanderers', 'Staging Demo Keeper', 'GK', 29, 52, 1500],
+    ];
+    for (const [user, club, name, pos, age, overall, price] of seeds) {
+      const attrs = { pac: overall - 2, pas: overall - 1, sho: overall, def: overall - 3, gk: pos === 'GK' ? overall + 6 : overall - 20 };
+      const player = {
+        id: 'staging-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        name, pos, age, attrs, overall, fitness: 90, morale: 70, injury: 0,
+        goals: 0, assists: 0, apps: 0, yellow: 0, red: 0, captain: false,
+      };
+      await pool.query(`INSERT INTO transfer_listings (seller_user_id, seller_club_id, player, asking_price)
+        SELECT $1, $2, $3::jsonb, $4
+         WHERE NOT EXISTS (
+           SELECT 1 FROM transfer_listings WHERE seller_user_id = $1 AND player->>'name' = $5)`,
+        [user, club, player, price, name]);
+    }
+  }
 }
 
 // Play every kick-off that has passed since the career's nextMatchAt, using
@@ -578,9 +612,23 @@ app.put('/api/career', async (req, res) => {
     // too. A played match adds them; a rollover settles the sponsor fee from
     // the stored finished season, so the page cannot award itself one.
     const money = check === 'rollover' ? e.seasonEndMoney(stored) : e.moneyFields(stored);
+    // The page never decides who is in the squad: a listed, sold or retired
+    // player cannot be brought back by a stale or forged save.
+    const guardedSquad = check === 'rollover'
+      ? e.startNextSeason(stored).squads[stored.clubId]
+      : (stored.squads && Array.isArray(stored.squads[stored.clubId])
+        ? stored.squads[stored.clubId] : state.squads[state.clubId]);
+    const ids = new Set(guardedSquad.map((p) => p.id));
+    let lineup = Array.isArray(state.lineup) ? state.lineup : stored.lineup;
+    if (!Array.isArray(lineup) || lineup.length !== 11 || new Set(lineup).size !== 11
+      || !lineup.every((id) => ids.has(id))) {
+      lineup = e.autoLineup(guardedSquad, (state.tactics && state.tactics.formation) || stored.tactics.formation, state.roles || {});
+    }
     const saved = {
       ...state,
       ...money,
+      squads: { ...(state.squads || {}), [stored.clubId]: guardedSquad },
+      lineup,
       plays: Array.isArray(stored.plays) ? stored.plays : [],
       nextMatchAt,
       timeZone: zone,
@@ -652,6 +700,257 @@ app.post('/api/career/facility', async (req, res) => {
   } catch (err) {
     console.error('facility upgrade failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
     return res.status(500).json({ error: 'facility_upgrade_failed' });
+  }
+});
+
+// ── The transfer market ──────────────────────────────────────────────────
+const TRANSFER_MESSAGES = {
+  player: 'That player is not in your squad.',
+  min: 'Your squad needs at least 11 players.',
+  goalkeeper: 'Your squad needs a goalkeeper.',
+  full: 'Your squad has 40 players, the most a club can have.',
+  squad_full: 'Your squad has 40 players, the most a club can have.',
+  credits: 'Your Club credits do not cover this player and a matchday of wages.',
+  gone: 'This player is no longer on the market.',
+  own_listing: 'That is your own listing. Withdraw it instead.',
+  price: 'An asking price is a whole number from 1 to 1,000,000 Club credits.',
+};
+
+function listingOut(e, row) {
+  const p = row.player || {};
+  const club = e.CLUB_BY_ID[row.seller_club_id];
+  return {
+    id: row.id,
+    player: {
+      name: p.name, pos: p.pos, age: p.age, overall: p.overall, attrs: p.attrs,
+      wage: e.playerWage(p),
+    },
+    price: row.asking_price,
+    club: { id: row.seller_club_id, name: club ? club.name : row.seller_club_id },
+    createdAt: row.created_at,
+  };
+}
+
+app.get('/api/transfers', async (req, res) => {
+  try {
+    const e = await engine();
+    const userId = req.user ? req.user.id : null;
+    const { rows } = await queryWithRetry(
+      pool,
+      `SELECT id, seller_user_id, seller_club_id, player, asking_price, created_at
+         FROM transfer_listings ORDER BY created_at DESC, id DESC LIMIT 200`
+    );
+    const mine = userId ? rows.filter((r) => r.seller_user_id === userId) : [];
+    const listings = userId ? rows.filter((r) => r.seller_user_id !== userId) : rows;
+    return res.json({
+      listings: listings.slice(0, 100).map((r) => listingOut(e, r)),
+      mine: mine.map((r) => listingOut(e, r)),
+    });
+  } catch (err) {
+    console.error('transfers load failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'transfers_load_failed' });
+  }
+});
+
+// Put a player on the market. The player leaves the stored squad in the same
+// version-checked write that inserts the listing.
+app.post('/api/transfers', async (req, res) => {
+  const demo = wantsDemo(req);
+  const { playerId, price } = req.body || {};
+  if (demo) return res.status(409).json({ error: 'demo', message: 'The demo season cannot list players.' });
+  try {
+    const e = await engine();
+    if (typeof playerId !== 'string' || !Number.isInteger(price)) {
+      return res.status(400).json({ error: 'player_or_price', message: TRANSFER_MESSAGES.price });
+    }
+    const found = await pool.query(
+      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = false',
+      [req.user.id]
+    );
+    if (!found.rows.length) return res.status(404).json({ error: 'no_career' });
+    const up = await catchUpAndSave(req.user.id, false, found.rows[0], req.now);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query(
+        'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = false FOR UPDATE',
+        [req.user.id]
+      );
+      if (!locked.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'no_career' });
+      }
+      if (locked.rows[0].version !== up.version) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'version_mismatch' });
+      }
+      const state = e.repairCareer(locked.rows[0].state);
+      if (!state) {
+        await client.query('ROLLBACK');
+        return res.status(500).json({ error: 'transfer_listing_failed' });
+      }
+      const out = e.listPlayer(state, playerId, price);
+      if (out.error) {
+        await client.query('ROLLBACK');
+        const code = out.error === 'price' ? 400 : 409;
+        return res.status(code).json({ error: out.error, message: TRANSFER_MESSAGES[out.error] || '' });
+      }
+      const ins = await client.query(
+        `INSERT INTO transfer_listings (seller_user_id, seller_club_id, player, asking_price)
+         VALUES ($1, $2, $3::jsonb, $4) RETURNING id, seller_club_id, player, asking_price, created_at`,
+        [req.user.id, state.clubId, out.snapshot, price]
+      );
+      const upd = await client.query(
+        'UPDATE careers SET state = $3, version = version + 1, updated_at = now() WHERE user_id = $1 AND is_demo = false AND version = $4 RETURNING version',
+        [req.user.id, false, out.state, up.version]
+      );
+      if (!upd.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'version_mismatch' });
+      }
+      await client.query('COMMIT');
+      return res.json({ career: out.state, version: upd.rows[0].version, listing: listingOut(e, ins.rows[0]) });
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('transfer listing failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'transfer_listing_failed' });
+  }
+});
+
+// Take a listing back and put the player in the squad again.
+app.delete('/api/transfers/:id', async (req, res) => {
+  if (wantsDemo(req)) return res.status(409).json({ error: 'demo', message: 'The demo season cannot use the market.' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'gone', message: TRANSFER_MESSAGES.gone });
+  try {
+    const e = await engine();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const listed = await client.query(
+        'SELECT id, seller_user_id, player, asking_price FROM transfer_listings WHERE id = $1 FOR UPDATE',
+        [id]
+      );
+      if (!listed.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'gone', message: TRANSFER_MESSAGES.gone });
+      }
+      if (listed.rows[0].seller_user_id !== req.user.id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'not_yours', message: 'That listing is not yours.' });
+      }
+      const career = await client.query(
+        'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = false FOR UPDATE',
+        [req.user.id]
+      );
+      if (!career.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'no_career' });
+      }
+      const state = e.repairCareer(career.rows[0].state);
+      const listing = { id: listed.rows[0].id, player: listed.rows[0].player, price: listed.rows[0].asking_price };
+      const out = e.returnListing(state, listing);
+      if (out.error) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: out.error, message: TRANSFER_MESSAGES[out.error] || '' });
+      }
+      const upd = await client.query(
+        'UPDATE careers SET state = $3, version = version + 1, updated_at = now() WHERE user_id = $1 AND is_demo = false AND version = $4 RETURNING version',
+        [req.user.id, false, out.state, career.rows[0].version]
+      );
+      if (!upd.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'version_mismatch' });
+      }
+      await client.query('DELETE FROM transfer_listings WHERE id = $1', [id]);
+      await client.query('COMMIT');
+      return res.json({ career: out.state, version: upd.rows[0].version });
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('transfer withdraw failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'transfer_withdraw_failed' });
+  }
+});
+
+// Sign a listed player: the price goes from the buyer's credits to the
+// seller's in one transaction (transfers-db.js).
+app.post('/api/transfers/:id/buy', async (req, res) => {
+  if (wantsDemo(req)) return res.status(409).json({ error: 'demo', message: 'The demo season cannot buy players.' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(409).json({ error: 'gone', message: TRANSFER_MESSAGES.gone });
+  try {
+    const e = await engine();
+    const found = await pool.query(
+      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = false',
+      [req.user.id]
+    );
+    if (!found.rows.length) return res.status(404).json({ error: 'no_career' });
+    const up = await catchUpAndSave(req.user.id, false, found.rows[0], req.now);
+    const out = await buyListing(pool, e, { listingId: id, userId: req.user.id, version: up.version });
+    if (out.error) {
+      return res.status(out.code || 409).json({ error: out.error, message: TRANSFER_MESSAGES[out.error] || '' });
+    }
+    return res.json({ career: out.career, version: out.version });
+  } catch (err) {
+    console.error('transfer buy failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'transfer_buy_failed' });
+  }
+});
+
+// Selling a player to the league, or releasing one: the server changes the
+// squad and the credits together, in one version-checked write.
+async function playerAction(req, res, e, run) {
+  const { playerId } = req.body || {};
+  if (typeof playerId !== 'string') return res.status(400).json({ error: 'player', message: TRANSFER_MESSAGES.player });
+  const demo = wantsDemo(req);
+  const found = await pool.query(
+    'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
+    [req.user.id, demo]
+  );
+  if (!found.rows.length) return res.status(404).json({ error: 'no_career' });
+  const up = await catchUpAndSave(req.user.id, demo, found.rows[0], req.now);
+  const state = e.repairCareer(up.state);
+  if (!state) return res.status(500).json({ error: 'player_action_failed' });
+  const out = run(state, playerId);
+  if (out.error) {
+    const code = out.error === 'player' ? 404 : 409;
+    return res.status(code).json({ error: out.error, message: TRANSFER_MESSAGES[out.error] || '' });
+  }
+  const upd = await pool.query(
+    'UPDATE careers SET state = $3, version = version + 1, updated_at = now() WHERE user_id = $1 AND is_demo = $2 AND version = $4 RETURNING version',
+    [req.user.id, demo, out.state, up.version]
+  );
+  if (!upd.rows.length) return res.status(409).json({ error: 'version_mismatch' });
+  return res.json({ career: out.state, version: upd.rows[0].version, price: out.price });
+}
+
+app.post('/api/career/player/sell', async (req, res) => {
+  try {
+    const e = await engine();
+    return await playerAction(req, res, e, e.sellToLeague);
+  } catch (err) {
+    console.error('player sale failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'player_action_failed' });
+  }
+});
+
+app.post('/api/career/player/release', async (req, res) => {
+  try {
+    const e = await engine();
+    return await playerAction(req, res, e, e.releasePlayer);
+  } catch (err) {
+    console.error('player release failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'player_action_failed' });
   }
 });
 
@@ -755,6 +1054,8 @@ app.delete('/api/career', async (req, res) => {
           [req.user.id, STARTING_BALANCE, price]
         );
         if (row.club_id) await releaseClub(client, row.club_id, req.user.id);
+        // Selling the club takes its players off the market with it.
+        await client.query('DELETE FROM transfer_listings WHERE seller_user_id = $1', [req.user.id]);
         await client.query('DELETE FROM careers WHERE user_id = $1 AND is_demo = false', [req.user.id]);
         sale = { clubId: row.club_id, price, balance: credit.rows[0].usdc };
       }

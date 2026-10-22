@@ -354,7 +354,6 @@ export function releaseStaff(state, key) {
 // academy facility says it can coach.
 export const ACADEMY_CAPACITY = [10, 20, 30, 45, 60];
 export const ACADEMY_INTAKE = { 1: 1, 2: 1, 3: 2, 4: 2, 5: 3 };
-export const SQUAD_MAX = 25;
 
 export function academyCapacity(state) {
   return ACADEMY_CAPACITY[facilityLevels(state).academy - 1];
@@ -584,6 +583,187 @@ export function upgradeFacility(state, key, toLevel) {
   const held = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
   if (held < cost) return { error: 'credits' };
   return { state: { ...state, facilities: { ...levels, [key]: toLevel }, credits: held - cost } };
+}
+
+// ── Transfers, wages, ageing ─────────────────────────────────────────────
+// A squad holds at most 40 and at least 11, one of them a goalkeeper.
+export const SQUAD_MAX = 40;
+export const SQUAD_MIN = 11;
+export const MARKET_PRICE_MAX = 1000000;
+
+// What the league pays for a player sold straight to it: a quarter of the
+// player's overall, at least 5.
+export function systemSaleValue(p) {
+  const overall = Number.isFinite(p && p.overall) ? p.overall : 0;
+  return Math.max(5, Math.round(overall / 4));
+}
+
+function ownSquad(state) {
+  return (state && state.squads && Array.isArray(state.squads[state.clubId]))
+    ? state.squads[state.clubId] : [];
+}
+
+// Why a player cannot leave the squad, or null when they can.
+export function leaveError(state, playerId) {
+  const squad = ownSquad(state);
+  const player = squad.find((p) => p.id === playerId);
+  if (!player) return 'player';
+  if (squad.length <= SQUAD_MIN) return 'min';
+  if (POS_GROUP[player.pos] === 'GK' && squad.filter((p) => POS_GROUP[p.pos] === 'GK').length <= 1) {
+    return 'goalkeeper';
+  }
+  return null;
+}
+
+// What signing a player costs: the price, one matchday of wages with him and
+// the ground's upkeep.
+export function signCost(state, player, price) {
+  const squads = { ...(state.squads || {}), [state.clubId]: ownSquad(state).concat([player]) };
+  return price + wageBill({ ...state, squads }) + GROUND_UPKEEP;
+}
+
+// Why a player cannot be signed, or null when they can.
+export function signError(state, player, price) {
+  if (ownSquad(state).length >= SQUAD_MAX) return 'full';
+  const held = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
+  if (held < signCost(state, player, price)) return 'credits';
+  return null;
+}
+
+// The state without a player: the roles entry goes, the armband passes to the
+// best midfielder when the captain leaves, and the eleven is repaired. Never
+// mutates its input.
+export function removePlayer(state, id) {
+  const squad = ownSquad(state);
+  const leaving = squad.find((p) => p.id === id);
+  const kept = squad.filter((p) => p.id !== id).map((p) => ({ ...p }));
+  const roles = { ...(state.roles || {}) };
+  delete roles[id];
+  if (leaving && leaving.captain) {
+    const mids = kept.filter((p) => POS_GROUP[p.pos] === 'MF');
+    if (mids.length) {
+      const cap = mids.reduce((a, b) => (b.overall > a.overall ? b : a));
+      cap.captain = true;
+    }
+  }
+  const next = {
+    ...state,
+    squads: { ...state.squads, [state.clubId]: kept },
+    roles,
+    lineup: (state.lineup || []).filter((x) => x !== id),
+  };
+  if (next.lineup.length < SQUAD_MIN) {
+    next.lineup = autoLineup(kept, next.tactics.formation, roles);
+  } else {
+    fixLineup(next);
+  }
+  return next;
+}
+
+// The state with a new player in the squad: a new id, no armband, no last
+// rating, and their default role.
+export function addPlayer(state, player, newId) {
+  const added = { ...player, id: newId, captain: false };
+  delete added.lastRating;
+  delete added.lastMinutes;
+  const kept = ownSquad(state).map((p) => ({ ...p }));
+  return {
+    ...state,
+    squads: { ...state.squads, [state.clubId]: kept.concat([added]) },
+    roles: { ...(state.roles || {}), [newId]: defaultRole(player.pos) },
+  };
+}
+
+// Sell a player to the league for its small fixed fee, or release them for
+// nothing. Both return { state, price } or { error }.
+export function sellToLeague(state, id) {
+  const err = leaveError(state, id);
+  if (err) return { error: err };
+  const player = ownSquad(state).find((p) => p.id === id);
+  const price = systemSaleValue(player);
+  const next = removePlayer(state, id);
+  next.credits = (Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0) + price;
+  return { state: next, price };
+}
+
+export function releasePlayer(state, id) {
+  const err = leaveError(state, id);
+  if (err) return { error: err };
+  return { state: removePlayer(state, id), price: 0 };
+}
+
+// Put a player on the market: they leave the squad now and the snapshot is
+// what other managers see.
+export function listPlayer(state, id, price) {
+  if (!Number.isInteger(price) || price < 1 || price > MARKET_PRICE_MAX) return { error: 'price' };
+  const err = leaveError(state, id);
+  if (err) return { error: err };
+  const player = ownSquad(state).find((p) => p.id === id);
+  return { state: removePlayer(state, id), snapshot: { ...player } };
+}
+
+// Sign a listed player: the price leaves the credits and the player joins.
+export function buyPlayer(state, listing) {
+  const err = signError(state, listing.player, listing.price);
+  if (err) return { error: err };
+  const withPlayer = addPlayer(state, listing.player, 't' + listing.id);
+  withPlayer.credits = state.credits - listing.price;
+  return { state: withPlayer };
+}
+
+// Withdraw a listing: the player comes back, if the squad has room.
+export function returnListing(state, listing) {
+  if (ownSquad(state).length >= SQUAD_MAX) return { error: 'full' };
+  return { state: addPlayer(state, listing.player, 't' + listing.id) };
+}
+
+// The summer: everyone a year older, decline from 30, retirement possible
+// from 34 and certain at 39. Fixed by the career's seed, so the season card
+// can name the retirees before the rollover.
+export function ageingFor(state) {
+  const season = (state && state.season) || 1;
+  const retiring = [];
+  const players = ownSquad(state).map((p) => {
+    const newAge = (Number.isInteger(p.age) ? p.age : 20) + 1;
+    const attrs = { ...p.attrs };
+    const overall = Number.isFinite(p.overall) ? p.overall : overallOf(attrs, p.pos);
+    const out = { ...p, age: newAge, attrs, overall };
+    if (newAge >= 30) {
+      for (const k of Object.keys(attrs)) {
+        const drop = 1 + (hash(state.seed, 'age', season, p.id, k) % 3);
+        attrs[k] = Math.max(20, attrs[k] - drop);
+      }
+      out.overall = overallOf(attrs, p.pos);
+    }
+    if (newAge >= 34 && hash(state.seed, 'retire', season, p.id) % 6 < newAge - 33) {
+      retiring.push({ id: p.id, name: p.name, pos: p.pos, age: newAge });
+    }
+    return out;
+  });
+  return { players, retiring };
+}
+
+// A 17-year-old from the academy, dealt at the Academy level asked for.
+export function academyGraduate(seed, season, index, pos, academyLevel, tier) {
+  const rng = mulberry32(hash(seed, 'graduate', season, index));
+  const rep = Math.max(1, Math.min(5, Number.isInteger(academyLevel) ? academyLevel : 1) - 1) || 1;
+  const p = makePlayer(rng, pos, rep, 0, tier);
+  const used = new Set();
+  let name;
+  do {
+    name = pick(rng, FIRST_NAMES) + ' ' + pick(rng, LAST_NAMES);
+  } while (used.has(name));
+  used.add(name);
+  return {
+    ...p,
+    id: 'y' + season + '-' + index,
+    name,
+    age: 17,
+    fitness: 100,
+    morale: 70,
+    overall: overallOf(p.attrs, pos),
+    academy: season,
+  };
 }
 
 // The money a person brings to the shop: the wallet already stored for them,
@@ -1887,6 +2067,7 @@ function playerForNewSeason(p) {
     yellow: 0,
     red: 0,
     captain: p.captain,
+    ...(p.academy ? { academy: p.academy } : {}),
   };
 }
 
@@ -1985,7 +2166,17 @@ export function startNextSeason(state) {
   const newDivision = groups[groupIndex].tier;
   const seed = seasonSeed({ seed: state.seed, season });
   const ids = groups[groupIndex].clubIds;
-  const squads = { [state.clubId]: state.squads[state.clubId].map(playerForNewSeason) };
+  // The manager's players get a year older; the ones who retire are replaced
+  // one for one by an academy graduate in the same position, so the squad
+  // keeps its size and its goalkeepers.
+  const aged = ageingFor(state);
+  const leaving = new Set(aged.retiring.map((r) => r.id));
+  const academy = facilityLevels(state).academy;
+  const own = aged.players.filter((p) => !leaving.has(p.id)).map(playerForNewSeason);
+  aged.retiring.forEach((r, i) => {
+    own.push(playerForNewSeason(academyGraduate(state.seed, season, i, r.pos, academy, newDivision)));
+  });
+  const squads = { [state.clubId]: own };
   for (const id of ids) {
     if (id === state.clubId) continue;
     squads[id] = buildSquad(seed, CLUB_INDEX[id], CLUB_BY_ID[id].rep, newDivision);

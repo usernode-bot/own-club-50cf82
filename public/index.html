@@ -218,6 +218,9 @@
         <a class="tab" href="#club" data-tab="club">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v6c0 2.2 4 4 9 4s9-1.8 9-4V9"/></svg><span>Club</span>
         </a>
+        <a class="tab" href="#transfers" data-tab="transfers">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15l-3-3M20 16H5l3 3"/></svg><span>Transfers</span>
+        </a>
       </nav>
 
       <div class="club-main">
@@ -287,7 +290,7 @@
         <!-- Squad -->
         <div class="panel" id="tab-squad" hidden>
           <div class="sec">
-            <div class="section-label"><span>Squad</span><span>Fitness</span></div>
+            <div class="section-label"><span id="squad-label">Squad</span><span>Fitness</span></div>
             <ul class="list" id="squad-list"></ul>
           </div>
         </div>
@@ -356,6 +359,40 @@
               <p class="state-text" id="youth-error-text"></p>
               <button class="btn-secondary" id="youth-retry" type="button">Retry</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Transfers: the shared market, and your own listings. -->
+        <div class="panel" id="tab-transfers" hidden>
+          <div class="sec">
+            <div class="section-label"><span>Club credits</span><span id="transfers-squad"></span></div>
+            <ul class="list">
+              <li class="list-row"><span class="nm"><span class="bal" id="transfers-credits"></span><small>A signing needs its price plus one matchday of wages and upkeep left over.</small></span></li>
+            </ul>
+          </div>
+          <div class="sec" id="listing-sec" hidden>
+            <div class="section-label"><span>Your listings</span><span id="listing-count"></span></div>
+            <ul class="list" id="listing-list"></ul>
+          </div>
+          <div class="sec">
+            <div class="section-label"><span>On the market</span><span id="market-count"></span></div>
+            <div id="market-loading" aria-busy="true" hidden>
+              <ul class="list">
+                <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+                <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+                <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+              </ul>
+            </div>
+            <ul class="list" id="market-list"></ul>
+            <div class="state-empty" id="market-empty" hidden>
+              <p class="state-title">No players on the market</p>
+              <p class="state-text">When a manager lists a player, they show here. You can list one of yours from their player sheet.</p>
+            </div>
+            <div class="state-error" id="market-error" hidden>
+              <p class="state-text">The transfer market could not be loaded. Your squad and matches still work.</p>
+              <button class="btn-secondary" id="market-retry" type="button">Retry</button>
+            </div>
+            <p class="away-note" id="transfers-demo" hidden>The demo season shows the market but cannot buy or list. Sell to the league and Release still work on your squad.</p>
           </div>
         </div>
 
@@ -431,6 +468,11 @@
         </div>
         <div class="section-label">Bench</div>
         <ul class="list" id="sheet-bench"></ul>
+        <div class="section-label">Transfer</div>
+        <ul class="list" id="sheet-transfer"></ul>
+        <div class="state-error" id="sheet-transfer-error" hidden>
+          <p class="state-text" id="sheet-transfer-error-text"></p>
+        </div>
       </div>
     </div>
   </div>

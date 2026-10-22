@@ -33,7 +33,10 @@ const jwt = require('jsonwebtoken');
 // Examples, not tables this scaffold has:
 //   { table: 'posts', column: 'author_id', action: 'delete' },
 //   { table: 'polls', column: 'created_by', action: 'anonymise', clear: ['created_by_name'] },
-const OWNED_BY = [];
+const OWNED_BY = [
+  // A player put on the transfer market is theirs; the listing goes with them.
+  { table: 'transfer_listings', column: 'seller_user_id', action: 'delete' },
+];
 const SKIP = [];
 
 const TOKEN_HEADER = 'x-usernode-platform-token';

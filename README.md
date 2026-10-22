@@ -3,9 +3,9 @@
 A football management game for the browser. You name your manager, get a mock
 wallet of 1,000 Dummy USDC and buy one of the 72 Division 3 clubs for 100, then
 set your eleven on a pitch diagram, choose the formation, mentality and pressing,
-and follow your club through its group's 34 matchdays. Five tabs split the club
-screen: Home, Squad, Tactics, Competition and Club, in a bar along the bottom on
-a phone and a sidebar on a laptop. Matches play by themselves at 9 am, 3 pm and
+and follow your club through its group's 34 matchdays. Six tabs split the club
+screen: Home, Squad, Tactics, Competition, Club and Transfers, in a bar along the
+bottom on a phone and a sidebar on a laptop. Matches play by themselves at 9 am, 3 pm and
 9 pm on the manager's own clock, with the lineup and tactics last saved, so a
 season takes about twelve days. Squads tire, pick up cards and injuries, and the
 group table builds up as the season goes.
@@ -47,6 +47,27 @@ facility says it has; income and costs (stadium takings, shop and food sales,
 hotel rooms, coaches and physio) come with later features. The upgrade is the
 server's: the page names the facility and the level, and the server checks the
 balance, deducts the credits and saves the new level in one write.
+
+Players can be signed and moved on. The Transfers tab lists every player other
+managers have put on the market, with their age, overall, wage and asking price;
+tapping Buy for N pays the price from your Club credits to the selling club and
+puts the player in your squad. From a player's sheet you can list them on the
+market at your own asking price, sell them to the league for a small fixed fee
+(a quarter of their overall, at least 5 Club credits) or release them for
+nothing. A squad holds at most 40 players, and a sale, listing, release or
+retirement that would leave fewer than 11 players, or no goalkeeper, is refused.
+The market is shared by every manager and a listing never expires; withdrawing
+one puts the player back if the squad has room. Selling your club takes your
+listings off the market with it.
+
+Every player is paid a wage on each of the club's matchdays, home or away:
+(overall minus 35) times 1.5, rounded, at least 5 Club credits, and half that
+under 21. Home's Finances shows the wage bill and what has been paid this
+season. Wages are taken after ground upkeep and never take the balance below 0.
+At Start next season every player gets a year older; from 30 each attribute
+loses 1 to 3 points, from 34 a player may retire and at 39 always does. The
+academy brings in a 17-year-old in the same position for each retiree, better
+the higher its level, so the squad never shrinks.
 
 Dummy USDC is a mock: there is no crypto wallet, no payment and no real money
 anywhere in the app. The club price and the sale values live only in
