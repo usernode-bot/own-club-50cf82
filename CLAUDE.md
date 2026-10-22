@@ -109,17 +109,25 @@ same-letter Division 3 group; the top 2 of each Division 3 group go up. Nobody
 leaves Division 3, and every group stays at 18. Start next season carries your
 club, its players and their roles into its new group.
 
-Each day three matchdays open, at 09:00, 15:00 and 21:00 on the manager's own
-clock, like mealtimes: a season's 34 matchdays take about twelve days. A time
-that has passed stays open until local midnight, so a late visit can still play
-all three. The times follow the IANA time zone saved with the career
-(`timeZone`, set from the device the first time the page saves, never moved
-afterwards; the demo season always uses `Europe/London`), not the server's UTC
-clock. The server owns the day's record: `plays` holds the last three match
-instants, `PUT /api/career` counts the matchdays the incoming state advanced
-and answers `400 match_limit` for a fourth in a day or a slot not yet open, and
-`public/app.js` greys out Play match and says when the next one opens.
-`playMatchday` itself is unrestricted, so the tests still play whole seasons.
+Matches play by themselves at 09:00, 15:00 and 21:00 on the manager's own
+clock, with the lineup, tactics and roles last saved: a season's 34 matchdays
+take about twelve days. Times follow the IANA zone saved with the career at
+purchase (`timeZone`, never moved afterwards; the demo always uses
+`Europe/London`), not the server's UTC clock. The server owns the schedule:
+`state.nextMatchAt` is stamped at purchase and after every match, and each
+request plays every kick-off that has passed (`playDueMatches`), writing the
+slot instant into `plays` and saving. An unusable lineup is replaced by
+`autoLineup`, so nothing is skipped; a finished season sets `nextMatchAt` to
+null until Start next season. `public/app.js` shows the countdown and refreshes
+quietly when a kick-off passes.
+
+One manager per Division 3 club: the public `club_owners` table
+(`club_id` primary key, `user_id`) records who bought a club. `GET /api/career`
+sends taken ids with the shop, `POST` claims a club in the same transaction
+that saves the career (409 `owned` if taken), and `DELETE` or a replacement
+career frees it. Careers that predate the table are grandfathered on boot, so
+nobody loses a club; a club several managers already share stays with all of
+them. Staging seeds two fake owners in Division 3 Group A.
 
 The ten original clubs make up most of Division 1; the other 152 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
@@ -159,6 +167,14 @@ change follows it, and updates it when a request changes the look on purpose.
 - The Wallet section is one row of the same list: the balance in `.bal`, the
   price in `.price` (bold, tabular numbers); the group chips reuse the division
   chip row, four wide.
+- **Navigation:** four tabs, Home, Squad, Tactics and Competition, each with a
+  line icon in the same stroke as the report's icons (a house, two players, a
+  tactics board and a cup). A fixed bottom bar on phones (56 px items,
+  safe-area padding) becomes a 240 px sticky left sidebar from `md` up, with
+  the club's badge and name. The bar and sidebar use surface with a line
+  border; the current tab is pitch green, on a raised background in the
+  sidebar, never amber. The header with the club, matchday and position sits
+  above every tab.
 - **Signature element:** the pitch diagram: a drawn pitch with your formation
   as white player tokens you drag to swap, the goalkeeper in amber. Small line
   icons mark each kind of moment in the report (a ball, a card, a swap arrow,

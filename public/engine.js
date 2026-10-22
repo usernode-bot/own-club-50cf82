@@ -578,7 +578,7 @@ export function repairCareer(state) {
     && report.ratings && typeof report.ratings === 'object'
     && Array.isArray(report.moments);
 
-  return {
+  const out = {
     ...state,
     tactics,
     roles,
@@ -589,8 +589,18 @@ export function repairCareer(state) {
     // send: the engine cannot know the manager's clock.
     plays: Array.isArray(state.plays) ? state.plays.filter(isIsoString).slice(-MATCHES_PER_DAY) : [],
     finished: Boolean(state.finished),
+    // The server owns the schedule; a career saved before it existed gets one
+    // stamped by the server, not invented here.
     lastReport: reportOk ? report : null,
   };
+  if (typeof state.nextMatchAt === 'string' && !Number.isNaN(Date.parse(state.nextMatchAt))) {
+    out.nextMatchAt = state.nextMatchAt;
+  } else if (state.nextMatchAt === null) {
+    out.nextMatchAt = null;
+  } else {
+    delete out.nextMatchAt;
+  }
+  return out;
 }
 
 // ── Validation ───────────────────────────────────────────────────────────
@@ -1118,13 +1128,12 @@ export function playMatchday(state) {
   return reports;
 }
 
-// ── The daily match allowance ────────────────────────────────────────────
+// ── The match schedule ───────────────────────────────────────────────────
 // Three matchdays a day open on the manager's own clock, at mealtimes. The
-// page gates Play match with this, and the server re-checks it when a career
-// is saved, so no reload, second tab or second device adds a fourth. Times
-// are read in the career's saved IANA zone, so 9 am stays 9 am through a
-// daylight-saving change. Nothing here reads the clock itself: `now` and
-// `zone` are arguments.
+// server plays every slot that has passed since the career's nextMatchAt, so
+// no button is pressed. Times are wall-clock times in the career's saved IANA
+// zone, so 9 am stays 9 am through a daylight-saving change. Nothing here
+// reads the clock itself: `now` and `zone` are arguments.
 export const MATCH_SLOTS = [9, 15, 21];
 export const MATCHES_PER_DAY = 3;
 
@@ -1172,49 +1181,113 @@ export function slotLabel(hour) {
   return (hour - 12) + ' pm';
 }
 
-// What today allows. `open` is how many of the day's slots have passed, so a
-// time that has passed stays open until local midnight.
-export function matchAllowance(plays, now, zone) {
-  const clock = localClock(now, zone);
-  const today = (Array.isArray(plays) ? plays : [])
-    .filter(isIsoString)
-    .filter((iso) => localClock(new Date(iso), zone).day === clock.day);
-  const open = MATCH_SLOTS.filter((hour) => hour <= clock.hour).length;
-  return {
-    day: clock.day,
-    hour: clock.hour,
-    minute: clock.minute,
-    playedToday: today.length,
-    open,
-    canPlay: today.length < open,
-    nextSlot: open < MATCHES_PER_DAY
-      ? { hour: MATCH_SLOTS[open], tomorrow: false }
-      : { hour: MATCH_SLOTS[0], tomorrow: true },
-  };
+// How far `zone` is ahead of UTC at `date`, in milliseconds.
+function zoneOffset(date, zone) {
+  const tz = validTimeZone(zone) ? zone : 'UTC';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+  const get = (type) => Number((parts.find((p) => p.type === type) || {}).value);
+  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+  return asUtc - Math.floor(date.getTime() / 1000) * 1000;
 }
 
-// The server's check on a save: how many matchdays the incoming state has
-// played beyond the stored one, and whether the day still has room for them.
-// Returns the refusal message (or null) and the plays list to store.
-export function matchLimitError(stored, incoming, now, zone) {
-  const storedPlays = (Array.isArray(stored && stored.plays) ? stored.plays : []).filter(isIsoString).slice(-MATCHES_PER_DAY);
-  const allowance = matchAllowance(storedPlays, now, zone);
-  const sameSeason = ((incoming && incoming.season) || 1) === ((stored && stored.season) || 1);
-  const advanced = Math.max(0, sameSeason
-    ? (incoming.matchday || 0) - (stored.matchday || 0)
-    : (incoming.matchday || 0));
-  const plays = advanced > 0
-    ? storedPlays.concat(Array.from({ length: advanced }, () => now.toISOString())).slice(-MATCHES_PER_DAY)
-    : storedPlays;
-  if (advanced === 0 || allowance.playedToday + advanced <= allowance.open) {
-    return { message: null, plays };
+// A wall-clock time on a local day, as the UTC instant it happens at. The
+// offset is looked up at that instant, so a daylight-saving change is kept.
+function wallClock(day, hour, zone) {
+  const [y, m, d] = day.split('-').map(Number);
+  const target = Date.UTC(y, m - 1, d, hour, 0, 0);
+  let guess = target;
+  for (let i = 0; i < 3; i++) {
+    const next = target - zoneOffset(new Date(guess), zone);
+    if (next === guess) break;
+    guess = next;
   }
-  if (allowance.playedToday >= MATCHES_PER_DAY) {
-    return { message: "Today's " + MATCHES_PER_DAY + ' matches are already played. The next one is at '
-      + slotLabel(MATCH_SLOTS[0]) + ' tomorrow.', plays: storedPlays };
+  return new Date(guess);
+}
+
+function addDays(day, n) {
+  const [y, m, d] = day.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return t.getUTCFullYear() + '-' + String(t.getUTCMonth() + 1).padStart(2, '0') + '-' + String(t.getUTCDate()).padStart(2, '0');
+}
+
+function slotOnDay(day, zone) {
+  return MATCH_SLOTS.map((hour) => wallClock(day, hour, zone));
+}
+
+// The first kick-off strictly after `instant`.
+export function slotAfter(instant, zone) {
+  const at = instant instanceof Date ? instant : new Date(instant);
+  const day = localClock(at, zone).day;
+  for (const slot of slotOnDay(day, zone)) if (slot.getTime() > at.getTime()) return slot;
+  return slotOnDay(addDays(day, 1), zone)[0];
+}
+
+// 9 am local on `now`'s local day.
+export function firstSlotOfDay(now, zone) {
+  const at = now instanceof Date ? now : new Date(now);
+  return wallClock(localClock(at, zone).day, MATCH_SLOTS[0], zone);
+}
+
+// `count` kick-offs in a row, starting with `fromIso`.
+export function upcomingSlots(fromIso, count, zone) {
+  const out = [];
+  let at = fromIso ? new Date(fromIso) : null;
+  for (let i = 0; i < count && at && !Number.isNaN(at.getTime()); i++) {
+    out.push(at);
+    at = slotAfter(at, zone);
   }
-  const hour = MATCH_SLOTS[Math.min(allowance.open, MATCHES_PER_DAY - 1)];
-  return { message: 'The ' + slotLabel(hour) + ' match is not open yet.', plays: storedPlays };
+  return out;
+}
+
+// Play every kick-off that has fallen due, with the lineup and tactics saved
+// at the time. A lineup that cannot be used is replaced by the best eleven the
+// club can field, so no match is skipped. Returns how many were played.
+export function playDueMatches(state, now, zone) {
+  const at = now instanceof Date ? now : new Date(now);
+  let played = 0;
+  while (!state.finished && state.nextMatchAt && Date.parse(state.nextMatchAt) <= at.getTime()) {
+    const slot = new Date(state.nextMatchAt);
+    if (!validateLineup(state).ok) {
+      state.lineup = autoLineup(state.squads[state.clubId], state.tactics.formation, state.roles);
+      fixLineup(state);
+    }
+    playMatchday(state);
+    state.plays = (Array.isArray(state.plays) ? state.plays : []).concat(slot.toISOString()).slice(-MATCHES_PER_DAY);
+    state.nextMatchAt = state.finished ? null : slotAfter(slot, zone).toISOString();
+    played++;
+  }
+  if (state.finished && state.nextMatchAt) state.nextMatchAt = null;
+  return played;
+}
+
+// What a save changes: the same season and matchday ('same'), the rollover to
+// the next season's first matchday ('rollover'), or anything else ('stale').
+export function saveCheck(stored, incoming) {
+  const s = stored || {};
+  const i = incoming || {};
+  const sameSeason = (i.season || 1) === (s.season || 1);
+  if (sameSeason && (i.matchday || 0) === (s.matchday || 0)) return 'same';
+  if (s.finished && sameSeason === false && (i.season || 1) === (s.season || 1) + 1 && (i.matchday || 0) === 0) return 'rollover';
+  return 'stale';
+}
+
+// The Division 3 groups, each with the clubs nobody owns yet.
+export function freeShopClubs(taken) {
+  const set = new Set(Array.isArray(taken) ? taken : []);
+  return GROUPS.filter((g) => g.tier === TIER_COUNT).map((g) => ({
+    group: g.group,
+    clubIds: g.clubIds.slice(),
+    free: g.clubIds.filter((id) => !set.has(id)),
+  }));
 }
 
 // ── A career ─────────────────────────────────────────────────────────────
@@ -1481,6 +1554,8 @@ export function startNextSeason(state) {
   if (state.purchase) next.purchase = { ...state.purchase };
   next.plays = Array.isArray(state.plays) ? state.plays.slice(-MATCHES_PER_DAY) : [];
   if (state.timeZone) next.timeZone = state.timeZone;
+  // The server stamps the next kick-off on the rollover save.
+  next.nextMatchAt = null;
   return next;
 }
 
