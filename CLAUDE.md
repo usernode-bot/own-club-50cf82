@@ -155,9 +155,11 @@ a facility and a target level from the page, checks the balance against the
 stored career, deducts the credits and saves the level in one version-checked
 UPDATE. `state.facilities` holds one integer per facility; `repairCareer` fills a
 missing or invalid one with 1, `startNextSeason` carries them, and the demo has
-its stadium at 4 and training ground at 2. An upgrade changes only what the
-facility says it has; income and costs come with the stadium and facilities
-features. Home shows the
+its stadium at 4 and training ground at 2. A higher stadium seats more; the
+shop, food stand and hotel also earn on a home matchday (`MATCHDAY_SALES` and
+`matchdaySales`: Club credits for every 10 fans in the ground, 4/6/10/15/22 at
+the shop, 3/5/8/12/18 at the food stand and 1/2/4/7/12 at the hotel, by level),
+so each level earns more from the same crowd but adds maintenance. Home shows the
 balance as the second row of the Wallet section, and that section's tag reads
 "Staging mock" rather than "Dummy USDC (staging mock)".
 
@@ -185,7 +187,11 @@ division (30,000 / 12,000 / 5,000, the same figures as `GROUND_CAPACITY`);
 `moneyFields` and the rollover clamp a stored value, and a relegated club drops
 to its new limit. Only a home match earns a gate: the smaller of the fans, the
 stadium's own seats (`STADIUM_SEATS`, 2,000 to 40,000 by level) and the
-division's cap, times 5 credits a seat; away matches earn nothing. Every club
+division's cap, times 5 credits a seat; away matches earn nothing. That same
+home crowd also spends at the shop, food stand and hotel, which pay
+`matchdaySales` on top of the gate and are recorded as `finance.shop`, `food`
+and `hotel` and on the match report with the balance it left (`balanceAfter`);
+away matches earn none of it. Every club
 matchday pays a flat ground upkeep of 250 credits, home or away, then facility
 maintenance (`MAINTENANCE`, nothing at level 1 and 150/500/1,500/4,000 per
 facility at levels 2 to 5, summed by `maintenanceDue`), then player wages

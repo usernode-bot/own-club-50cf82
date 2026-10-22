@@ -45,6 +45,11 @@
       "expectText": "Ground upkeep this season"
     },
     {
+      "name": "Demo club shows home crowd sales",
+      "path": "/?demo=1",
+      "expectText": "Shop this season"
+    },
+    {
       "name": "Demo tactics tab",
       "path": "/?demo=1#tactics",
       "expectSelector": "[data-formation]"

@@ -394,12 +394,13 @@ test('the staging demo shows Harbourside third in Division 1 with 900 USDC', () 
   assert.equal(demo.purchase.clubId, 'harbourside');
   assert.equal(demo.purchase.price, 100);
   assert.equal(demo.purchase.demo, true);
-  // Its 17 matchdays: 9 wins, 5 draws and 3 losses, plus the home gates its
-  // own season totals recorded, less ground upkeep, maintenance, player wages
-  // and staff wages.
+  // Its 17 matchdays: 9 wins, 5 draws and 3 losses, plus the home gates and
+  // home-crowd sales its own season totals recorded, less ground upkeep,
+  // maintenance, player wages and staff wages.
   const results = 9 * CREDIT_REWARDS.win + 5 * CREDIT_REWARDS.draw + 3 * CREDIT_REWARDS.loss;
-  assert.equal(demo.credits, results + demo.finance.gate - demo.finance.upkeep
-    - demo.finance.maintenance - demo.finance.wages - demo.finance.staffWages);
+  assert.equal(demo.credits, results + demo.finance.gate
+    + demo.finance.shop + demo.finance.food + demo.finance.hotel
+    - demo.finance.upkeep - demo.finance.maintenance - demo.finance.wages - demo.finance.staffWages);
 });
 
 test('Club credits stay with the club when the season rolls over', () => {
