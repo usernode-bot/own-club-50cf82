@@ -2,7 +2,7 @@
   "description": "A football management game: name your manager, buy a Division 3 club with dummy USDC (a mockup, no real payment), set your lineup and tactics, and play 34-matchday seasons in a three-tier league of 162 clubs with promotion and relegation.",
   "category": "other",
   "icon": {
-    "emoji": "\u26bd"
+    "emoji": "⚽"
   },
   "secrets": [],
   "governance": {
@@ -64,6 +64,18 @@
       "name": "Health",
       "path": "/health",
       "expectText": "ok"
+    },
+    {
+      "name": "Demo club tab shows staff and the academy",
+      "path": "/?demo=1#club",
+      "expectText": "Staff",
+      "expectSelector": "#staff-list .list-row"
+    },
+    {
+      "name": "Demo club tab lists the academy prospects",
+      "path": "/?demo=1#club",
+      "expectText": "Academy",
+      "expectSelector": "#youth-list .list-row"
     }
   ]
 }

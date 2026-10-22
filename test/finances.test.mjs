@@ -42,9 +42,11 @@ test('an away match earns no gate', () => {
   assert.equal(f.attendance, 0);
   assert.equal(f.gate, 0);
   assert.equal(state.credits, 1000 + creditsForResult(
-    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0) - f.upkeep);
+    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0)
+    - f.upkeep - f.maintenance - f.wages - f.staffWages);
   assert.equal(f.net, creditsForResult(
-    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0) - f.upkeep);
+    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0)
+    - f.upkeep - f.maintenance - f.wages - f.staffWages);
 });
 
 test('a home gate is the smaller of the fans and the seats, at 5 each', () => {
@@ -52,6 +54,8 @@ test('a home gate is the smaller of the fans and the seats, at 5 each', () => {
   assert.ok(state, 'the career has a home matchday');
   state.fans = 2700;
   state.credits = 0;
+  // A stadium that seats them all, so the fans set the gate.
+  state.facilities = { ...state.facilities, stadium: 2 };
   playMatchday(state);
   const f = state.lastReport.finance;
   assert.equal(f.venue, 'Home');
@@ -61,6 +65,7 @@ test('a home gate is the smaller of the fans and the seats, at 5 each', () => {
 
   // More fans than seats: the ground's capacity is what pays.
   const packed = careerBefore(CLUB, 9, 'Home');
+  packed.facilities = { ...packed.facilities, stadium: 5 };
   packed.fans = GROUND_CAPACITY[3] + 20000;
   playMatchday(packed);
   assert.equal(packed.lastReport.finance.attendance, GROUND_CAPACITY[3]);
@@ -150,7 +155,7 @@ test('a sponsor pays once at the rollover when its target was met', () => {
   assert.equal(next.lastSponsor.name, met.sponsor.name);
   assert.equal(next.sponsor.season, met.season + 1);
   assert.equal(next.sponsor.fee, SPONSOR_FEES[nextPlacement(met).tier]);
-  assert.deepEqual(next.finance, { season: met.season + 1, gate: 0, upkeep: 0, homeGames: 0 });
+  assert.deepEqual(next.finance, { season: met.season + 1, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 });
   assert.deepEqual(seasonEndMoney(met), {
     credits: next.credits,
     fans: next.fans,
@@ -194,7 +199,7 @@ test('moneyFields fills what a saved career is missing, and leaves a filled one 
   assert.equal(filled.fans, FAN_SEED[clubTier(old)]);
   assert.equal(filled.sponsor.season, old.season);
   assert.equal(filled.lastSponsor, null);
-  assert.deepEqual(filled.finance, { season: old.season, gate: 0, upkeep: 0, homeGames: 0 });
+  assert.deepEqual(filled.finance, { season: old.season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 });
   const repaired = repairCareer(old);
   assert.deepEqual(moneyFields(repaired), filled);
 
