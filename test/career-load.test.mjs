@@ -111,6 +111,26 @@ test('repairCareer fills a partial career', () => {
   assert.deepEqual(repaired.results, results);
 });
 
+test('repairCareer gives a career saved before Club credits a balance of 0, and keeps a real one', () => {
+  const state = buildInitialState('harbourside', 'Test manager', 42);
+  playMatchday(state);
+  assert.equal(state.credits > 0, true);
+
+  const old = JSON.parse(JSON.stringify(state));
+  delete old.credits;
+  assert.equal(repairCareer(old).credits, 0);
+
+  for (const bad of [-5, 1.5, '600', null]) {
+    const saved = JSON.parse(JSON.stringify(state));
+    saved.credits = bad;
+    assert.equal(repairCareer(saved).credits, 0);
+  }
+
+  const kept = JSON.parse(JSON.stringify(state));
+  kept.credits = 605;
+  assert.equal(repairCareer(kept).credits, 605);
+});
+
 test('repairCareer rejects what cannot be shown', () => {
   assert.equal(repairCareer(null), null);
   assert.equal(repairCareer('career'), null);

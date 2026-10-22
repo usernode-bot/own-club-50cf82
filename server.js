@@ -580,10 +580,13 @@ app.put('/api/career', async (req, res) => {
     };
     const { rows } = await pool.query(
       // The browser never sets the money: a career that has a wallet keeps
-      // the one already stored, and a career without one cannot gain one.
-      `UPDATE careers SET state = CASE WHEN careers.state ? 'wallet'
+      // the one already stored, and a career without one cannot gain one. Club
+      // credits are the server's too: only a played match adds to them, so the
+      // stored balance is kept whatever the page sends.
+      `UPDATE careers SET state = (CASE WHEN careers.state ? 'wallet'
           THEN $3::jsonb || jsonb_build_object('wallet', careers.state->'wallet', 'purchase', careers.state->'purchase')
-          ELSE $3::jsonb - 'wallet' - 'purchase' END,
+          ELSE $3::jsonb - 'wallet' - 'purchase' END)
+          || jsonb_build_object('credits', COALESCE(careers.state->'credits', '0'::jsonb)),
         version = version + 1, updated_at = now()
         WHERE user_id = $1 AND is_demo = $2 AND version = $4
         RETURNING version`,

@@ -10,7 +10,7 @@ import {
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
-  repairCareer, slotLabel, upcomingSlots, clubTier, saleValue,
+  repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -208,6 +208,7 @@ const CLUB_PREVIEW = {};
 for (const c of CLUBS) CLUB_PREVIEW[c.id] = clubSummary(1, c, GROUPS[clubToGroup[c.id]].tier).avg;
 
 const usdc = (n) => Number(n).toLocaleString('en-US') + ' USDC';
+const credits = (n) => Number(n).toLocaleString('en-US') + ' Club credits';
 
 const STAR_PATH = 'M12 3.2l2.7 5.47 6.04.88-4.37 4.26 1.03 6.02L12 16.99l-5.4 2.84 1.03-6.02L3.26 9.55l6.04-.88z';
 
@@ -559,6 +560,10 @@ function renderClub() {
     $('club-wallet-note').textContent = bought
       ? 'You bought ' + bought.name + ' for ' + usdc(career.purchase.price) + '. No real payment was taken.'
       : 'No real payment was taken.';
+    $('club-credits').textContent = credits(career.credits || 0);
+    $('club-credits-note').textContent = 'Earned after each match: '
+      + CREDIT_REWARDS.win + ' for a win, ' + CREDIT_REWARDS.draw + ' for a draw, '
+      + CREDIT_REWARDS.loss + ' for a loss.';
   } else {
     $('wallet-sec').hidden = true;
   }

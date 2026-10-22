@@ -237,6 +237,16 @@ export function saleValue(state, values) {
   return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
+// Club credits: the club's own in-game currency, earned by result and kept with
+// the career. Nothing spends them yet; the market, academy and facilities will.
+export const CREDIT_REWARDS = { win: 50, draw: 25, loss: 10 };
+
+export function creditsForResult(goalsFor, goalsAgainst) {
+  if (goalsFor > goalsAgainst) return CREDIT_REWARDS.win;
+  if (goalsFor < goalsAgainst) return CREDIT_REWARDS.loss;
+  return CREDIT_REWARDS.draw;
+}
+
 // The money a person brings to the shop: the wallet already stored for them,
 // or the starting balance a first-time manager is given.
 export function openingBalance(stored, startingBalance) {
@@ -626,6 +636,8 @@ export function repairCareer(state) {
     // The server owns the schedule; a career saved before it existed gets one
     // stamped by the server, not invented here.
     lastReport: reportOk ? report : null,
+    // A career saved before Club credits existed has none yet.
+    credits: Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0,
   };
   if (typeof state.nextMatchAt === 'string' && !Number.isNaN(Date.parse(state.nextMatchAt))) {
     out.nextMatchAt = state.nextMatchAt;
@@ -1156,7 +1168,16 @@ export function playMatchday(state) {
       awayGoals: r.awayGoals,
     });
   }
-  state.lastReport = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
+  const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
+  state.lastReport = own;
+  // Only the manager's own fixture earns Club credits, from the manager's side.
+  if (own) {
+    const atHome = own.home.id === state.clubId;
+    const goalsFor = atHome ? own.homeGoals : own.awayGoals;
+    const goalsAgainst = atHome ? own.awayGoals : own.homeGoals;
+    const held = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
+    state.credits = held + creditsForResult(goalsFor, goalsAgainst);
+  }
   state.matchday = md + 1;
   state.finished = state.matchday >= state.fixtures.length;
   return reports;
@@ -1372,6 +1393,7 @@ export function buildInitialState(clubId, managerName, seed) {
     plays: [],
     finished: false,
     lastReport: null,
+    credits: 0,
   };
   state.lineup = autoLineup(squads[clubId], state.tactics.formation, state.roles);
   return state;
@@ -1576,6 +1598,7 @@ export function startNextSeason(state) {
     matchday: 0,
     finished: false,
     lastReport: null,
+    credits: Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0,
   };
   // The manager's players keep the roles they were given.
   for (const p of next.squads[next.clubId]) {
