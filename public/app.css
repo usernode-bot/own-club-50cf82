@@ -37,7 +37,7 @@ button.chip[aria-expanded="true"] {
   border-color: rgb(var(--accent));
 }
 
-/* The eight divisions on New career, as one row of equal buttons. */
+/* The Division 3 groups on New career, as one row of equal buttons. */
 .divrow { display: flex; gap: 6px; }
 .divrow .chip {
   flex: 1;
@@ -104,6 +104,10 @@ button.chip[aria-expanded="true"] {
 .row-btn { cursor: pointer; }
 .club-row .badge { flex: none; }
 .club-row.me { background: rgb(var(--raised)); }
+
+/* A club's price in the shop, and the wallet's balance: figures line up. */
+.price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bal { font-size: 20px; line-height: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .stars { display: inline-flex; align-items: center; gap: 2px; vertical-align: -2px; margin-right: 4px; color: rgb(var(--star)); }
 .stars svg { display: block; }

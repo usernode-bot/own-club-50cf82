@@ -1,5 +1,5 @@
 {
-  "description": "A football management game: pick a fictional club in any of eight divisions, set your lineup and tactics, and play a 34-matchday season of simulated matches, with promotion and relegation at its end.",
+  "description": "A football management game: name your manager, buy a Division 3 club with dummy USDC (a mockup, no real payment), set your lineup and tactics, and play 34-matchday seasons in a three-tier league of 162 clubs with promotion and relegation.",
   "category": "other",
   "icon": {
     "emoji": "\u26bd"
@@ -13,6 +13,11 @@
       "name": "New career screen",
       "path": "/",
       "expectText": "New career"
+    },
+    {
+      "name": "New career shows the club shop",
+      "path": "/",
+      "expectText": "Dummy USDC (staging mock)"
     },
     {
       "name": "Demo club screen",

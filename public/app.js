@@ -6,8 +6,9 @@
 import {
   CLUBS, CLUB_BY_ID, LEAGUE_NAME, FORMATIONS, FORMATION_NAMES,
   MENTALITY_NAMES, PRESSING_NAMES, ROLES, POS_GROUP,
-  DIVISIONS, clubToDivision, divisionClubIds, seasonOutcome, startNextSeason,
-  buildInitialState, arrangeLineup, autoLineup, validateLineup, playMatchday,
+  GROUPS, TIER_COUNT, clubToGroup, groupName,
+  divisionClubIds, placeName, seasonOutcome, startNextSeason,
+  arrangeLineup, autoLineup, validateLineup, playMatchday,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
   repairCareer,
 } from './engine.js';
@@ -25,8 +26,12 @@ const TOKEN = params.get('token') || '';
 let career = null;
 let version = null;
 let screen = 'loading';
-let pickedClub = 'harbourside';
-let pickedDivision = 1;
+// What the shop says a club costs and how much a new wallet holds. The server
+// sends these with every load; the defaults only stand in until it does.
+let shop = { price: 100, startingBalance: 1000, currency: 'Dummy USDC' };
+const SHOP_GROUPS = GROUPS.filter((g) => g.tier === TIER_COUNT);
+let pickedGroup = 'A';
+let pickedClub = SHOP_GROUPS[0].clubIds[0];
 let menuKind = null;
 let sheetPlayerId = null;
 let saveFailed = false;
@@ -100,6 +105,8 @@ async function load() {
     cause = LOAD_CAUSE.network;
   }
 
+  if (answer && answer.data && answer.data.shop) shop = answer.data.shop;
+
   if (!cause && answer) {
     if (answer.status === 404 || (answer.status === 200 && answer.data && answer.data.career === null)) {
       screen = 'new';
@@ -140,7 +147,9 @@ async function load() {
 
 // ── New career ───────────────────────────────────────────────────────────
 const CLUB_PREVIEW = {};
-for (const c of CLUBS) CLUB_PREVIEW[c.id] = clubSummary(1, c, clubToDivision[c.id]).avg;
+for (const c of CLUBS) CLUB_PREVIEW[c.id] = clubSummary(1, c, GROUPS[clubToGroup[c.id]].tier).avg;
+
+const usdc = (n) => Number(n).toLocaleString('en-US') + ' USDC';
 
 const STAR_PATH = 'M12 3.2l2.7 5.47 6.04.88-4.37 4.26 1.03 6.02L12 16.99l-5.4 2.84 1.03-6.02L3.26 9.55l6.04-.88z';
 
@@ -162,18 +171,21 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="
 
 function renderNew() {
   $('manager-name').value = $('manager-name').value || '';
-  for (const btn of $('division-row').querySelectorAll('[data-division]')) {
-    btn.setAttribute('aria-pressed', String(Number(btn.dataset.division) === pickedDivision));
+  for (const btn of $('group-row').querySelectorAll('[data-group]')) {
+    btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
   }
-  const ids = DIVISIONS[pickedDivision - 1].clubIds;
+  $('wallet-balance').textContent = usdc(shop.startingBalance);
+  const group = SHOP_GROUPS.find((g) => g.group === pickedGroup) || SHOP_GROUPS[0];
   const list = $('club-list');
-  list.innerHTML = ids.map((id) => CLUB_BY_ID[id]).map((c) => `
+  list.innerHTML = group.clubIds.map((id) => CLUB_BY_ID[id]).map((c) => `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
       <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
       <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, ${esc(c.objective)}</small></span>
+      <span class="price">${usdc(shop.price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`).join('');
-  $('start-career').textContent = 'Start career at ' + CLUB_BY_ID[pickedClub].name;
+  const picked = CLUB_BY_ID[pickedClub];
+  $('start-career').textContent = picked ? 'Buy ' + picked.name + ' for ' + usdc(shop.price) : 'Buy a club';
 }
 
 async function startCareer() {
@@ -209,6 +221,11 @@ async function startCareer() {
       errText.textContent = 'Make an account to start a career.';
       return;
     }
+    if (status === 400 && data && data.message) {
+      errBox.hidden = false;
+      errText.textContent = data.message;
+      return;
+    }
     if (status !== 200) throw new Error('HTTP ' + status);
     career = data.career;
     version = data.version;
@@ -216,7 +233,7 @@ async function startCareer() {
     render();
   } catch (err) {
     errBox.hidden = false;
-    errText.textContent = 'The career was not created. Check the connection and press Start career again.';
+    errText.textContent = 'The club was not bought. Check the connection and press Buy again.';
   } finally {
     busy = false;
     btn.disabled = false;
@@ -244,8 +261,8 @@ function renderClub() {
   const club = CLUB_BY_ID[career.clubId];
   const total = career.fixtures.length;
   const next = nextFixture(career);
-  const pyramid = career.version >= 2 && Array.isArray(career.divisions);
-  const place = pyramid ? 'Division ' + career.division : LEAGUE_NAME;
+  const pyramid = career.version >= 2;
+  const place = placeName(career);
 
   if (pyramid) {
     $('club-md').textContent = career.finished
@@ -277,16 +294,19 @@ function renderClub() {
     $('season-card').hidden = false;
     const outcome = seasonOutcome(career);
     const met = objectiveMet(me.rank, club.objective, divisionClubIds(career).length);
+    const to = groupName(outcome.toDivision, outcome.toGroup);
     const bits = [];
     if (pyramid) {
       bits.push(outcome.kind === 'champions' ? 'Champions of the ' + LEAGUE_NAME + '.'
-        : outcome.kind === 'promoted' ? 'Promoted to Division ' + outcome.toDivision + '.'
-          : outcome.kind === 'relegated' ? 'Relegated to Division ' + outcome.toDivision + '.'
-            : 'You stay in Division ' + career.division + '.');
+        : outcome.kind === 'promoted' ? 'Promoted to ' + to + '.'
+          : outcome.kind === 'relegated' ? 'Relegated to ' + to + '.'
+            : 'You stay in ' + to + '.');
     }
     bits.push('The board asked you to ' + club.objective.toLowerCase() + '. That was ' + (met ? 'met.' : 'not met.'));
     bits.push('You took ' + me.points + ' points from ' + me.played + ' matches.');
-    if (!pyramid) bits.push('Next season the Coastal League grows to eight divisions, and your club starts in Division 1.');
+    if (outcome.joinsNewLeague) {
+      bits.push('Next season the Coastal League becomes three tiers, and your club starts in ' + to + '.');
+    }
     $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + place;
     $('season-text').textContent = bits.join(' ');
   }
@@ -339,6 +359,17 @@ function renderClub() {
       <span class="g">${r.gd > 0 ? '+' : ''}${r.gd}</span>
       <span class="p">${r.points}</span>
     </li>`).join('');
+
+  if (career.wallet) {
+    $('wallet-sec').hidden = false;
+    $('club-wallet').textContent = usdc(career.wallet.balance);
+    const bought = career.purchase ? CLUB_BY_ID[career.purchase.clubId] : null;
+    $('club-wallet-note').textContent = bought
+      ? 'You bought ' + bought.name + ' for ' + usdc(career.purchase.price) + '. No real payment was taken.'
+      : 'No real payment was taken.';
+  } else {
+    $('wallet-sec').hidden = true;
+  }
 
   $('save-error').hidden = !saveFailed;
   drawPitch();
@@ -733,7 +764,7 @@ function playMatch() {
 $('play-btn').addEventListener('click', playMatch);
 
 // The summer: promotion and relegation, then a fresh season in the new
-// division. The other seven divisions are played out from the career's seed.
+// division. The other eight groups are played out from the career's seed.
 async function nextSeason() {
   if (!career || busy || !career.finished) return;
   busy = true;
@@ -933,8 +964,8 @@ async function doStartOver() {
     }
     career = null;
     version = null;
-    pickedClub = 'harbourside';
-    pickedDivision = 1;
+    pickedGroup = 'A';
+    pickedClub = SHOP_GROUPS[0].clubIds[0];
     $('manager-name').value = '';
     closeSheet();
     closeMenu();
@@ -951,10 +982,12 @@ $('confirm-over-no').addEventListener('click', () => { $('confirm-over').hidden 
 $('confirm-over-yes').addEventListener('click', doStartOver);
 
 // ── Wiring ───────────────────────────────────────────────────────────────
-$('division-row').addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-division]');
+$('group-row').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-group]');
   if (!btn) return;
-  pickedDivision = Number(btn.dataset.division);
+  pickedGroup = btn.dataset.group;
+  const group = SHOP_GROUPS.find((g) => g.group === pickedGroup);
+  if (group && !group.clubIds.includes(pickedClub)) pickedClub = group.clubIds[0];
   renderNew();
 });
 $('club-list').addEventListener('click', (e) => {

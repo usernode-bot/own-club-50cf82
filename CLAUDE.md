@@ -95,18 +95,26 @@ tables you've marked private), etc.
 
 ## About Own Club
 
-A football management game. You manage one of 144 fictional clubs in eight
-divisions of the Coastal League: set the eleven on a pitch diagram, choose
-formation, mentality, pressing and each player's role, then play each of a
-division's 34 matchdays and read the report. The top three of each division go
-up and the bottom three go down, and Start next season carries your club, its
-players and their roles into its new division. Training, transfers, finances
-and cups come later.
+A football management game. A new career starts with your manager name, a mock
+wallet of 1,000 Dummy USDC and a shop of the 72 Division 3 clubs at 100 each;
+then you set the eleven on a pitch diagram, choose formation, mentality,
+pressing and each player's role, and play each of your group's 34 matchdays
+and read the report. Training, transfers, finances and cups come later.
 
-The ten original clubs make up most of Division 1; the other 134 are generated
+The Coastal League has three tiers and 162 clubs. Division 1 is one group of
+18; Divisions 2 and 3 have four groups, A to D, of 18. The bottom 8 of
+Division 1 go down, two into each Division 2 group; the top 2 of each
+Division 2 group go up to Division 1 and its bottom 2 go down into the
+same-letter Division 3 group; the top 2 of each Division 3 group go up. Nobody
+leaves Division 3, and every group stays at 18. Start next season carries your
+club, its players and their roles into its new group.
+
+The ten original clubs make up most of Division 1; the other 152 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
-squads that get weaker with each division down. Only the manager's own division
-is saved; the rest are played out from the career seed when a season rolls over.
+squads that get weaker with each tier down. Only the manager's own group is
+saved; the other eight groups are played out from the career seed when a
+season rolls over. A career saved in the old eight divisions finishes its
+season and joins the three tiers at rollover.
 
 The simulation lives in `public/engine.js` as a pure, seeded ES module shared
 by the browser and the server: the same state and seed always produce the same
@@ -136,6 +144,9 @@ change follows it, and updates it when a request changes the look on purpose.
   grass in the light look, green-black in the dark. Each club also has one
   badge colour of its own, stored as data in `engine.js` (Harbourside uses the
   pitch token).
+- The Wallet section is one row of the same list: the balance in `.bal`, the
+  price in `.price` (bold, tabular numbers); the group chips reuse the division
+  chip row, four wide.
 - **Signature element:** the pitch diagram: a drawn pitch with your formation
   as white player tokens you drag to swap, the goalkeeper in amber. Small line
   icons mark each kind of moment in the report (a ball, a card, a swap arrow,
@@ -174,6 +185,11 @@ Re-theme by changing the token values there, keeping every text pair at
 
 ## App-specific conventions
 
-_(optional — e.g. "all currency values stored as integer cents, not
-floats"; "the `posts` table is append-only"; "avoid adding new
-dependencies"; etc.)_
+- Dummy USDC is a mock: no payment, wallet or crypto integration. The club
+  price and the starting balance live only in `server.js` (`CLUB_PRICE`,
+  `STARTING_BALANCE`); the browser never sends an amount, and `PUT /api/career`
+  never changes `wallet` or `purchase`.
+- The pyramid is capped at three tiers and 162 clubs (the early-stage maximum):
+  no Division 4. The shop lists Division 3 clubs only, and a manager owns one
+  club at a time. Selling a club, owning more than one and real USDC come
+  later; the purchase is stored so selling can be added.
