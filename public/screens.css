@@ -1,0 +1,155 @@
+/* The screens the spec drew, carried over by the platform before the first
+   version was built (screen 1 is public/index.html's main screen; screen 2,
+   if any, its <template data-spec-screen="2">). Colours are the design kit's
+   tokens, rgb(var(--accent)), so they follow the light and the dark look. */
+
+/* Each screen is one centred column: the phone width it was drawn at grows
+   to a readable column on a wider window, never rows and buttons stretched
+   across the window. Remove this only for an app that fills the window by
+   design, such as a map. */
+[data-spec-screen] {
+  width: 100%;
+  max-width: 42rem;
+  margin-inline: auto;
+}
+
+.app {
+  background: rgb(var(--ground));
+  color: rgb(var(--fg));
+  min-height: 1120px;
+  width: 390px;
+  max-width: 100%;
+  font-family: ui-rounded,system-ui,-apple-system,sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  box-sizing: border-box;
+  padding-bottom: 32px;
+}
+
+.app * {box-sizing:border-box}
+
+.top {
+  background: rgb(var(--pitch));
+  color: #fff;
+  padding: 20px 20px 30px;
+}
+
+.top .sm {font-size:14px;line-height:20px;opacity:.9}
+
+.top h1 {margin:2px 0 0;font-size:28px;line-height:36px;font-weight:700}
+
+.next {margin:-14px 16px 0;background:rgb(var(--surface));border:1px solid rgb(var(--line));border-radius:12px;padding:16px}
+
+.next .row {display:flex;align-items:center;justify-content:space-between;gap:8px}
+
+.team {display:flex;flex-direction:column;align-items:center;gap:4px;width:96px;font-weight:600;font-size:14px;line-height:20px;text-align:center}
+
+.badge {width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff}
+
+.mid {text-align:center;font-size:14px;line-height:20px;color:rgb(var(--muted))}
+
+.mid b {display:block;font-size:20px;line-height:28px;color:rgb(var(--fg))}
+
+.btn-primary {display:flex;width:100%;margin-top:14px;min-height:48px;border-radius:8px;background:rgb(var(--accent));color:rgb(var(--on-accent));font-weight:700;font-size:16px;align-items:center;justify-content:center;gap:8px;border:0}
+
+.sec {padding:20px 16px 0}
+
+.section-label {margin:0 0 8px;padding:0 4px;font-size:14px;line-height:20px;font-weight:500;color:rgb(var(--muted));display:flex;justify-content:space-between}
+
+.pitch {background:linear-gradient(rgb(var(--pitch)),rgb(var(--pitch2)));border-radius:12px;overflow:hidden}
+
+.pitch svg {display:block;width:100%;height:auto}
+
+.formrow {display:flex;gap:8px;margin-top:10px}
+
+.chip {flex:1;min-height:48px;border:1px solid rgb(var(--line));background:rgb(var(--surface));border-radius:8px;display:flex;flex-direction:column;justify-content:center;padding:2px 12px;font-size:14px;line-height:20px;color:rgb(var(--muted))}
+
+.chip b {color:rgb(var(--fg));font-weight:600}
+
+.list {list-style:none;margin:0;padding:0;border:1px solid rgb(var(--line));border-radius:12px;background:rgb(var(--surface));overflow:hidden}
+
+.list-row {display:flex;align-items:center;gap:12px;min-height:44px;padding:10px 16px;border-top:1px solid rgb(var(--line))}
+
+.list-row:first-child {border-top:0}
+
+.pos {width:36px;font-size:14px;font-weight:700;color:rgb(var(--pitch-ink))}
+
+.nm {flex:1;font-weight:500}
+
+.nm small {display:block;font-size:14px;line-height:20px;color:rgb(var(--muted));font-weight:400}
+
+.ovr {font-weight:700;width:28px;text-align:right}
+
+.fit {width:44px;height:6px;border-radius:3px;background:rgb(var(--raised));overflow:hidden}
+
+.fit i {display:block;height:100%;background:rgb(var(--pitch-ink))}
+
+.tbl .list-row {font-size:14px;line-height:20px}
+
+.tbl .n {width:20px;color:rgb(var(--muted))}
+
+.tbl .t {flex:1;font-weight:500}
+
+.tbl .g {width:28px;text-align:right;color:rgb(var(--muted))}
+
+.tbl .p {width:28px;text-align:right;font-weight:700}
+
+.tbl .me {background:rgb(var(--raised))}
+
+.form {display:flex;gap:4px}
+
+.form i {width:18px;height:18px;border-radius:4px;font-style:normal;font-size:11px;line-height:18px;text-align:center;font-weight:700;color:#fff}
+
+.w {background:rgb(var(--pitch))}
+
+.d {background:rgb(var(--muted))}
+
+.l {background:rgb(var(--card-r))}
+
+/* Screen 2's rules, scoped so they do not restyle screen 1. */
+
+[data-spec-screen="2"] .app {min-height:1240px;width:390px;max-width:100%;}
+
+[data-spec-screen="2"] .top {padding:12px 16px 24px;}
+
+[data-spec-screen="2"] .back {display:flex;align-items:center;gap:6px;min-height:44px;font-size:14px;font-weight:600;cursor:pointer}
+
+[data-spec-screen="2"] .sm {text-align:center}
+
+[data-spec-screen="2"] .score {display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+
+[data-spec-screen="2"] .team {width:110px;text-align:center;font-size:14px;line-height:20px;font-weight:600}
+
+[data-spec-screen="2"] .badge {margin:0 auto 4px;border:2px solid rgba(255,255,255,.6)}
+
+[data-spec-screen="2"] .big {font-size:40px;line-height:48px;font-weight:800;letter-spacing:2px;font-variant-numeric:tabular-nums}
+
+[data-spec-screen="2"] .list-row {font-size:14px;line-height:20px}
+
+[data-spec-screen="2"] .min {width:32px;font-weight:700;color:rgb(var(--muted))}
+
+[data-spec-screen="2"] .ev {flex:1}
+
+[data-spec-screen="2"] .ev small {display:block;color:rgb(var(--muted))}
+
+[data-spec-screen="2"] .away {text-align:right}
+
+[data-spec-screen="2"] .stat {display:block;padding:10px 16px}
+
+[data-spec-screen="2"] .stat .h {display:flex;justify-content:space-between;font-weight:600}
+
+[data-spec-screen="2"] .stat .h span:nth-child(2) {font-weight:400;color:rgb(var(--muted))}
+
+[data-spec-screen="2"] .bar {display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:6px;background:rgb(var(--raised))}
+
+[data-spec-screen="2"] .bar i {display:block;background:rgb(var(--pitch-ink))}
+
+[data-spec-screen="2"] .bar u {display:block;margin-left:auto;background:rgb(var(--muted));opacity:.55}
+
+[data-spec-screen="2"] .rt {width:36px;height:24px;border-radius:6px;text-align:center;font-weight:700;background:rgb(var(--raised));font-variant-numeric:tabular-nums}
+
+[data-spec-screen="2"] .rt.top1 {background:rgb(var(--accent));color:rgb(var(--on-accent))}
+
+[data-spec-screen="2"] .nm small {display:block;color:rgb(var(--muted));font-weight:400}
+
+[data-spec-screen="2"] .btn-primary {display:flex;width:100%;min-height:48px;border-radius:8px;background:rgb(var(--accent));color:rgb(var(--on-accent));font-weight:700;align-items:center;justify-content:center;border:0;font-size:16px}

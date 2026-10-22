@@ -1,5 +1,7 @@
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
+const { pathToFileURL } = require('url');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 
@@ -37,7 +39,8 @@ const GUEST_PUBLIC_KEY = (process.env.USERNODE_GUEST_JWT_PUBLIC_KEY || '')
 // Everything else requires a valid platform-issued JWT.
 const PUBLIC_API_PATHS = new Set(['/health']);
 
-app.use(express.json());
+// A career's state carries every squad, fixture, result and match report.
+app.use(express.json({ limit: '8mb' }));
 
 // The platform's three centrally hosted files — the bridge, the native UI
 // kit and the Tailwind runtime — are reachable at these paths on this app's
@@ -158,6 +161,165 @@ app.use((req, res, next) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+
+// ── The football engine ─────────────────────────────────────────────────
+// public/engine.js is a browser ES module; the server imports the same file
+// so a career and the demo are built by exactly the code the app runs.
+let enginePromise = null;
+function engine() {
+  if (!enginePromise) {
+    enginePromise = import(pathToFileURL(path.join(__dirname, 'public', 'engine.js')).href);
+  }
+  return enginePromise;
+}
+
+// The demo's fixed seed puts Harbourside third on 22 points after eleven
+// matchdays, as the spec's staging demo describes.
+const DEMO_SEED = 6;
+
+// ── The career table ─────────────────────────────────────────────────────
+// One row per person (and one demo row per person), holding the whole saved
+// season as JSON. It carries the manager's name, so it is staging:private.
+async function boot() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS careers (
+    user_id text NOT NULL,
+    is_demo boolean NOT NULL DEFAULT false,
+    manager_name text NOT NULL,
+    club_id text NOT NULL,
+    seed integer NOT NULL,
+    state jsonb NOT NULL,
+    version integer NOT NULL DEFAULT 1,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, is_demo)
+  )`);
+  await pool.query("COMMENT ON TABLE careers IS 'staging:private'");
+}
+
+// ?demo=1 acts on the viewer's demo career, and only in staging.
+function wantsDemo(req) {
+  return IS_STAGING && req.query.demo === '1';
+}
+
+function validName(name) {
+  return typeof name === 'string' && name.trim().length >= 1 && name.trim().length <= 40;
+}
+
+app.get('/api/career', async (req, res) => {
+  const demo = wantsDemo(req);
+  try {
+    if (!req.user) {
+      // A guest looking around in staging sees the demo season, unread-only.
+      if (demo) {
+        const e = await engine();
+        return res.json({ career: e.buildDemoState(DEMO_SEED), version: 1, demo: true });
+      }
+      return res.json({ career: null, version: 0, demo: false });
+    }
+    const { rows } = await pool.query(
+      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
+      [req.user.id, demo]
+    );
+    if (rows.length) {
+      return res.json({ career: rows[0].state, version: rows[0].version, demo });
+    }
+    if (demo) {
+      const e = await engine();
+      const state = e.buildDemoState(DEMO_SEED);
+      await pool.query(
+        `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
+         VALUES ($1, true, $2, $3, $4, $5, 1)
+         ON CONFLICT (user_id, is_demo) DO NOTHING`,
+        [req.user.id, 'Demo Manager', state.clubId, DEMO_SEED, state]
+      );
+      const again = await pool.query(
+        'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = true',
+        [req.user.id]
+      );
+      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true });
+    }
+    // No career yet is an ordinary answer: the page shows New career.
+    return res.json({ career: null, version: 0, demo: false });
+  } catch (err) {
+    console.error('career load failed: ' + err.message);
+    return res.status(500).json({ error: 'career_load_failed' });
+  }
+});
+
+app.post('/api/career', async (req, res) => {
+  const demo = wantsDemo(req);
+  const { managerName, clubId } = req.body || {};
+  if (!validName(managerName)) {
+    return res.status(400).json({ error: 'manager_name', message: 'A manager name is 1 to 40 characters.' });
+  }
+  try {
+    const e = await engine();
+    if (!e.CLUB_BY_ID[clubId]) return res.status(400).json({ error: 'club' });
+    const seed = crypto.randomInt(1, 2147483647);
+    const state = e.buildInitialState(clubId, managerName.trim(), seed);
+    state.managerName = managerName.trim();
+    const { rows } = await pool.query(
+      `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
+       VALUES ($1, $2, $3, $4, $5, $6, 1)
+       ON CONFLICT (user_id, is_demo) DO UPDATE SET
+         manager_name = EXCLUDED.manager_name,
+         club_id = EXCLUDED.club_id,
+         seed = EXCLUDED.seed,
+         state = EXCLUDED.state,
+         version = careers.version + 1,
+         updated_at = now()
+       RETURNING state, version`,
+      [req.user.id, demo, state.managerName, clubId, seed, state]
+    );
+    return res.json({ career: rows[0].state, version: rows[0].version, demo });
+  } catch (err) {
+    console.error('career create failed: ' + err.message);
+    return res.status(500).json({ error: 'career_create_failed' });
+  }
+});
+
+app.put('/api/career', async (req, res) => {
+  const demo = wantsDemo(req);
+  const { state, version } = req.body || {};
+  if (!state || typeof state !== 'object' || !Number.isInteger(version)) {
+    return res.status(400).json({ error: 'state_or_version' });
+  }
+  try {
+    const e = await engine();
+    if (!e.CLUB_BY_ID[state.clubId]) return res.status(400).json({ error: 'club' });
+    const { rows } = await pool.query(
+      `UPDATE careers SET state = $3, version = version + 1, updated_at = now()
+        WHERE user_id = $1 AND is_demo = $2 AND version = $4
+        RETURNING version`,
+      [req.user.id, demo, state, version]
+    );
+    if (rows.length) return res.json({ version: rows[0].version });
+    const exists = await pool.query(
+      'SELECT 1 FROM careers WHERE user_id = $1 AND is_demo = $2',
+      [req.user.id, demo]
+    );
+    return exists.rows.length
+      ? res.status(409).json({ error: 'version_mismatch' })
+      : res.status(404).json({ error: 'no_career' });
+  } catch (err) {
+    console.error('career save failed: ' + err.message);
+    return res.status(500).json({ error: 'career_save_failed' });
+  }
+});
+
+app.delete('/api/career', async (req, res) => {
+  const demo = wantsDemo(req);
+  try {
+    await pool.query(
+      'DELETE FROM careers WHERE user_id = $1 AND is_demo = $2',
+      [req.user.id, demo]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('career delete failed: ' + err.message);
+    return res.status(500).json({ error: 'career_delete_failed' });
+  }
+});
+
 // The template ships no favicon file; index.html carries an inline SVG
 // icon instead. Answer 204 here so anything that still probes
 // /favicon.ico (older browsers, direct visits) doesn't fall through to
@@ -204,9 +366,21 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
+  await boot();
   const server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
+  let closing = false;
+  function shutdown() {
+    if (closing) return;
+    closing = true;
+    server.close(() => {
+      pool.end().finally(() => process.exit(0));
+    });
+    setTimeout(() => process.exit(0), 3000).unref();
+  }
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 start().catch(err => { console.error(err); process.exit(1); });
