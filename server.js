@@ -173,9 +173,9 @@ function engine() {
   return enginePromise;
 }
 
-// The demo's fixed seed puts Harbourside third on 22 points after eleven
-// matchdays, as the spec's staging demo describes.
-const DEMO_SEED = 6;
+// The demo's fixed seed puts Harbourside third on 32 points after seventeen
+// matchdays of a Division 1 season, as the spec's staging demo describes.
+const DEMO_SEED = 1;
 
 // ── The career table ─────────────────────────────────────────────────────
 // One row per person (and one demo row per person), holding the whole saved

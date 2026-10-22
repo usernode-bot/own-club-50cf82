@@ -7,10 +7,10 @@
 // the same match, every time. Randomness comes only from mulberry32 streams
 // seeded from the career seed.
 
-// ── Clubs ────────────────────────────────────────────────────────────────
 // All fictional. `rep` is the board's 1 to 5 star standing, which sets the
-// quality of the squad it is dealt.
-export const CLUBS = [
+// quality of the squad it is dealt. The pyramid itself is built below, after
+// the formations, because a generated club is dealt one of them.
+const COASTAL_CLUBS = [
   { id: 'harbourside', name: 'Harbourside FC', short: 'HF', color: 'rgb(var(--pitch))', rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay' },
   { id: 'redvale', name: 'Redvale Athletic', short: 'RA', color: '#7a3b8f', rep: 5, formation: '4-2-3-1', objective: 'Win the league', ground: 'Redvale Park' },
   { id: 'kingsmoor', name: 'Kingsmoor United', short: 'KU', color: '#1e4fa3', rep: 5, formation: '4-3-3', objective: 'Win the league', ground: 'Kingsmoor Road' },
@@ -22,10 +22,6 @@ export const CLUBS = [
   { id: 'gullport', name: 'Gullport United', short: 'GU', color: '#3f5a1d', rep: 2, formation: '4-4-2', objective: 'Avoid finishing bottom', ground: 'The Nest' },
   { id: 'kestrel', name: 'Kestrel Park', short: 'KP', color: '#8a4a1f', rep: 1, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Kestrel Lane' },
 ];
-
-export const CLUB_BY_ID = Object.fromEntries(CLUBS.map((c) => [c.id, c]));
-export const LEAGUE_NAME = 'The Coastal League';
-export const MATCHDAYS = 18;
 
 // ── Formations, mentalities, pressing, roles ─────────────────────────────
 // A slot's coordinates are 0..1 on the drawn pitch: x across, y down from the
@@ -80,6 +76,114 @@ export const FORMATIONS = {
 };
 
 export const FORMATION_NAMES = Object.keys(FORMATIONS);
+
+// ── The pyramid ──────────────────────────────────────────────────────────
+// The Coastal League is eight divisions of 18 clubs. The ten original clubs
+// form most of Division 1; the other 134 are generated from a fixed seed, so
+// every career meets the same clubs by the same names. A club's division sets
+// the strength of its squad (see attrRange): Division 1 is the strongest.
+export const LEAGUE_NAME = 'The Coastal League';
+export const DIVISION_COUNT = 8;
+export const DIVISION_SIZE = 18;
+export const MATCHDAYS = (DIVISION_SIZE - 1) * 2;
+
+const PYRAMID_SEED = 50731;
+const PYRAMID_CLUBS = DIVISION_COUNT * DIVISION_SIZE - COASTAL_CLUBS.length;
+
+const PLACE_POOL = [
+  'Ashcombe', 'Bracken', 'Fenwick', 'Lowmere', 'Ostrey', 'Pellow', 'Marwick', 'Tarnbrook',
+  'Wexley', 'Hollins', 'Ivybridge', 'Jarrow', 'Kelbrook', 'Larkspur', 'Mossley', 'Netherby',
+  'Oakhurst', 'Penrose', 'Quarrydale', 'Rosemarket', 'Stonebury', 'Thornleigh', 'Underhill',
+  'Valebrook', 'Westhaven', 'Yarrow', 'Aldermere', 'Briarwood', 'Coldharbour', 'Dunmore',
+  'Eastgate', 'Fairholt', 'Glenross', 'Hartwell', 'Ingleby', 'Kirkstone', 'Longmarsh',
+  'Millbrook', 'Northgate', 'Overton', 'Pinewood', 'Redmoss', 'Saltby', 'Torcross',
+  'Uppermill', 'Wrenfield', 'Yewdale', 'Barrowden',
+];
+const CLUB_SUFFIXES = ['FC', 'Athletic', 'Town', 'United', 'Rovers', 'City', 'Wanderers'];
+const GROUND_WORDS = ['Road', 'Lane', 'Park', 'Field', 'End', 'Green', 'Way', 'Quay'];
+// Dark enough for the white initials on the badge in both looks.
+const BADGE_COLORS = [
+  '#5a4632', '#7a2f3a', '#2f5d62', '#4b3f72', '#6b4a1f', '#2d5340', '#7a5a1e', '#274b78',
+  '#5c2d4a', '#3a4a2a', '#6f3a24', '#334d5c', '#6a2f5a', '#3f4770', '#59421c', '#2b5a4f',
+];
+// The reputation a generated club is dealt, by its place in its division. The
+// whole pattern drops a rung in the bottom half of the pyramid.
+const GENERATED_REPS = [3, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2];
+
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function objectiveForRep(rep) {
+  if (rep >= 5) return 'Win the league';
+  if (rep >= 3) return 'Finish in the top half';
+  return 'Avoid finishing bottom';
+}
+
+function uniqueShort(name, used) {
+  const [place, suffix] = name.split(' ');
+  const p = place.toUpperCase();
+  const candidates = [p[0] + suffix[0].toUpperCase(), p.slice(0, 2)];
+  for (const ch of p.slice(1)) candidates.push(p[0] + ch);
+  for (let i = 0; i < 26; i++) candidates.push(p[0] + String.fromCharCode(65 + i));
+  for (const c of candidates) if (!used.has(c)) return c;
+  return p.slice(0, 2);
+}
+
+function generateClubs() {
+  const rng = mulberry32(hash(PYRAMID_SEED, 'clubs'));
+  const combos = [];
+  for (const place of PLACE_POOL) for (const suffix of CLUB_SUFFIXES) combos.push({ place, suffix });
+  for (let i = combos.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [combos[i], combos[j]] = [combos[j], combos[i]];
+  }
+  const names = new Set(COASTAL_CLUBS.map((c) => c.name));
+  const shorts = new Set(COASTAL_CLUBS.map((c) => c.short));
+  const out = [];
+  for (const { place, suffix } of combos) {
+    if (out.length === PYRAMID_CLUBS) break;
+    const name = place + ' ' + suffix;
+    if (names.has(name)) continue;
+    names.add(name);
+    const short = uniqueShort(name, shorts);
+    shorts.add(short);
+    const n = out.length;
+    const division = n < 8 ? 1 : 2 + Math.floor((n - 8) / DIVISION_SIZE);
+    const pos = n < 8 ? n : (n - 8) % DIVISION_SIZE;
+    const rep = Math.max(1, GENERATED_REPS[pos] - Math.floor((division - 1) / 4));
+    out.push({
+      id: slugify(name),
+      name,
+      short,
+      color: BADGE_COLORS[n % BADGE_COLORS.length],
+      rep,
+      formation: FORMATION_NAMES[Math.floor(rng() * FORMATION_NAMES.length)],
+      objective: objectiveForRep(rep),
+      ground: place + ' ' + GROUND_WORDS[Math.floor(rng() * GROUND_WORDS.length)],
+    });
+  }
+  return out;
+}
+
+export const CLUBS = COASTAL_CLUBS.concat(generateClubs());
+export const CLUB_BY_ID = Object.fromEntries(CLUBS.map((c) => [c.id, c]));
+const CLUB_INDEX = Object.fromEntries(CLUBS.map((c, i) => [c.id, i]));
+export const COASTAL_IDS = COASTAL_CLUBS.map((c) => c.id);
+
+// Every club's starting division, and the starting membership of each.
+export const DIVISIONS = Array.from({ length: DIVISION_COUNT }, (_, i) => ({
+  id: i + 1,
+  name: 'Division ' + (i + 1),
+  clubIds: [],
+}));
+CLUBS.forEach((c, i) => {
+  const division = i < DIVISION_SIZE ? 1 : 2 + Math.floor((i - DIVISION_SIZE) / DIVISION_SIZE);
+  DIVISIONS[division - 1].clubIds.push(c.id);
+});
+export const clubToDivision = Object.fromEntries(
+  DIVISIONS.flatMap((d) => d.clubIds.map((id) => [id, d.id]))
+);
 
 export const MENTALITIES = {
   Defensive: { att: 0.86, mid: 0.98, def: 1.12 },
@@ -218,14 +322,15 @@ const SQUAD_SHAPE = [
   'ST', 'ST', 'RW', 'LW',
 ];
 
-// The club's reputation decides where its players' attributes sit.
-function attrRange(rep) {
-  const centre = 48 + rep * 5.2; // rep 1 -> 53, rep 5 -> 74
+// The club's reputation decides where its players' attributes sit, and each
+// division down is three points weaker.
+function attrRange(rep, division = 1) {
+  const centre = 48 + rep * 5.2 - (division - 1) * 3; // rep 1, Division 1 -> 53
   return { lo: centre - 11, hi: centre + 13 };
 }
 
-function makePlayer(rng, pos, rep, n) {
-  const { lo, hi } = attrRange(rep);
+function makePlayer(rng, pos, rep, n, division) {
+  const { lo, hi } = attrRange(rep, division);
   const roll = () => Math.round(lo + rng() * (hi - lo));
   const g = POS_GROUP[pos];
   const attrs = {
@@ -254,11 +359,11 @@ function makePlayer(rng, pos, rep, n) {
   };
 }
 
-export function buildSquad(seed, clubIndex, rep) {
+export function buildSquad(seed, clubIndex, rep, division = 1) {
   const rng = mulberry32(hash(seed, 'squad', clubIndex));
   const used = new Set();
   const players = SQUAD_SHAPE.map((pos, i) => {
-    const p = makePlayer(rng, pos, rep, clubIndex * 100 + i);
+    const p = makePlayer(rng, pos, rep, clubIndex * 100 + i, division);
     let name;
     do {
       name = pick(rng, FIRST_NAMES) + ' ' + pick(rng, LAST_NAMES);
@@ -274,16 +379,11 @@ export function buildSquad(seed, clubIndex, rep) {
   return players;
 }
 
-function clubSquads(seed) {
-  const squads = {};
-  CLUBS.forEach((club, i) => { squads[club.id] = buildSquad(seed, i, club.rep); });
-  return squads;
-}
-
 // ── Fixtures ─────────────────────────────────────────────────────────────
-// A double round robin: everyone plays everyone home and away, 18 matchdays.
-export function buildFixtures(seed) {
-  const ids = CLUBS.map((c) => c.id);
+// A double round robin: everyone plays everyone home and away. A division of
+// 18 gives 34 matchdays; the ten-club season of a version 1 career gives 18.
+export function buildFixtures(seed, clubIds = COASTAL_IDS) {
+  const ids = clubIds.slice();
   // Seeded shuffle so a career's league order differs but repeats for a seed.
   const rng = mulberry32(hash(seed, 'fixtures'));
   for (let i = ids.length - 1; i > 0; i--) {
@@ -440,9 +540,28 @@ export function allResults(state) {
   return state.results || [];
 }
 
+// The 18 clubs of the manager's division. A version 1 career is the old
+// ten-club Coastal League season.
+export function divisionClubIds(state) {
+  if (state && state.version >= 2 && Array.isArray(state.divisions) && state.divisions[state.division - 1]) {
+    return state.divisions[state.division - 1];
+  }
+  return COASTAL_IDS;
+}
+
+// The seed a season's matches and squads come from. Season 1 is the career
+// seed itself, so a version 1 career's matches stay exactly as they were.
+export function seasonSeed(state) {
+  const season = state.season || 1;
+  return season <= 1 ? state.seed : hash(state.seed, 'season', season);
+}
+
 export function leagueTable(state) {
   const rows = {};
-  for (const c of CLUBS) rows[c.id] = { id: c.id, name: c.name, short: c.short, played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0, gd: 0, points: 0 };
+  for (const id of divisionClubIds(state)) {
+    const c = CLUB_BY_ID[id];
+    rows[c.id] = { id: c.id, name: c.name, short: c.short, played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0, gd: 0, points: 0 };
+  }
   for (const r of state.results) {
     const h = rows[r.home.id];
     const a = rows[r.away.id];
@@ -490,11 +609,12 @@ export function nextFixture(state) {
   return null;
 }
 
-export function objectiveMet(rank, objective) {
+// `size` is the number of clubs in the division the rank is in.
+export function objectiveMet(rank, objective, size = DIVISION_SIZE) {
   if (objective === 'Win the league') return rank === 1;
-  if (objective === 'Finish in the top half') return rank <= 5;
-  if (objective === 'Avoid finishing bottom') return rank < CLUBS.length;
-  return rank <= 4;
+  if (objective === 'Finish in the top half') return rank <= Math.ceil(size / 2);
+  if (objective === 'Avoid finishing bottom') return rank < size;
+  return rank <= Math.ceil(size / 2) - 1;
 }
 
 // ── Preparing a side for the simulation ──────────────────────────────────
@@ -875,7 +995,7 @@ export function playMatchday(state) {
   state.fixtures[md].forEach((f, i) => {
     const home = teamFor(state, f.home);
     const away = teamFor(state, f.away);
-    const report = simulateMatch(home, away, matchSeed(state.seed, md, i));
+    const report = simulateMatch(home, away, matchSeed(seasonSeed(state), md, i));
     report.matchday = md + 1;
     report.fixtureIndex = i;
     reports.push(report);
@@ -897,43 +1017,189 @@ export function playMatchday(state) {
 }
 
 // ── A career ─────────────────────────────────────────────────────────────
+function squadsFor(seed, clubIds, division) {
+  const squads = {};
+  for (const id of clubIds) {
+    squads[id] = buildSquad(seed, CLUB_INDEX[id], CLUB_BY_ID[id].rep, division);
+  }
+  return squads;
+}
+
+function rolesFor(squads) {
+  const roles = {};
+  for (const id in squads) {
+    for (const p of squads[id]) roles[p.id] = defaultRole(p.pos);
+  }
+  return roles;
+}
+
 export function buildInitialState(clubId, managerName, seed) {
   const club = CLUB_BY_ID[clubId];
   if (!club) throw new Error('Unknown club');
-  const squads = clubSquads(seed);
+  const divisions = DIVISIONS.map((d) => d.clubIds.slice());
+  const division = clubToDivision[clubId] || 1;
+  const ids = divisions[division - 1];
+  const squads = squadsFor(seed, ids, division);
   const state = {
-    version: 1,
+    version: 2,
+    season: 1,
+    division,
+    divisions,
     managerName,
     clubId,
     seed,
     squads,
-    fixtures: buildFixtures(seed),
+    fixtures: buildFixtures(seed, ids),
     results: [],
     tactics: { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' },
-    roles: {},
+    roles: rolesFor(squads),
     lineup: [],
     matchday: 0,
     finished: false,
     lastReport: null,
   };
-  for (const id of Object.keys(squads)) {
-    for (const p of squads[id]) state.roles[p.id] = defaultRole(p.pos);
-  }
   state.lineup = autoLineup(squads[clubId], state.tactics.formation, state.roles);
   return state;
 }
 
-export function clubSummary(seed, club) {
-  const squad = buildSquad(seed, CLUBS.indexOf(club), club.rep);
+export function clubSummary(seed, club, division = 1) {
+  const squad = buildSquad(seed, CLUB_INDEX[club.id], club.rep, division);
   const avg = squad.reduce((s, p) => s + p.overall, 0) / squad.length;
   return { avg: Math.round(avg) };
 }
 
-// The staging demo: Harbourside eleven matchdays in, with one injury and one
-// booking to show, the last result and the table already filled in.
+// How a finished season ended for the manager: where they finished, and
+// whether the top three or bottom three of their division moves them.
+export function seasonOutcome(state) {
+  const table = leagueTable(state);
+  const size = divisionClubIds(state).length;
+  const me = table.find((r) => r.id === state.clubId);
+  const rank = me ? me.rank : size;
+  const isV1 = !(state.version >= 2) || !Array.isArray(state.divisions);
+  if (isV1) return { rank, size, kind: 'stayed', toDivision: 1 };
+  const division = state.division;
+  if (division === 1 && rank === 1) return { rank, size, kind: 'champions', toDivision: 1 };
+  if (division > 1 && rank <= 3) return { rank, size, kind: 'promoted', toDivision: division - 1 };
+  if (division < DIVISION_COUNT && rank > size - 3) return { rank, size, kind: 'relegated', toDivision: division + 1 };
+  return { rank, size, kind: 'stayed', toDivision: division };
+}
+
+// Summer: the manager's own players stay and start again from zero; everyone
+// else in the new division is dealt a squad at that division's strength.
+function playerForNewSeason(p) {
+  return {
+    id: p.id,
+    name: p.name,
+    pos: p.pos,
+    age: p.age,
+    attrs: p.attrs,
+    overall: p.overall,
+    fitness: 100,
+    morale: p.morale,
+    injury: 0,
+    goals: 0,
+    assists: 0,
+    apps: 0,
+    yellow: 0,
+    red: 0,
+    captain: p.captain,
+  };
+}
+
+// One of the divisions the manager is not in, played out from the season's
+// seed so the same career always gives the same final table.
+function simulateDivision(seed, division, clubIds) {
+  const squads = squadsFor(seed, clubIds, division);
+  const state = {
+    version: 2,
+    season: 1, // season 1 means seasonSeed(state) is the seed handed in
+    division: 1,
+    divisions: [clubIds.slice()],
+    managerName: '',
+    clubId: null,
+    seed,
+    squads,
+    fixtures: buildFixtures(hash(seed, 'division', division), clubIds),
+    results: [],
+    tactics: { formation: '4-4-2', mentality: 'Balanced', pressing: 'Medium' },
+    roles: rolesFor(squads),
+    lineup: [],
+    matchday: 0,
+    finished: false,
+    lastReport: null,
+  };
+  while (!state.finished) playMatchday(state);
+  return leagueTable(state);
+}
+
+// Apply promotion and relegation, then start the next season with the same
+// club and players in its new division. Only a finished season rolls over.
+export function startNextSeason(state) {
+  if (!state || !state.finished) return state;
+  const isV1 = !(state.version >= 2) || !Array.isArray(state.divisions);
+  const season = (state.season || 1) + 1;
+  let divisions;
+  let newDivision;
+  if (isV1) {
+    divisions = DIVISIONS.map((d) => d.clubIds.slice());
+    newDivision = 1;
+  } else {
+    divisions = state.divisions.map((ids) => ids.slice());
+    const seed = seasonSeed(state);
+    const tables = {};
+    for (let d = 1; d <= DIVISION_COUNT; d++) {
+      tables[d] = d === state.division
+        ? leagueTable(state)
+        : simulateDivision(seed, d, divisions[d - 1]);
+    }
+    // Three up from each division, three down into it.
+    for (let d = 1; d < DIVISION_COUNT; d++) {
+      const up = tables[d + 1].slice(0, 3).map((r) => r.id);
+      const down = tables[d].slice(-3).map((r) => r.id);
+      divisions[d - 1] = divisions[d - 1].filter((id) => !down.includes(id)).concat(up);
+      divisions[d] = divisions[d].filter((id) => !up.includes(id)).concat(down);
+    }
+    newDivision = divisions.findIndex((ids) => ids.includes(state.clubId)) + 1;
+  }
+  const seed = seasonSeed({ seed: state.seed, season });
+  const ids = divisions[newDivision - 1];
+  const squads = { [state.clubId]: state.squads[state.clubId].map(playerForNewSeason) };
+  for (const id of ids) {
+    if (id === state.clubId) continue;
+    squads[id] = buildSquad(seed, CLUB_INDEX[id], CLUB_BY_ID[id].rep, newDivision);
+  }
+  const next = {
+    version: 2,
+    season,
+    division: newDivision,
+    divisions,
+    managerName: state.managerName,
+    clubId: state.clubId,
+    seed: state.seed,
+    squads,
+    fixtures: buildFixtures(seed, ids),
+    results: [],
+    tactics: { ...state.tactics },
+    roles: rolesFor(squads),
+    lineup: [],
+    matchday: 0,
+    finished: false,
+    lastReport: null,
+  };
+  // The manager's players keep the roles they were given.
+  for (const p of next.squads[next.clubId]) {
+    if (state.roles && state.roles[p.id]) next.roles[p.id] = state.roles[p.id];
+  }
+  next.lineup = autoLineup(next.squads[next.clubId], next.tactics.formation, next.roles);
+  return next;
+}
+
+// The staging demo: Harbourside seventeen matchdays into a Division 1 season,
+// with one injury and one booking to show, the last result and the table
+// already filled in.
 export function buildDemoState(seed) {
   const state = buildInitialState('harbourside', 'Demo Manager', seed);
-  for (let i = 0; i < 11; i++) playMatchday(state);
+  for (let i = 0; i < 17; i++) playMatchday(state);
   // The demo shows exactly one injured player and one booked player.
   const squad = state.squads.harbourside;
   for (const p of squad) { p.injury = 0; p.yellow = 0; p.red = 0; }
@@ -948,14 +1214,15 @@ export function buildDemoState(seed) {
   return state;
 }
 
-// Find a seed whose demo puts Harbourside third after eleven matchdays. Done
-// once, offline, and the answer is written into server.js as DEMO_SEED.
+// Find a seed whose demo puts Harbourside third after seventeen matchdays in
+// Division 1. Done once, offline, and the answer is written into server.js as
+// DEMO_SEED.
 export function findDemoSeed(max = 400) {
   for (let seed = 1; seed <= max; seed++) {
     const state = buildDemoState(seed);
     const table = leagueTable(state);
     const me = table.find((r) => r.id === 'harbourside');
-    if (me && me.rank === 3 && me.played === 11) return { seed, points: me.points, table: table.map((r) => [r.rank, r.name, r.points]) };
+    if (me && me.rank === 3 && me.played === 17) return { seed, points: me.points, table: table.map((r) => [r.rank, r.name, r.points]) };
   }
   return null;
 }
