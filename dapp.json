@@ -1,12 +1,33 @@
 {
-  "description": "A game",
+  "description": "A football management game: pick a fictional club, set your lineup and tactics, and play an 18-matchday season of simulated matches.",
   "category": "other",
   "icon": {
-    "emoji": "⚽"
+    "emoji": "\u26bd"
   },
   "secrets": [],
   "governance": {
     "preset": "you_or_the_group"
   },
-  "tests": []
+  "tests": [
+    {
+      "name": "New career screen",
+      "path": "/",
+      "expectText": "New career"
+    },
+    {
+      "name": "Demo club screen",
+      "path": "/?demo=1",
+      "expectText": "Play match",
+      "expectSelector": "[data-formation]",
+      "visual": true,
+      "impact": [
+        "public/**"
+      ]
+    },
+    {
+      "name": "Health",
+      "path": "/health",
+      "expectText": "ok"
+    }
+  ]
 }

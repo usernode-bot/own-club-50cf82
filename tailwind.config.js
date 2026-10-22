@@ -55,6 +55,11 @@ module.exports = {
         danger: token('danger'),
         'on-danger': token('on-danger'),
         focus: token('focus'), // the keyboard focus ring
+        pitch: token('pitch'), // the header, the pitch and this club's colours
+        pitch2: token('pitch2'), // the far end of the pitch gradient
+        'pitch-ink': token('pitch-ink'), // green text that stays readable on a surface
+        'card-y': token('card-y'), // a yellow card
+        'card-r': token('card-r'), // a red card
       },
       // The type scale: four sizes, and nothing in between.
       fontSize: {

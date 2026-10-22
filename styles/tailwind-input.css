@@ -29,34 +29,40 @@
  */
 @layer base {
   :root {
-    --ground: 244 246 240;    /* the page */
+    --ground: 244 246 240;    /* pale grass: the page */
     --surface: 255 255 255;   /* lists, cards, fields */
-    --raised: 234 239 231;    /* hovers, badges */
-    --fg: 22 36 28;           /* text */
+    --raised: 234 239 231;    /* hovers, badges, the loaded list */
+    --fg: 22 36 28;           /* chalk-dark text */
     --muted: 78 94 84;        /* secondary text */
     --line: 215 223 212;      /* borders, dividers, skeletons */
-    --accent: 217 119 6;     /* the one accent */
-    --on-accent: 28 16 2; /* text on the accent */
+    --accent: 217 119 6;      /* warm amber: the one action colour */
+    --on-accent: 28 16 2;     /* text on the accent */
     --danger: 185 28 28;
     --on-danger: 255 255 255;
-    --focus: 13 148 136;      /* the keyboard focus ring */
-    --pitch: 21 94 58; /* from the spec's screens */
-    --pitch2: 26 108 67; /* from the spec's screens */
-    --card-y: 234 179 8; /* from the spec's screens */
-    --card-r: 200 35 35; /* from the spec's screens */
+    --focus: 21 94 58;        /* the keyboard focus ring */
+    --pitch: 21 94 58;        /* deep pitch green: header, pitch, your club */
+    --pitch2: 26 108 67;
+    --pitch-ink: 21 94 58;    /* green text on a light surface */
+    --card-y: 234 179 8;      /* a yellow card */
+    --card-r: 200 35 35;      /* a red card */
   }
   .dark {
-    --ground: 12 10 9;
-    --surface: 28 25 23;
-    --raised: 41 37 36;
-    --fg: 245 245 244;
-    --muted: 168 162 158;
-    --line: 68 64 60;
-    --accent: 45 212 191;
-    --on-accent: 4 47 46;
-    --danger: 248 113 113;
-    --on-danger: 69 10 10;
-    --focus: 94 234 212;
+    --ground: 14 22 17;
+    --surface: 22 33 26;
+    --raised: 31 45 36;
+    --fg: 232 240 234;
+    --muted: 160 178 166;
+    --line: 46 62 52;
+    --accent: 245 158 11;
+    --on-accent: 28 16 2;
+    --danger: 239 68 68;
+    --on-danger: 28 16 2;
+    --focus: 245 158 11;
+    --pitch: 18 82 51;
+    --pitch2: 22 94 58;
+    --pitch-ink: 160 214 178;
+    --card-y: 250 204 21;
+    --card-r: 239 68 68;
   }
   /* el.hidden = true hides an element even when a class gives it a display
      (flex, the components below). */

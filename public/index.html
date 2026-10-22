@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
+
   <script>
   // usernode-dev-console@1
   (function () {
@@ -64,7 +64,7 @@
   })();
   </script>
   <title>Own Club</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%237c3aed'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23155e3a'/><path d='M50 26l15 11-6 18H41l-6-18z' fill='%23fff'/><path d='M50 26V8M65 37l17-6M59 55l10 15M41 55L31 70M35 37L18 31' stroke='%23fff' stroke-width='6'/></svg>">
   <!-- Tailwind, PRECOMPILED for this app (was cdn.tailwindcss.com's
        in-browser engine plus an inline tailwind.config here). The config
        moved to tailwind.config.js in the repo root; npm run build compiles
@@ -79,6 +79,7 @@
        <script src="/usernode-tailwind/v1/tailwind.js"></script> -->
   <link rel="stylesheet" href="/tailwind.css">
   <link rel="stylesheet" href="/screens.css">
+  <link rel="stylesheet" href="/app.css">
   <!-- The platform bridge, centrally hosted and loaded by RELATIVE path (the
        handler in server.js serves it under a plain "node server.js"; the
        platform's edge answers it everywhere else). Never vendor it and never
@@ -101,6 +102,7 @@
         var theme = (window.usernode && window.usernode.theme) || (media.matches ? 'dark' : 'light');
         document.documentElement.classList.toggle('dark', theme === 'dark');
         document.documentElement.style.colorScheme = theme;
+        window.dispatchEvent(new CustomEvent('ownclub:theme'));
       }
       applyTheme();
       window.addEventListener('usernode:theme-changed', applyTheme);
@@ -109,81 +111,217 @@
   </script>
 </head>
 <body class="min-h-screen bg-ground text-fg">
-  <!-- Built from the design kit in styles/tailwind-input.css: colour tokens
-       that are right in both looks, and components for buttons, fields,
-       lists, cards and data states. The real app keeps the kit; CLAUDE.md's
-       "## Design" says how. -->
-  <!-- (Named in prose on purpose: Tailwind compiles any class-name word in
-       these files, comments included, and the starter should ship only the
-       components its screen uses.) -->
-  <!-- usernode-spec-screens@1: the screens the spec drew, carried over by the platform as this
-       first version's starting point. Their styles are in public/screens.css.
-       Change them where behaviour needs it; do not redraw them. -->
+  <!-- usernode-spec-screens@1: the screens the spec drew. Screen 1 is the
+       club screen and screen 2 the match report; their styles are in
+       public/screens.css, the app's own additions in public/app.css. -->
   <div data-spec-screen="1">
-    <div class="app">
-    <div class="top"><div class="sm">Matchday 12 of 18</div><h1>Harbourside FC</h1><div class="sm">3rd in the Coastal League</div></div>
-    <div class="next">
-    <div class="row"><div class="team"><span class="badge" style="background:rgb(var(--pitch))">HF</span>Harbourside</div><div class="mid">Next match<b>vs</b>Home</div><div class="team"><span class="badge" style="background:#7a3b8f">RA</span>Redvale Athletic</div></div>
-    <button class="btn-primary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/></svg>Play match</button></div>
-    <div class="sec"><div class="section-label"><span>Your lineup</span><span>Drag a player to swap</span></div>
-    <div class="pitch"><svg viewBox="0 0 358 300" fill="none"><g stroke="#fff" stroke-opacity=".55" stroke-width="2"><rect x="10" y="10" width="338" height="280"/><line x1="10" y1="150" x2="348" y2="150"/><circle cx="179" cy="150" r="36"/><rect x="95" y="10" width="168" height="48"/><rect x="95" y="242" width="168" height="48"/></g>
-    <g fill="#fff"><circle cx="70" cy="60" r="16"/><circle cx="179" cy="48" r="16"/><circle cx="288" cy="60" r="16"/><circle cx="90" cy="130" r="16"/><circle cx="179" cy="118" r="16"/><circle cx="268" cy="130" r="16"/><circle cx="48" cy="205" r="16"/><circle cx="135" cy="215" r="16"/><circle cx="223" cy="215" r="16"/><circle cx="310" cy="205" r="16"/></g>
-    <circle cx="179" cy="268" r="16" fill="#d97706"/>
-    <g font-family="system-ui" font-size="11" font-weight="700" fill="#16241c" text-anchor="middle"><text x="70" y="64">Ode</text><text x="179" y="52">Kerr</text><text x="288" y="64">Mensah</text><text x="90" y="134">Bell</text><text x="179" y="122">Voss</text><text x="268" y="134">Ito</text><text x="48" y="209">Lam</text><text x="135" y="219">Okafor</text><text x="223" y="219">Hale</text><text x="310" y="209">Pike</text><text x="179" y="272" fill="#2a1602">Brandt</text></g></svg></div>
-    <div class="formrow"><div class="chip">Formation<b>4-3-3</b></div><div class="chip">Mentality<b>Positive</b></div><div class="chip">Pressing<b>High</b></div></div></div>
-    <div class="sec"><div class="section-label"><span>Squad</span><span>Fitness</span></div>
-    <ul class="list">
-    <li class="list-row"><span class="pos">GK</span><span class="nm">Tomas Brandt<small>Starter, 4 clean sheets</small></span><span class="fit"><i style="width:96%"></i></span><span class="ovr">76</span></li>
-    <li class="list-row"><span class="pos">CB</span><span class="nm">Dunn Okafor<small>Starter, 1 yellow card</small></span><span class="fit"><i style="width:82%"></i></span><span class="ovr">74</span></li>
-    <li class="list-row"><span class="pos">CM</span><span class="nm">Marco Voss<small>Starter, captain</small></span><span class="fit"><i style="width:64%"></i></span><span class="ovr">79</span></li>
-    <li class="list-row"><span class="pos">RW</span><span class="nm">Sam Ruiz<small>Bench, back from injury</small></span><span class="fit"><i style="width:48%;background:rgb(var(--card-y))"></i></span><span class="ovr">72</span></li>
-    </ul></div>
-    <div class="sec"><div class="section-label"><span>Last result</span><span>Matchday 11</span></div>
-    <ul class="list"><li class="list-row"><span class="nm">Northmoor Town 1–2 Harbourside<small>Shots 9–14, possession 44%–56%</small></span><span class="form"><i class="w">W</i></span></li></ul></div>
-    <div class="sec"><div class="section-label"><span>League table</span><span class="form"><i class="w">W</i><i class="w">W</i><i class="d">D</i><i class="l">L</i><i class="w">W</i></span></div>
-    <ul class="list tbl">
-    <li class="list-row"><span class="n">1</span><span class="t">Redvale Athletic</span><span class="g">+12</span><span class="p">27</span></li>
-    <li class="list-row"><span class="n">2</span><span class="t">Kingsmoor United</span><span class="g">+8</span><span class="p">24</span></li>
-    <li class="list-row me"><span class="n">3</span><span class="t">Harbourside FC (you)</span><span class="g">+7</span><span class="p">22</span></li>
-    <li class="list-row"><span class="n">4</span><span class="t">Northmoor Town</span><span class="g">+2</span><span class="p">19</span></li>
-    </ul></div>
+    <div class="demo-note" id="demo-note" data-usernode-demo-note hidden>Staging demo: a season already in progress</div>
+
+    <!-- Loading: the club screen's own shape, with skeleton bars. -->
+    <div class="app" id="view-loading" hidden aria-busy="true">
+      <div class="top">
+        <div class="sm"><span class="skeleton sk-sm"></span></div>
+        <h1><span class="skeleton sk-title"></span></h1>
+        <div class="sm"><span class="skeleton sk-sm"></span></div>
+      </div>
+      <div class="next">
+        <div class="row">
+          <div class="team"><span class="skeleton sk-badge"></span><span class="skeleton sk-line"></span></div>
+          <div class="mid"><span class="skeleton sk-line"></span></div>
+          <div class="team"><span class="skeleton sk-badge"></span><span class="skeleton sk-line"></span></div>
+        </div>
+        <div class="skeleton sk-btn"></div>
+      </div>
+      <div class="sec">
+        <div class="section-label"><span>Your lineup</span><span></span></div>
+        <div class="pitch"><div class="pitch-skeleton"><span class="skeleton sk-pitch"></span></div></div>
+        <div class="formrow">
+          <div class="chip"><span class="skeleton sk-line"></span></div>
+          <div class="chip"><span class="skeleton sk-line"></span></div>
+          <div class="chip"><span class="skeleton sk-line"></span></div>
+        </div>
+      </div>
+      <div class="sec">
+        <div class="section-label"><span>Squad</span><span></span></div>
+        <ul class="list" id="loading-squad"></ul>
+      </div>
+    </div>
+
+    <!-- Load or save failed. -->
+    <div class="app" id="view-error" hidden>
+      <div class="top">
+        <div class="sm">Own Club</div>
+        <h1>Your club</h1>
+        <div class="sm"></div>
+      </div>
+      <div class="sec">
+        <div class="state-error">
+          <h2 class="state-title" id="error-title">Your career did not load</h2>
+          <p class="state-text" id="error-text">The career could not be read from the server. Your last saved matchday is kept.</p>
+          <button class="btn-primary" id="retry-btn">Retry</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- No career: New career. -->
+    <div class="app" id="view-new" hidden>
+      <div class="top">
+        <div class="sm">The Coastal League</div>
+        <h1>New career</h1>
+        <div class="sm">Ten clubs, 18 matchdays</div>
+      </div>
+      <div class="sec">
+        <label class="section-label" for="manager-name">Manager name</label>
+        <input class="field" id="manager-name" maxlength="40" placeholder="e.g. Alex Morgan" autocomplete="off">
+      </div>
+      <div class="sec">
+        <div class="section-label"><span>Choose a club</span><span>Reputation</span></div>
+        <ul class="list" id="club-list"></ul>
+        <div class="state-error" id="career-error" hidden>
+          <p class="state-text" id="career-error-text"></p>
+        </div>
+      </div>
+      <div class="sec">
+        <button class="btn-primary" id="start-career">Start career</button>
+      </div>
+    </div>
+
+    <!-- The club screen. -->
+    <div class="app" id="view-club" hidden>
+      <div class="top">
+        <div class="sm" id="club-md"></div>
+        <h1 id="club-name"></h1>
+        <div class="sm" id="club-pos"></div>
+      </div>
+
+      <div class="next" id="next-card">
+        <div class="row">
+          <div class="team"><span class="badge" id="next-home-badge"></span><span id="next-home-name"></span></div>
+          <div class="mid"><span id="next-label"></span><b>vs</b><span id="next-venue"></span></div>
+          <div class="team"><span class="badge" id="next-away-badge"></span><span id="next-away-name"></span></div>
+        </div>
+        <button class="btn-primary" id="play-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/></svg>Play match
+        </button>
+        <p class="play-note" id="play-note" role="alert" hidden></p>
+      </div>
+
+      <div class="next" id="season-card" hidden>
+        <div class="season-head">
+          <h2 class="season-title" id="season-title">Season complete</h2>
+          <p class="season-text" id="season-text"></p>
+        </div>
+        <button class="btn-primary" id="new-from-season">Start a new career</button>
+      </div>
+
+      <div class="sec">
+        <div class="section-label"><span>Your lineup</span><span>Drag a player to swap</span></div>
+        <div class="pitch" id="pitch-wrap" data-formation="" data-starters="">
+          <canvas id="pitch-canvas" role="img" aria-label="Your lineup"></canvas>
+        </div>
+        <div class="formrow">
+          <button class="chip" id="chip-formation" type="button" aria-expanded="false">Formation<b id="val-formation"></b></button>
+          <button class="chip" id="chip-mentality" type="button" aria-expanded="false">Mentality<b id="val-mentality"></b></button>
+          <button class="chip" id="chip-pressing" type="button" aria-expanded="false">Pressing<b id="val-pressing"></b></button>
+        </div>
+        <div class="menu" id="menu" hidden>
+          <ul class="list" id="menu-list"></ul>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="section-label"><span>Squad</span><span>Fitness</span></div>
+        <ul class="list" id="squad-list"></ul>
+      </div>
+
+      <div class="sec" id="last-sec">
+        <div class="section-label"><span>Last result</span><span id="last-md"></span></div>
+        <ul class="list" id="last-list"></ul>
+      </div>
+
+      <div class="sec">
+        <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
+        <ul class="list tbl" id="table-list"></ul>
+      </div>
+
+      <div class="sec">
+        <div class="state-error" id="save-error" hidden>
+          <p class="state-text" id="save-error-text">Your last change was not saved. Your last saved matchday is kept.</p>
+          <button class="btn-secondary" id="save-retry">Retry save</button>
+        </div>
+        <div class="confirm" id="confirm-over" hidden>
+          <p class="state-text">Start a new career? This career and its results will be deleted.</p>
+          <div class="confirm-row">
+            <button class="btn-primary" id="confirm-over-yes" type="button">Delete career</button>
+            <button class="btn-secondary" id="confirm-over-no" type="button">Cancel</button>
+          </div>
+        </div>
+        <button class="btn-secondary wide" id="start-over" type="button">Start a new career</button>
+      </div>
     </div>
   </div>
-  <!-- Screen 2 as the spec drew it: inert until moved where that view belongs. -->
-  <template data-spec-screen="2">
-    <div data-spec-screen="2">
-      <div class="app">
+
+  <!-- Screen 2: the match report. -->
+  <div data-spec-screen="2" id="view-report" hidden>
+    <div class="app">
       <div class="top">
-      <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Club</div>
-      <div class="sm">Full time, matchday 12</div>
-      <div class="score"><div class="team"><span class="badge" style="background:rgb(var(--pitch2))">HF</span>Harbourside FC</div><div class="big">2–1</div><div class="team"><span class="badge" style="background:#7a3b8f">RA</span>Redvale Athletic</div></div>
+        <div class="back" id="report-back" role="button" tabindex="0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Club
+        </div>
+        <div class="sm" id="report-md">Full time</div>
+        <div class="score">
+          <div class="team"><span class="badge" id="report-home-badge"></span><span id="report-home-name"></span></div>
+          <div class="big" id="report-score"></div>
+          <div class="team"><span class="badge" id="report-away-badge"></span><span id="report-away-name"></span></div>
+        </div>
       </div>
-      <div class="sec"><div class="section-label"><span>Key moments</span></div>
-      <ul class="list">
-      <li class="list-row"><span class="min">23'</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(22 36 28)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg><span class="ev">Goal, Eli Kerr<small>Assist: Marco Voss</small></span></li>
-      <li class="list-row"><span class="min">41'</span><svg width="20" height="20" viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(234 179 8)"/></svg><span class="ev">Yellow card, Dunn Okafor<small>Foul on Ansel Grey</small></span></li>
-      <li class="list-row"><span class="min">58'</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(78 94 84)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg><span class="ev away">Goal, Redvale: Ansel Grey<small>Assist: Pia Lund</small></span></li>
-      <li class="list-row"><span class="min">66'</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(78 94 84)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3"/></svg><span class="ev">Sub: Sam Ruiz on for Kofi Mensah<small>Mensah tired, fitness 41%</small></span></li>
-      <li class="list-row"><span class="min">81'</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(22 36 28)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg><span class="ev">Goal, Sam Ruiz<small>Assist: Lee Ode</small></span></li>
-      </ul></div>
-      <div class="sec"><div class="section-label"><span>Harbourside</span><span>Redvale</span></div>
-      <ul class="list">
-      <li class="stat"><div class="h"><span>56%</span><span>Possession</span><span>44%</span></div><div class="bar"><i style="width:56%"></i><u style="width:43%"></u></div></li>
-      <li class="stat list-row" style="display:block"><div class="h"><span>15</span><span>Shots</span><span>8</span></div><div class="bar"><i style="width:65%"></i><u style="width:34%"></u></div></li>
-      <li class="stat list-row" style="display:block"><div class="h"><span>6</span><span>On target</span><span>3</span></div><div class="bar"><i style="width:66%"></i><u style="width:33%"></u></div></li>
-      <li class="stat list-row" style="display:block"><div class="h"><span>11</span><span>Fouls</span><span>14</span></div><div class="bar"><i style="width:44%"></i><u style="width:55%"></u></div></li>
-      </ul></div>
-      <div class="sec"><div class="section-label"><span>Player ratings</span><span>Harbourside</span></div>
-      <ul class="list">
-      <li class="list-row"><span class="nm">Eli Kerr<small>ST, 1 goal, 4 shots</small></span><span class="rt top1">8.4</span></li>
-      <li class="list-row"><span class="nm">Marco Voss<small>CM, 1 assist, 61 passes</small></span><span class="rt">7.6</span></li>
-      <li class="list-row"><span class="nm">Sam Ruiz<small>RW, on 66', 1 goal</small></span><span class="rt">7.4</span></li>
-      <li class="list-row"><span class="nm">Dunn Okafor<small>CB, yellow card</small></span><span class="rt">6.5</span></li>
-      </ul></div>
-      <div class="sec"><button class="btn-primary">Back to club</button></div>
+
+      <div class="sec">
+        <div class="section-label"><span>Key moments</span></div>
+        <ul class="list" id="report-moments"></ul>
+      </div>
+
+      <div class="sec">
+        <div class="section-label"><span id="report-stats-home"></span><span id="report-stats-away"></span></div>
+        <ul class="list" id="report-stats"></ul>
+      </div>
+
+      <div class="sec">
+        <div class="section-label"><span>Player ratings</span><span id="report-ratings-team"></span></div>
+        <ul class="list" id="report-ratings"></ul>
+      </div>
+
+      <div class="sec">
+        <button class="btn-primary" id="report-close">Back to club</button>
       </div>
     </div>
-  </template>
-  <!-- /usernode-spec-screens@1 -->
+  </div>
+
+  <!-- A player, opened from the pitch or the squad list. -->
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-name">
+      <div class="sheet-head">
+        <div>
+          <h2 id="sheet-name"></h2>
+          <p class="sheet-sub" id="sheet-sub"></p>
+        </div>
+        <button class="icon-btn" id="sheet-close" type="button" aria-label="Close player">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div class="sheet-stats" id="sheet-vitals"></div>
+        <div class="sheet-attrs" id="sheet-attrs"></div>
+        <div class="sheet-field">
+          <label class="section-label" for="sheet-role">Role</label>
+          <select class="field" id="sheet-role"></select>
+        </div>
+        <div class="section-label">Bench</div>
+        <ul class="list" id="sheet-bench"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

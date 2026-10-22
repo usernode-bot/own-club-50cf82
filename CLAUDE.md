@@ -95,10 +95,17 @@ tables you've marked private), etc.
 
 ## About Own Club
 
-A game
+A football management game. You manage one of ten fictional clubs in the
+Coastal League through an 18-matchday season: set the eleven on a pitch
+diagram, choose formation, mentality, pressing and each player's role, then
+play each match and read the report. This first version is matchday only
+(squad, tactics, matches); training, transfers, finances, cups and further
+seasons come later.
 
-_(add a sentence or two more of product context here so Claude Code has a
-shared understanding of what this app is for)_
+The simulation lives in `public/engine.js` as a pure, seeded ES module shared
+by the browser and the server: the same state and seed always produce the same
+match. `public/app.js` renders and saves; `server.js` owns the `careers` table
+and the `?demo=1` staging season.
 
 ## Your people's data
 
@@ -114,14 +121,21 @@ about, add it to `SKIP`. Keep the file and its mount in `server.js`.
 This app's look. The first real version fills in the blanks; every later
 change follows it, and updates it when a request changes the look on purpose.
 
-- **Palette:** _(name the accent, any second colour and the neutrals, e.g.
-  "accent: tomato red; second: basil green; neutrals: warm greys")_
-- **Signature element:** _(the one thing on screen drawn from this app's
-  subject, which no other app would have)_
+- **Palette:** accent: warm amber (the one action colour, and the goalkeeper's
+  token); pitch: deep pitch green (the header, the pitch and Harbourside's
+  badge); card yellow and card red for bookings; neutrals: chalk white and pale
+  grass in the light look, green-black in the dark. Each club also has one
+  badge colour of its own, stored as data in `engine.js` (Harbourside uses the
+  pitch token).
+- **Signature element:** the pitch diagram: a drawn pitch with your formation
+  as white player tokens you drag to swap, the goalkeeper in amber. Small line
+  icons mark each kind of moment in the report (a ball, a card, a swap arrow,
+  a cross).
 - **Type scale:** `text-title`, `text-heading`, `text-body`, `text-small`
-  _(change their sizes in `tailwind.config.js` if you must, not their number)_
-- **One fixed look:** _(only for an app drawn as its own scene, such as a
-  game: which look, and why. Otherwise delete this line.)_
+  (unchanged sizes), in the rounded system typeface; scores, stats, ratings
+  and the table use tabular numbers.
+- The pitch and its tokens keep white lines and white tokens in both looks;
+  the panel around it uses the pitch gradient in both.
 
 The kit is in `styles/tailwind-input.css`: colour tokens with a light and
 a dark value (named in `tailwind.config.js`), and a few components

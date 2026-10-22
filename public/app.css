@@ -1,0 +1,185 @@
+/* Own Club's additions to the drawn screens: the demo line, the pitch canvas,
+   the tactics menu, the player sheet and the loading shapes. Colours come
+   only from the kit's tokens. */
+
+/* One centred column on a wider window. */
+[data-spec-screen] .app { margin-inline: auto; }
+
+/* The staging demo's one label. */
+.demo-note {
+  max-width: 390px;
+  margin-inline: auto;
+  background: rgb(var(--raised));
+  color: rgb(var(--fg));
+  border-bottom: 1px solid rgb(var(--line));
+  padding: 8px 16px;
+  font-family: ui-rounded, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* Formation, Mentality and Pressing are buttons now, not plain chips. */
+button.chip {
+  appearance: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: rgb(var(--muted));
+}
+button.chip:focus-visible,
+[role="button"]:focus-visible,
+.menu-row:focus-visible {
+  outline: 2px solid rgb(var(--focus));
+  outline-offset: 2px;
+}
+button.chip[aria-expanded="true"] {
+  border-color: rgb(var(--accent));
+}
+
+.menu { margin-top: 8px; }
+.menu .list-row {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgb(var(--line));
+  background: rgb(var(--surface));
+  color: rgb(var(--fg));
+  font-family: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.menu .list-row:first-child { border-top: 0; }
+.menu .list-row[aria-pressed="true"] { background: rgb(var(--raised)); }
+
+.tick { color: rgb(var(--accent)); font-weight: 700; }
+
+/* The pitch is painted on the canvas, inside the drawn pitch panel. */
+.pitch canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 358 / 300;
+  height: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: grab;
+}
+.pitch canvas:active { cursor: grabbing; }
+
+.pitch-skeleton { aspect-ratio: 358 / 300; display: flex; align-items: center; justify-content: center; }
+.sk-pitch { width: 70%; height: 60%; border-radius: 12px; background: rgba(255,255,255,.18); }
+
+/* A list row that opens something. */
+.row-btn { cursor: pointer; }
+.club-row .badge { flex: none; }
+.club-row.me { background: rgb(var(--raised)); }
+
+.stars { color: rgb(var(--accent)); letter-spacing: 1px; }
+.stars-off { color: rgb(var(--muted)); opacity: .45; }
+
+.wide { width: 100%; margin-top: 12px; }
+
+.confirm {
+  border: 1px solid rgb(var(--line));
+  background: rgb(var(--surface));
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 4px;
+}
+.confirm-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+.play-note {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--danger));
+}
+
+.season-head { display: flex; flex-direction: column; gap: 6px; }
+.season-title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 700; }
+.season-text { margin: 0; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+
+.state-title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 700; }
+.state-text { margin: 0; max-width: 32rem; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+
+/* Loading shapes, in the rows' own height. */
+.skeleton { display: inline-block; }
+.sk-sm { width: 120px; height: 12px; }
+.sk-title { width: 210px; height: 28px; display: block; margin: 6px 0; }
+.sk-badge { width: 44px; height: 44px; border-radius: 50%; }
+.sk-btn { width: 100%; height: 48px; display: block; margin-top: 14px; border-radius: 8px; }
+.sk-line { width: 100px; height: 12px; }
+.sk-pos { width: 28px; height: 14px; }
+.sk-fit { width: 44px; height: 6px; }
+.sk-ovr { width: 22px; height: 14px; }
+#loading-squad .nm { display: flex; flex-direction: column; gap: 6px; }
+
+/* The player sheet: a bottom sheet on a phone, a centred panel on a desktop. */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, .45);
+  padding: 0;
+}
+.sheet-card {
+  width: 100%;
+  max-width: 42rem;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: rgb(var(--surface));
+  color: rgb(var(--fg));
+  border: 1px solid rgb(var(--line));
+  border-radius: 16px 16px 0 0;
+  padding: 16px;
+  font-family: ui-rounded, system-ui, -apple-system, sans-serif;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+@media (min-width: 640px) {
+  .sheet { align-items: center; padding: 24px; }
+  .sheet-card { border-radius: 16px; }
+}
+.sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sheet-head h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 700; }
+.sheet-sub { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--line));
+  background: rgb(var(--surface));
+  color: rgb(var(--fg));
+  cursor: pointer;
+}
+.icon-btn:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
+.sheet-body { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
+.sheet-stats, .sheet-attrs { display: flex; flex-direction: column; gap: 8px; }
+.vital, .attr {
+  display: grid;
+  grid-template-columns: 84px 1fr 44px;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.vital b, .attr b { text-align: right; font-variant-numeric: tabular-nums; }
+.vital-track, .attr-track { height: 8px; border-radius: 4px; background: rgb(var(--raised)); overflow: hidden; }
+.vital-track i, .attr-track i { display: block; height: 100%; background: rgb(var(--pitch-ink)); }
+.sheet-field { display: flex; flex-direction: column; gap: 4px; }
+.sheet-field .section-label { margin: 0; }
+.sheet-body .list-row { padding: 8px 12px; }
+.sheet-body .btn-secondary.small { min-height: 44px; padding: 0 12px; font-size: 14px; }
+
+/* The match report's moment icons and its numbers. */
+.ico { display: flex; align-items: center; color: rgb(var(--muted)); flex: none; }
+.ico.own { color: rgb(var(--fg)); }
+.min, .big, .rt, .ovr, .tbl, .stat .h { font-variant-numeric: tabular-nums; }

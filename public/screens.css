@@ -18,6 +18,7 @@
   color: rgb(var(--fg));
   min-height: 1120px;
   width: 390px;
+  max-width: 100%;
   font-family: ui-rounded,system-ui,-apple-system,sans-serif;
   font-size: 16px;
   line-height: 24px;
@@ -71,7 +72,7 @@
 
 .list-row:first-child {border-top:0}
 
-.pos {width:36px;font-size:14px;font-weight:700;color:rgb(var(--pitch))}
+.pos {width:36px;font-size:14px;font-weight:700;color:rgb(var(--pitch-ink))}
 
 .nm {flex:1;font-weight:500}
 
@@ -81,7 +82,7 @@
 
 .fit {width:44px;height:6px;border-radius:3px;background:rgb(var(--raised));overflow:hidden}
 
-.fit i {display:block;height:100%;background:rgb(var(--pitch))}
+.fit i {display:block;height:100%;background:rgb(var(--pitch-ink))}
 
 .tbl .list-row {font-size:14px;line-height:20px}
 
@@ -105,64 +106,50 @@
 
 .l {background:rgb(var(--card-r))}
 
-/* Screen 2: its rules the first screen has not got. */
+/* Screen 2's rules, scoped so they do not restyle screen 1. */
 
-.app {
-  background: rgb(var(--ground));
-  color: rgb(var(--fg));
-  min-height: 1240px;
-  width: 390px;
-  font-family: ui-rounded,system-ui,-apple-system,sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  box-sizing: border-box;
-  padding-bottom: 32px;
-}
+[data-spec-screen="2"] .app {min-height:1240px;width:390px;max-width:100%;}
 
-.top {
-  background: rgb(var(--pitch));
-  color: #fff;
-  padding: 12px 16px 24px;
-}
+[data-spec-screen="2"] .top {padding:12px 16px 24px;}
 
-.back {display:flex;align-items:center;gap:6px;min-height:44px;font-size:14px;font-weight:600}
+[data-spec-screen="2"] .back {display:flex;align-items:center;gap:6px;min-height:44px;font-size:14px;font-weight:600;cursor:pointer}
 
-.sm {font-size:14px;line-height:20px;opacity:.9;text-align:center}
+[data-spec-screen="2"] .sm {text-align:center}
 
-.score {display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+[data-spec-screen="2"] .score {display:flex;align-items:center;justify-content:space-between;margin-top:8px}
 
-.team {width:110px;text-align:center;font-size:14px;line-height:20px;font-weight:600}
+[data-spec-screen="2"] .team {width:110px;text-align:center;font-size:14px;line-height:20px;font-weight:600}
 
-.badge {width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;margin:0 auto 4px;border:2px solid rgba(255,255,255,.6)}
+[data-spec-screen="2"] .badge {margin:0 auto 4px;border:2px solid rgba(255,255,255,.6)}
 
-.big {font-size:40px;line-height:48px;font-weight:800;letter-spacing:2px}
+[data-spec-screen="2"] .big {font-size:40px;line-height:48px;font-weight:800;letter-spacing:2px;font-variant-numeric:tabular-nums}
 
-.list-row {display:flex;align-items:center;gap:12px;min-height:44px;padding:10px 16px;border-top:1px solid rgb(var(--line));font-size:14px;line-height:20px}
+[data-spec-screen="2"] .list-row {font-size:14px;line-height:20px}
 
-.min {width:32px;font-weight:700;color:rgb(var(--muted))}
+[data-spec-screen="2"] .min {width:32px;font-weight:700;color:rgb(var(--muted))}
 
-.ev {flex:1}
+[data-spec-screen="2"] .ev {flex:1}
 
-.ev small {display:block;color:rgb(var(--muted))}
+[data-spec-screen="2"] .ev small {display:block;color:rgb(var(--muted))}
 
-.away {text-align:right}
+[data-spec-screen="2"] .away {text-align:right}
 
-.stat {display:block;padding:10px 16px}
+[data-spec-screen="2"] .stat {display:block;padding:10px 16px}
 
-.stat .h {display:flex;justify-content:space-between;font-weight:600}
+[data-spec-screen="2"] .stat .h {display:flex;justify-content:space-between;font-weight:600}
 
-.stat .h span:nth-child(2) {font-weight:400;color:rgb(var(--muted))}
+[data-spec-screen="2"] .stat .h span:nth-child(2) {font-weight:400;color:rgb(var(--muted))}
 
-.bar {display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:6px;background:rgb(var(--raised))}
+[data-spec-screen="2"] .bar {display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:6px;background:rgb(var(--raised))}
 
-.bar i {display:block;background:rgb(var(--pitch))}
+[data-spec-screen="2"] .bar i {display:block;background:rgb(var(--pitch-ink))}
 
-.bar u {display:block;margin-left:auto;background:rgb(var(--muted));opacity:.55}
+[data-spec-screen="2"] .bar u {display:block;margin-left:auto;background:rgb(var(--muted));opacity:.55}
 
-.rt {width:36px;height:24px;border-radius:6px;text-align:center;font-weight:700;background:rgb(var(--raised))}
+[data-spec-screen="2"] .rt {width:36px;height:24px;border-radius:6px;text-align:center;font-weight:700;background:rgb(var(--raised));font-variant-numeric:tabular-nums}
 
-.rt.top1 {background:rgb(var(--accent));color:rgb(var(--on-accent))}
+[data-spec-screen="2"] .rt.top1 {background:rgb(var(--accent));color:rgb(var(--on-accent))}
 
-.nm small {display:block;color:rgb(var(--muted));font-weight:400}
+[data-spec-screen="2"] .nm small {display:block;color:rgb(var(--muted));font-weight:400}
 
-.btn-primary {display:flex;width:100%;min-height:48px;border-radius:8px;background:rgb(var(--accent));color:rgb(var(--on-accent));font-weight:700;align-items:center;justify-content:center;border:0;font-size:16px}
+[data-spec-screen="2"] .btn-primary {display:flex;width:100%;min-height:48px;border-radius:8px;background:rgb(var(--accent));color:rgb(var(--on-accent));font-weight:700;align-items:center;justify-content:center;border:0;font-size:16px}

@@ -1,0 +1,961 @@
+// Own Club's football engine: everything that decides how a season and a
+// match play out, with no DOM and no network. The app (public/app.js) runs it
+// and saves the state it returns; the server (server.js) uses it to build the
+// first version of a career and the staging demo.
+//
+// Everything here is deterministic: the same state and the same seed produce
+// the same match, every time. Randomness comes only from mulberry32 streams
+// seeded from the career seed.
+
+// ── Clubs ────────────────────────────────────────────────────────────────
+// All fictional. `rep` is the board's 1 to 5 star standing, which sets the
+// quality of the squad it is dealt.
+export const CLUBS = [
+  { id: 'harbourside', name: 'Harbourside FC', short: 'HF', color: 'rgb(var(--pitch))', rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay' },
+  { id: 'redvale', name: 'Redvale Athletic', short: 'RA', color: '#7a3b8f', rep: 5, formation: '4-2-3-1', objective: 'Win the league', ground: 'Redvale Park' },
+  { id: 'kingsmoor', name: 'Kingsmoor United', short: 'KU', color: '#1e4fa3', rep: 5, formation: '4-3-3', objective: 'Win the league', ground: 'Kingsmoor Road' },
+  { id: 'northmoor', name: 'Northmoor Town', short: 'NT', color: '#146b5a', rep: 4, formation: '4-4-2', objective: 'Finish in the top half', ground: 'Moor Lane' },
+  { id: 'baymouth', name: 'Baymouth Rovers', short: 'BR', color: '#a03d1c', rep: 3, formation: '4-4-2', objective: 'Finish in the top half', ground: 'The Harbour End' },
+  { id: 'saltmarsh', name: 'Saltmarsh City', short: 'SM', color: '#4a3a8a', rep: 3, formation: '3-5-2', objective: 'Finish in the top half', ground: 'Marsh Field' },
+  { id: 'cliffton', name: 'Cliffton Wanderers', short: 'CW', color: '#2f4858', rep: 3, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Cliff Top' },
+  { id: 'marrow', name: 'Marrow Bay', short: 'MB', color: '#7c2d5d', rep: 2, formation: '4-3-3', objective: 'Avoid finishing bottom', ground: 'Bay Side' },
+  { id: 'gullport', name: 'Gullport United', short: 'GU', color: '#3f5a1d', rep: 2, formation: '4-4-2', objective: 'Avoid finishing bottom', ground: 'The Nest' },
+  { id: 'kestrel', name: 'Kestrel Park', short: 'KP', color: '#8a4a1f', rep: 1, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Kestrel Lane' },
+];
+
+export const CLUB_BY_ID = Object.fromEntries(CLUBS.map((c) => [c.id, c]));
+export const LEAGUE_NAME = 'The Coastal League';
+export const MATCHDAYS = 18;
+
+// ── Formations, mentalities, pressing, roles ─────────────────────────────
+// A slot's coordinates are 0..1 on the drawn pitch: x across, y down from the
+// opponent's goal line (the goalkeeper sits near the bottom).
+export const FORMATIONS = {
+  '4-4-2': {
+    att: 1.0, mid: 1.0, def: 1.0,
+    slots: [
+      { pos: 'GK', x: 0.5, y: 0.89 },
+      { pos: 'LB', x: 0.13, y: 0.71 }, { pos: 'CB', x: 0.38, y: 0.74 }, { pos: 'CB', x: 0.62, y: 0.74 }, { pos: 'RB', x: 0.87, y: 0.71 },
+      { pos: 'LM', x: 0.13, y: 0.45 }, { pos: 'CM', x: 0.38, y: 0.47 }, { pos: 'CM', x: 0.62, y: 0.47 }, { pos: 'RM', x: 0.87, y: 0.45 },
+      { pos: 'ST', x: 0.36, y: 0.18 }, { pos: 'ST', x: 0.64, y: 0.18 },
+    ],
+  },
+  '4-3-3': {
+    att: 1.08, mid: 1.02, def: 0.96,
+    slots: [
+      { pos: 'GK', x: 0.5, y: 0.89 },
+      { pos: 'LB', x: 0.14, y: 0.71 }, { pos: 'CB', x: 0.38, y: 0.74 }, { pos: 'CB', x: 0.62, y: 0.74 }, { pos: 'RB', x: 0.86, y: 0.71 },
+      { pos: 'CM', x: 0.28, y: 0.45 }, { pos: 'CM', x: 0.5, y: 0.47 }, { pos: 'CM', x: 0.72, y: 0.45 },
+      { pos: 'LW', x: 0.17, y: 0.19 }, { pos: 'ST', x: 0.5, y: 0.15 }, { pos: 'RW', x: 0.83, y: 0.19 },
+    ],
+  },
+  '4-2-3-1': {
+    att: 1.04, mid: 1.06, def: 0.98,
+    slots: [
+      { pos: 'GK', x: 0.5, y: 0.89 },
+      { pos: 'LB', x: 0.14, y: 0.71 }, { pos: 'CB', x: 0.38, y: 0.74 }, { pos: 'CB', x: 0.62, y: 0.74 }, { pos: 'RB', x: 0.86, y: 0.71 },
+      { pos: 'DM', x: 0.37, y: 0.54 }, { pos: 'DM', x: 0.63, y: 0.54 },
+      { pos: 'LW', x: 0.15, y: 0.31 }, { pos: 'AM', x: 0.5, y: 0.33 }, { pos: 'RW', x: 0.85, y: 0.31 },
+      { pos: 'ST', x: 0.5, y: 0.14 },
+    ],
+  },
+  '3-5-2': {
+    att: 1.02, mid: 1.1, def: 0.92,
+    slots: [
+      { pos: 'GK', x: 0.5, y: 0.89 },
+      { pos: 'CB', x: 0.25, y: 0.74 }, { pos: 'CB', x: 0.5, y: 0.76 }, { pos: 'CB', x: 0.75, y: 0.74 },
+      { pos: 'LM', x: 0.1, y: 0.45 }, { pos: 'CM', x: 0.31, y: 0.47 }, { pos: 'CM', x: 0.5, y: 0.43 }, { pos: 'CM', x: 0.69, y: 0.47 }, { pos: 'RM', x: 0.9, y: 0.45 },
+      { pos: 'ST', x: 0.36, y: 0.18 }, { pos: 'ST', x: 0.64, y: 0.18 },
+    ],
+  },
+  '5-3-2': {
+    att: 0.94, mid: 1.0, def: 1.1,
+    slots: [
+      { pos: 'GK', x: 0.5, y: 0.89 },
+      { pos: 'LB', x: 0.09, y: 0.68 }, { pos: 'CB', x: 0.3, y: 0.75 }, { pos: 'CB', x: 0.5, y: 0.77 }, { pos: 'CB', x: 0.7, y: 0.75 }, { pos: 'RB', x: 0.91, y: 0.68 },
+      { pos: 'CM', x: 0.27, y: 0.44 }, { pos: 'CM', x: 0.5, y: 0.46 }, { pos: 'CM', x: 0.73, y: 0.44 },
+      { pos: 'ST', x: 0.36, y: 0.17 }, { pos: 'ST', x: 0.64, y: 0.17 },
+    ],
+  },
+};
+
+export const FORMATION_NAMES = Object.keys(FORMATIONS);
+
+export const MENTALITIES = {
+  Defensive: { att: 0.86, mid: 0.98, def: 1.12 },
+  Balanced: { att: 1.0, mid: 1.0, def: 1.0 },
+  Positive: { att: 1.06, mid: 1.02, def: 0.96 },
+  Attacking: { att: 1.14, mid: 1.04, def: 0.87 },
+};
+export const MENTALITY_NAMES = Object.keys(MENTALITIES);
+
+export const PRESSING = {
+  Low: { mid: 0.94, def: 1.03, stamina: 0.7, foul: 0.78 },
+  Medium: { mid: 1.0, def: 1.0, stamina: 1.0, foul: 1.0 },
+  High: { mid: 1.08, def: 0.95, stamina: 1.55, foul: 1.35 },
+};
+export const PRESSING_NAMES = Object.keys(PRESSING);
+
+export const POS_GROUP = {
+  GK: 'GK',
+  RB: 'DF', LB: 'DF', CB: 'DF',
+  DM: 'MF', CM: 'MF', AM: 'MF', RM: 'MF', LM: 'MF',
+  RW: 'FW', LW: 'FW', ST: 'FW',
+};
+
+export const ROLES = {
+  GK: ['Goalkeeper', 'Sweeper keeper'],
+  DF: ['Full-back', 'Centre-back', 'Wing-back'],
+  MF: ['Ball-winner', 'Playmaker', 'Box-to-box'],
+  FW: ['Poacher', 'Target forward', 'Inside forward'],
+};
+
+export const ROLE_WEIGHTS = {
+  Goalkeeper: { gk: 1 },
+  'Sweeper keeper': { gk: 0.7, pas: 0.3 },
+  'Full-back': { def: 0.4, pac: 0.5, pas: 0.1 },
+  'Centre-back': { def: 0.7, pac: 0.15, pas: 0.15 },
+  'Wing-back': { def: 0.35, pac: 0.4, pas: 0.25 },
+  'Ball-winner': { def: 0.5, pas: 0.2, pac: 0.3 },
+  Playmaker: { pas: 0.65, sho: 0.1, def: 0.1, pac: 0.15 },
+  'Box-to-box': { pas: 0.3, def: 0.3, pac: 0.25, sho: 0.15 },
+  Poacher: { sho: 0.6, pac: 0.35, pas: 0.05 },
+  'Target forward': { sho: 0.55, def: 0.15, pas: 0.15, pac: 0.15 },
+  'Inside forward': { sho: 0.45, pac: 0.35, pas: 0.2 },
+};
+
+export const OVERALL_WEIGHTS = {
+  GK: { gk: 0.85, pas: 0.1, def: 0.05 },
+  DF: { def: 0.5, pac: 0.2, pas: 0.2, sho: 0.1 },
+  MF: { pas: 0.4, def: 0.2, pac: 0.2, sho: 0.2 },
+  FW: { sho: 0.5, pac: 0.3, pas: 0.2 },
+};
+
+export function defaultRole(pos) {
+  const g = POS_GROUP[pos];
+  if (g === 'GK') return 'Goalkeeper';
+  if (g === 'DF') return pos === 'RB' || pos === 'LB' ? 'Full-back' : 'Centre-back';
+  if (g === 'MF') return pos === 'DM' ? 'Ball-winner' : 'Playmaker';
+  return pos === 'ST' ? 'Poacher' : 'Inside forward';
+}
+
+export function overallOf(attrs, pos) {
+  const w = OVERALL_WEIGHTS[POS_GROUP[pos]] || OVERALL_WEIGHTS.MF;
+  let v = 0;
+  for (const k in w) v += attrs[k] * w[k];
+  return Math.round(v);
+}
+
+function roleScore(player, role) {
+  const w = ROLE_WEIGHTS[role] || { pas: 1 };
+  let v = 0;
+  for (const k in w) v += player.attrs[k] * w[k];
+  return v / 100; // roughly 0.4..0.9
+}
+
+// ── Randomness ───────────────────────────────────────────────────────────
+export function mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hash(...parts) {
+  let h = 2166136261;
+  for (const p of parts) {
+    const s = String(p);
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    h ^= 0x9e3779b9;
+  }
+  return h >>> 0;
+}
+
+export function matchSeed(careerSeed, matchday, index) {
+  return hash(careerSeed, 'match', matchday, index);
+}
+
+function poisson(rng, lambda) {
+  const l = Math.exp(-lambda);
+  let k = 0;
+  let p = 1;
+  do {
+    k++;
+    p *= rng();
+  } while (p > l);
+  return k - 1;
+}
+
+function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length) % arr.length];
+}
+
+function weighted(rng, items, weightOf) {
+  let total = 0;
+  for (const it of items) total += Math.max(0.001, weightOf(it));
+  let r = rng() * total;
+  for (const it of items) {
+    r -= Math.max(0.001, weightOf(it));
+    if (r <= 0) return it;
+  }
+  return items[items.length - 1];
+}
+
+// ── Squads ───────────────────────────────────────────────────────────────
+const FIRST_NAMES = ['Tomas', 'Dunn', 'Marco', 'Sam', 'Eli', 'Kofi', 'Lee', 'Theo', 'Jonas', 'Pia', 'Ansel', 'Ruben', 'Ismail', 'Noah', 'Hugo', 'Felix', 'Otto', 'Arun', 'Miles', 'Ivan', 'Kai', 'Luca', 'Nico', 'Owen', 'Reece', 'Silas', 'Tariq', 'Umar', 'Victor', 'Yusuf', 'Ade', 'Bram', 'Cato', 'Dario', 'Emeka', 'Finn', 'Gus', 'Hal', 'Ines', 'Jae', 'Kian', 'Levi', 'Milo', 'Nils', 'Osian', 'Pablo', 'Quinn', 'Rory', 'Sven', 'Teo', 'Anders', 'Beto', 'Cyrus', 'Dane', 'Ewan', 'Femi', 'Gil', 'Hadi', 'Idris', 'Jude'];
+const LAST_NAMES = ['Brandt', 'Okafor', 'Voss', 'Ruiz', 'Kerr', 'Mensah', 'Ode', 'Bell', 'Ito', 'Lam', 'Hale', 'Pike', 'Grey', 'Lund', 'Fenn', 'Ash', 'Marsh', 'Tate', 'Rowe', 'Wade', 'Ellis', 'Vaughn', 'Nash', 'Cobb', 'Dean', 'Falk', 'Gorse', 'Hobb', 'Ives', 'Jarr', 'Kemp', 'Lunn', 'Moor', 'Nunn', 'Orr', 'Pace', 'Quay', 'Rest', 'Sand', 'Tarn', 'Ull', 'Veil', 'Wren', 'Yeo', 'Zell', 'Bowen', 'Crane', 'Dove', 'Eade', 'Frost', 'Gill', 'Holt', 'Irwin', 'Jett', 'Kerr', 'Lowe', 'Mays', 'Neal', 'Oakes', 'Pryce'];
+
+const SQUAD_SHAPE = [
+  'GK', 'GK',
+  'CB', 'CB', 'CB', 'RB', 'LB',
+  'CM', 'CM', 'CM', 'DM', 'AM', 'RM', 'LM',
+  'ST', 'ST', 'RW', 'LW',
+];
+
+// The club's reputation decides where its players' attributes sit.
+function attrRange(rep) {
+  const centre = 48 + rep * 5.2; // rep 1 -> 53, rep 5 -> 74
+  return { lo: centre - 11, hi: centre + 13 };
+}
+
+function makePlayer(rng, pos, rep, n) {
+  const { lo, hi } = attrRange(rep);
+  const roll = () => Math.round(lo + rng() * (hi - lo));
+  const g = POS_GROUP[pos];
+  const attrs = {
+    pac: roll(), pas: roll(), sho: roll(), def: roll(), gk: roll(),
+  };
+  if (g === 'GK') { attrs.gk = Math.min(92, attrs.gk + 9); attrs.sho = Math.max(20, attrs.sho - 18); }
+  if (g === 'DF') { attrs.def = Math.min(92, attrs.def + 6); attrs.sho = Math.max(20, attrs.sho - 12); }
+  if (g === 'FW') { attrs.sho = Math.min(92, attrs.sho + 7); attrs.def = Math.max(20, attrs.def - 10); }
+  const overall = overallOf(attrs, pos);
+  return {
+    id: 'p' + n,
+    name: '',
+    pos,
+    age: 18 + Math.floor(rng() * 16),
+    attrs,
+    overall,
+    fitness: 78 + Math.floor(rng() * 23),
+    morale: 55 + Math.floor(rng() * 40),
+    injury: 0,
+    goals: 0,
+    assists: 0,
+    apps: 0,
+    yellow: 0,
+    red: 0,
+    captain: false,
+  };
+}
+
+export function buildSquad(seed, clubIndex, rep) {
+  const rng = mulberry32(hash(seed, 'squad', clubIndex));
+  const used = new Set();
+  const players = SQUAD_SHAPE.map((pos, i) => {
+    const p = makePlayer(rng, pos, rep, clubIndex * 100 + i);
+    let name;
+    do {
+      name = pick(rng, FIRST_NAMES) + ' ' + pick(rng, LAST_NAMES);
+    } while (used.has(name));
+    used.add(name);
+    p.name = name;
+    return p;
+  });
+  // The best outfield player in the middle of the park wears the armband.
+  const mids = players.filter((p) => POS_GROUP[p.pos] === 'MF');
+  const cap = mids.reduce((a, b) => (b.overall > a.overall ? b : a), mids[0]);
+  if (cap) cap.captain = true;
+  return players;
+}
+
+function clubSquads(seed) {
+  const squads = {};
+  CLUBS.forEach((club, i) => { squads[club.id] = buildSquad(seed, i, club.rep); });
+  return squads;
+}
+
+// ── Fixtures ─────────────────────────────────────────────────────────────
+// A double round robin: everyone plays everyone home and away, 18 matchdays.
+export function buildFixtures(seed) {
+  const ids = CLUBS.map((c) => c.id);
+  // Seeded shuffle so a career's league order differs but repeats for a seed.
+  const rng = mulberry32(hash(seed, 'fixtures'));
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  const n = ids.length;
+  const round = [];
+  const half = n / 2;
+  const fixed = ids[0];
+  const rest = ids.slice(1);
+  for (let r = 0; r < n - 1; r++) {
+    const pairs = [{ home: fixed, away: rest[r] }];
+    for (let i = 1; i < half; i++) {
+      const a = rest[(r + i) % (n - 1)];
+      const b = rest[(r - i + (n - 1) * 2) % (n - 1)];
+      pairs.push(r % 2 === 0 ? { home: a, away: b } : { home: b, away: a });
+    }
+    round.push(pairs);
+  }
+  const second = round.map((pairs) => pairs.map((p) => ({ home: p.away, away: p.home })));
+  return round.concat(second);
+}
+
+// ── Team selection ───────────────────────────────────────────────────────
+export function familiarity(pos, slotPos) {
+  if (pos === slotPos) return 1;
+  const a = POS_GROUP[pos];
+  const b = POS_GROUP[slotPos];
+  if (!a || !b) return 0.6;
+  if (a === b) return 0.9;
+  if (a === 'GK' || b === 'GK') return 0.35;
+  const dist = Math.abs(['DF', 'MF', 'FW'].indexOf(a) - ['DF', 'MF', 'FW'].indexOf(b));
+  return dist === 1 ? 0.7 : 0.55;
+}
+
+export function playerValue(player, slotPos, role, tactics) {
+  const fam = familiarity(player.pos, slotPos);
+  const fit = 0.72 + 0.28 * (player.fitness / 100);
+  const mor = 0.95 + 0.1 * (player.morale / 100);
+  const rs = role ? roleScore(player, role) : 0.7;
+  const roleMul = role ? 0.96 + 0.09 * rs : 1;
+  return player.overall * fam * fit * mor * roleMul;
+}
+
+// Fill the formation's slots from a pool: players whose own position is in
+// the slot's group first, then anyone left, each at their best fit.
+function assignSlots(pool, slots, roles) {
+  const value = (p, slot) => playerValue(p, slot.pos, roles && roles[p.id]);
+  const chosen = new Array(slots.length).fill(null);
+  const poolLeft = pool.slice();
+  const gkPool = poolLeft.filter((p) => POS_GROUP[p.pos] === 'GK');
+  const gk = gkPool.length ? gkPool.reduce((a, b) => (value(b, slots[0]) > value(a, slots[0]) ? b : a)) : null;
+  if (gk) {
+    chosen[0] = gk;
+    poolLeft.splice(poolLeft.indexOf(gk), 1);
+  }
+  const order = slots.map((_, i) => i).filter((i) => i > 0);
+  for (const i of order) {
+    const group = POS_GROUP[slots[i].pos];
+    const cands = poolLeft.filter((p) => POS_GROUP[p.pos] === group);
+    if (!cands.length) continue;
+    const best = cands.reduce((a, b) => (value(b, slots[i]) > value(a, slots[i]) ? b : a));
+    chosen[i] = best;
+    poolLeft.splice(poolLeft.indexOf(best), 1);
+  }
+  for (const i of order) {
+    if (chosen[i] || !poolLeft.length) continue;
+    const best = poolLeft.reduce((a, b) => (value(b, slots[i]) > value(a, slots[i]) ? b : a));
+    chosen[i] = best;
+    poolLeft.splice(poolLeft.indexOf(best), 1);
+  }
+  if (!chosen[0] && poolLeft.length) chosen[0] = poolLeft[0];
+  return chosen;
+}
+
+export function autoLineup(players, formation, roles, excludeInjured = true) {
+  const slots = FORMATIONS[formation].slots;
+  const available = players.filter((p) => !excludeInjured || p.injury <= 0);
+  const pool = available.length >= 11 ? available : players.slice();
+  return assignSlots(pool, slots, roles).filter(Boolean).map((p) => p.id);
+}
+
+// Put a set of eleven players into a formation's slots, keeping the best fit.
+export function arrangeLineup(players, lineup, formation) {
+  const slots = FORMATIONS[formation].slots;
+  const byId = Object.fromEntries(players.map((p) => [p.id, p]));
+  const pool = lineup.map((id) => byId[id]).filter(Boolean);
+  if (pool.length !== slots.length) return lineup.slice(0, slots.length);
+  return assignSlots(pool, slots, {}).filter(Boolean).map((p) => p.id);
+}
+
+export function fixLineup(state) {
+  const squad = state.squads[state.clubId];
+  const byId = Object.fromEntries(squad.map((p) => [p.id, p]));
+  const slots = FORMATIONS[state.tactics.formation].slots;
+  const used = new Set();
+  let rebuilt = false;
+  const lineup = (state.lineup || []).slice(0, 11).map((id, i) => {
+    const p = byId[id];
+    const slot = slots[i] || slots[0];
+    if (p && p.injury <= 0 && !used.has(id)) {
+      used.add(id);
+      return id;
+    }
+    // Replace an injured or missing starter with the best fit still free.
+    const candidates = squad
+      .filter((q) => q.injury <= 0 && !used.has(q.id) && (slot.pos !== 'GK' || POS_GROUP[q.pos] === 'GK'))
+      .sort((a, b) => playerValue(b, slot.pos, state.roles[b.id]) - playerValue(a, slot.pos, state.roles[a.id]));
+    const pick = candidates[0];
+    if (pick) { used.add(pick.id); rebuilt = true; return pick.id; }
+    return id;
+  });
+  if (lineup.length < 11 || POS_GROUP[(byId[lineup[0]] || {}).pos] !== 'GK') {
+    state.lineup = autoLineup(squad, state.tactics.formation, state.roles);
+    return state.lineup;
+  }
+  if (rebuilt) state.lineup = lineup;
+  return state.lineup;
+}
+
+// ── Validation ───────────────────────────────────────────────────────────
+export function validateLineup(state) {
+  const squad = state.squads[state.clubId];
+  const byId = Object.fromEntries(squad.map((p) => [p.id, p]));
+  if (!state.lineup || state.lineup.length !== 11) {
+    return { ok: false, message: 'Pick eleven starters before you play.' };
+  }
+  if (new Set(state.lineup).size !== 11) {
+    return { ok: false, message: 'The same player is in the lineup twice. Pick eleven different players.' };
+  }
+  for (const id of state.lineup) {
+    if (!byId[id]) return { ok: false, message: 'A starter is no longer in your squad. Pick eleven starters again.' };
+  }
+  const injured = state.lineup.filter((id) => byId[id].injury > 0);
+  if (injured.length) {
+    const names = injured.map((id) => byId[id].name);
+    return { ok: false, message: 'Injured: ' + names.join(', ') + '. Bring a fit player on in their place.' };
+  }
+  const slots = FORMATIONS[state.tactics.formation].slots;
+  const gkId = state.lineup[0];
+  if (POS_GROUP[byId[gkId].pos] !== 'GK') {
+    return { ok: false, message: 'Your eleven needs a goalkeeper in goal. Pick one in the goalkeeper slot.' };
+  }
+  const otherGk = state.lineup.filter((id) => POS_GROUP[byId[id].pos] === 'GK' && id !== gkId);
+  if (otherGk.length && slots[0].pos !== 'GK') {
+    return { ok: false, message: 'Your eleven needs a goalkeeper in goal.' };
+  }
+  return { ok: true, message: '' };
+}
+
+// ── Club form, table, fixtures ───────────────────────────────────────────
+export function allResults(state) {
+  return state.results || [];
+}
+
+export function leagueTable(state) {
+  const rows = {};
+  for (const c of CLUBS) rows[c.id] = { id: c.id, name: c.name, short: c.short, played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0, gd: 0, points: 0 };
+  for (const r of state.results) {
+    const h = rows[r.home.id];
+    const a = rows[r.away.id];
+    if (!h || !a) continue;
+    h.played++; a.played++;
+    h.gf += r.homeGoals; h.ga += r.awayGoals;
+    a.gf += r.awayGoals; a.ga += r.homeGoals;
+    if (r.homeGoals > r.awayGoals) { h.won++; a.lost++; h.points += 3; }
+    else if (r.homeGoals < r.awayGoals) { a.won++; h.lost++; a.points += 3; }
+    else { h.drawn++; a.drawn++; h.points++; a.points++; }
+  }
+  const list = Object.values(rows);
+  for (const r of list) r.gd = r.gf - r.ga;
+  list.sort((x, y) => y.points - x.points || y.gd - x.gd || y.gf - x.gf || x.name.localeCompare(y.name));
+  list.forEach((r, i) => { r.rank = i + 1; });
+  return list;
+}
+
+export function formOf(state, clubId, count = 5) {
+  const played = [];
+  for (const r of state.results) {
+    if (r.home.id === clubId) played.push(r.homeGoals > r.awayGoals ? 'W' : r.homeGoals < r.awayGoals ? 'L' : 'D');
+    else if (r.away.id === clubId) played.push(r.awayGoals > r.homeGoals ? 'W' : r.awayGoals < r.homeGoals ? 'L' : 'D');
+  }
+  return played.slice(-count);
+}
+
+export function nextFixture(state) {
+  if (state.matchday >= state.fixtures.length) return null;
+  const fixtures = state.fixtures[state.matchday];
+  for (let i = 0; i < fixtures.length; i++) {
+    const f = fixtures[i];
+    if (f.home === state.clubId || f.away === state.clubId) {
+      const home = f.home === state.clubId;
+      return {
+        index: i,
+        home: f.home,
+        away: f.away,
+        venue: home ? 'Home' : 'Away',
+        opponentId: home ? f.away : f.home,
+        matchday: state.matchday + 1,
+      };
+    }
+  }
+  return null;
+}
+
+export function objectiveMet(rank, objective) {
+  if (objective === 'Win the league') return rank === 1;
+  if (objective === 'Finish in the top half') return rank <= 5;
+  if (objective === 'Avoid finishing bottom') return rank < CLUBS.length;
+  return rank <= 4;
+}
+
+// ── Preparing a side for the simulation ──────────────────────────────────
+function teamFor(state, clubId) {
+  const club = CLUB_BY_ID[clubId];
+  const squad = state.squads[clubId];
+  const isUser = clubId === state.clubId;
+  const tactics = isUser ? state.tactics : { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' };
+  const roles = isUser ? state.roles || {} : {};
+  const lineup = isUser ? state.lineup : autoLineup(squad, tactics.formation, roles);
+  return { club, squad, lineup, tactics, roles };
+}
+
+function sidePower(team) {
+  const byId = Object.fromEntries(team.squad.map((p) => [p.id, p]));
+  const slots = FORMATIONS[team.tactics.formation].slots;
+  let att = 0; let mid = 0; let def = 0;
+  const starters = [];
+  team.lineup.forEach((id, i) => {
+    const p = byId[id];
+    const slot = slots[i] || slots[slots.length - 1];
+    if (!p) return;
+    const role = team.roles[id];
+    const v = playerValue(p, slot.pos, role);
+    starters.push({ player: p, slot, v });
+    const g = POS_GROUP[slot.pos];
+    if (g === 'GK') def += v * 1.4;
+    else if (g === 'DF') def += v;
+    else if (g === 'MF') mid += v;
+    else att += v;
+  });
+  const f = FORMATIONS[team.tactics.formation];
+  const m = MENTALITIES[team.tactics.mentality] || MENTALITIES.Balanced;
+  const pr = PRESSING[team.tactics.pressing] || PRESSING.Medium;
+  att = (att / 3) * f.att * m.att;
+  mid = (mid / 3.4) * f.mid * m.mid * pr.mid;
+  def = (def / 5.4) * f.def * m.def;
+  return { att, mid, def, starters, press: pr, mentality: m };
+}
+
+// ── The match ────────────────────────────────────────────────────────────
+// home/away: { club, squad, lineup, tactics, roles }. Returns a report and the
+// effects on each player (fitness, injuries, goals, cards) for the caller to
+// apply to the saved state.
+export function simulateMatch(home, away, seed) {
+  const rng = mulberry32(seed >>> 0);
+  const h = sidePower(home);
+  const a = sidePower(away);
+  const homeAdv = 1.06;
+
+  const hAtt = h.att * homeAdv;
+  const aAtt = a.att;
+  const hDef = h.def * 1.02;
+
+  const hLambda = Math.max(0.22, Math.min(4.6, 1.38 * Math.pow(hAtt / Math.max(1, a.def), 1.7)));
+  const aLambda = Math.max(0.18, Math.min(4.2, 1.26 * Math.pow(aAtt / Math.max(1, hDef), 1.7)));
+
+  const homeGoals = Math.min(7, poisson(rng, hLambda));
+  const awayGoals = Math.min(7, poisson(rng, aLambda));
+
+  // Possession from the midfield battle.
+  const hMid = h.mid + hAtt * 0.25;
+  const aMid = a.mid + aAtt * 0.25;
+  let share = hMid / (hMid + aMid);
+  share = Math.max(0.3, Math.min(0.7, share + (rng() - 0.5) * 0.06));
+  const poss = [Math.round(share * 100), 100 - Math.round(share * 100)];
+
+  const sides = {
+    home: { team: home, power: h, goals: homeGoals, att: hAtt, def: a.def, label: home.club.name },
+    away: { team: away, power: a, goals: awayGoals, att: aAtt, def: hDef, label: away.club.name },
+  };
+
+  // Who is on the pitch for each side, and who is on the bench.
+  for (const key of ['home', 'away']) {
+    const s = sides[key];
+    const byId = Object.fromEntries(s.team.squad.map((p) => [p.id, p]));
+    s.onPitch = s.team.lineup.map((id, i) => ({
+      player: byId[id],
+      slot: FORMATIONS[s.team.tactics.formation].slots[i],
+      minutes: 0,
+      on: 0,
+      off: null,
+    })).filter((x) => x.player);
+    const ids = new Set(s.team.lineup);
+    s.bench = s.team.squad.filter((p) => !ids.has(p.id) && p.injury <= 0);
+    s.subs = 0;
+    s.effects = {};
+    s.goalsScored = [];
+    s.cards = { yellow: 0, red: 0 };
+    s.fouls = 0;
+  }
+
+  const moments = [];
+
+  function ensureEffect(s, player) {
+    if (!s.effects[player.id]) {
+      s.effects[player.id] = { goals: 0, assists: 0, yellow: 0, red: 0, injury: 0, minutes: 0, fitness: 0, started: false, subOn: null, subOff: null };
+    }
+    return s.effects[player.id];
+  }
+  for (const key of ['home', 'away']) {
+    const s = sides[key];
+    for (const entry of s.onPitch) {
+      const e = ensureEffect(s, entry.player);
+      e.started = true;
+    }
+  }
+
+  // Goal times, then everything else.
+  const goalEvents = [];
+  for (const key of ['home', 'away']) {
+    for (let i = 0; i < sides[key].goals; i++) {
+      goalEvents.push({ minute: 2 + Math.floor(rng() * 88), side: key });
+    }
+  }
+  goalEvents.sort((x, y) => x.minute - y.minute);
+
+  // Shots: every goal is a shot on target, plus the misses.
+  const shots = {};
+  const onTarget = {};
+  for (const key of ['home', 'away']) {
+    const g = sides[key].goals;
+    const attempts = Math.min(30, g + poisson(rng, key === 'home' ? 9.6 : 8.4));
+    const accurate = Math.min(attempts, g + poisson(rng, key === 'home' ? 3.6 : 3.0));
+    shots[key] = attempts;
+    onTarget[key] = accurate;
+  }
+
+  // Injuries and substitutions, in the last third of the match.
+  for (const key of ['home', 'away']) {
+    const s = sides[key];
+    const injuryRng = rng;
+    if (injuryRng() < 0.3) {
+      const healthy = s.onPitch.filter((e) => !e.off);
+      const injuredEntry = healthy.length ? pick(rng, healthy) : null;
+      if (injuredEntry) {
+        const se = ensureEffect(s, injuredEntry.player);
+        const weeks = 1 + Math.floor(rng() * 3);
+        se.injury = weeks;
+        const minute = 10 + Math.floor(rng() * 70);
+        injuredEntry.off = minute;
+        se.subOff = minute;
+        moments.push({ minute, type: 'injury', side: key, playerId: injuredEntry.player.id, playerName: injuredEntry.player.name, detail: 'Injured, out for ' + weeks + (weeks === 1 ? ' match' : ' matches'), teamName: s.team.club.name });
+        // An injured player comes off straight away when there is a bench.
+        if (s.subs < 3 && s.bench.length) {
+          let best = null;
+          let bestV = -1;
+          for (const p of s.bench) {
+            const v = playerValue(p, injuredEntry.slot.pos, s.team.roles[p.id]);
+            if (v > bestV) { bestV = v; best = p; }
+          }
+          if (best) {
+            s.bench = s.bench.filter((p) => p !== best);
+            s.onPitch.push({ player: best, slot: injuredEntry.slot, minutes: 0, on: minute, off: null });
+            const seIn = ensureEffect(s, best);
+            seIn.subOn = minute;
+            s.subs++;
+            moments.push({ minute, type: 'sub', side: key, playerId: best.id, playerName: best.name, playerOutName: injuredEntry.player.name, detail: 'Injured, replaced', teamName: s.team.club.name });
+          }
+        }
+      }
+    }
+    // Up to three substitutions, made when a starter is tiring or injured.
+    const subMinutes = [58, 67, 76, 84];
+    for (const m of subMinutes) {
+      if (s.subs >= 3) break;
+      if (rng() > 0.62) continue;
+      const tired = s.onPitch.filter((e) => !e.off && e.player.fitness - m * 0.28 * s.power.press.stamina < 52);
+      const out = tired.sort((x, y) => x.player.fitness - y.player.fitness)[0];
+      if (!out) continue;
+      // A bench player who fits the vacated slot best.
+      let best = null;
+      let bestV = -1;
+      for (const p of s.bench) {
+        if (s.onPitch.some((e) => e.player.id === p.id)) continue;
+        const v = playerValue(p, out.slot.pos, s.team.roles[p.id]);
+        if (v > bestV) { bestV = v; best = p; }
+      }
+      if (!best) continue;
+      s.bench = s.bench.filter((p) => p !== best);
+      const seOut = ensureEffect(s, out.player);
+      seOut.subOff = m;
+      out.off = m;
+      const onEntry = { player: best, slot: out.slot, minutes: 0, on: m, off: null };
+      s.onPitch.push(onEntry);
+      const seIn = ensureEffect(s, best);
+      seIn.subOn = m;
+      s.subs++;
+      const outFit = Math.max(12, Math.round(out.player.fitness - m * 0.28 * s.power.press.stamina));
+      moments.push({
+        minute: m,
+        type: 'sub',
+        side: key,
+        playerId: best.id,
+        playerName: best.name,
+        playerOutName: out.player.name,
+        detail: out.player.name + ' tired, fitness ' + outFit + '%',
+        teamName: s.team.club.name,
+      });
+    }
+  }
+
+  // Fouls and cards.
+  for (const key of ['home', 'away']) {
+    const s = sides[key];
+    const lambda = 10.4 * s.power.press.foul;
+    const fouls = Math.min(26, poisson(rng, lambda));
+    s.fouls = fouls;
+    for (let i = 0; i < fouls; i++) {
+      const chance = 0.115 * (key === 'away' ? 1.06 : 1);
+      if (rng() < chance) {
+        const cardMinute = 5 + Math.floor(rng() * 85);
+        const candidates = s.onPitch.filter((e) => e.on <= cardMinute && (!e.off || e.off > cardMinute) && (POS_GROUP[e.slot.pos] !== 'GK' || rng() < 0.1));
+        const offender = weighted(rng, candidates, (e) => 0.5 + e.player.attrs.def / 150);
+        const se = ensureEffect(s, offender.player);
+        const straight = rng() < 0.004;
+        if (straight) {
+          se.red++;
+          s.cards.red++;
+          moments.push({ minute: cardMinute, type: 'red', side: key, playerId: offender.player.id, playerName: offender.player.name, detail: 'Straight red card', teamName: s.team.club.name });
+        } else {
+          se.yellow++;
+          s.cards.yellow++;
+          moments.push({ minute: cardMinute, type: 'yellow', side: key, playerId: offender.player.id, playerName: offender.player.name, detail: 'Foul on ' + pick(rng, sides[key === 'home' ? 'away' : 'home'].onPitch).player.name, teamName: s.team.club.name });
+        }
+      }
+    }
+    // A second yellow is a red.
+  }
+  // Any player with two yellows is off.
+  for (const key of ['home', 'away']) {
+    const s = sides[key];
+    for (const id in s.effects) {
+      const e = s.effects[id];
+      if (e.yellow >= 2 && e.red === 0) {
+        e.red = 1;
+        s.cards.red++;
+        const entry = s.onPitch.find((x) => x.player.id === id);
+        if (entry) entry.off = 80;
+        const yms = moments.filter((m) => m.type === 'yellow' && m.playerId === id);
+        const lastY = yms[yms.length - 1];
+        moments.push({ minute: lastY ? lastY.minute : 80, type: 'red', side: key, playerId: id, playerName: entry ? entry.player.name : '', detail: 'Second yellow card', teamName: s.team.club.name });
+      }
+      if (e.red) {
+        const entry = s.onPitch.find((x) => x.player.id === id);
+        if (entry) entry.off = 80;
+      }
+    }
+  }
+
+  // Goals and their makers.
+  for (const ev of goalEvents) {
+    const s = sides[ev.side];
+    const outfield = s.onPitch.filter((e) => e.on <= ev.minute && (!e.off || e.off > ev.minute) && POS_GROUP[e.slot.pos] !== 'GK');
+    const scorer = weighted(rng, outfield, (e) => {
+      const p = e.player;
+      const g = POS_GROUP[e.slot.pos];
+      const posW = g === 'FW' ? 3 : g === 'MF' ? 1.2 : 0.35;
+      return posW * (0.5 + p.attrs.sho / 100) * (0.8 + e.player.fitness / 250);
+    });
+    const mates = outfield.filter((e) => e !== scorer);
+    const hasAssist = rng() < 0.74;
+    const assist = hasAssist ? weighted(rng, mates, (e) => 0.4 + e.player.attrs.pas / 100) : null;
+    const se = ensureEffect(s, scorer.player);
+    se.goals++;
+    if (assist) ensureEffect(s, assist.player).assists++;
+    moments.push({
+      minute: ev.minute,
+      type: 'goal',
+      side: ev.side,
+      playerId: scorer.player.id,
+      playerName: scorer.player.name,
+      assistName: assist ? assist.player.name : null,
+      teamName: s.team.club.name,
+    });
+  }
+
+  moments.sort((x, y) => x.minute - y.minute || (x.type === 'goal' ? -1 : 0));
+
+  // Minutes played and fitness drain.
+  for (const key of ['home', 'away']) {
+    const s = sides[key];
+    for (const id in s.effects) {
+      const e = s.effects[id];
+      const entry = s.onPitch.find((x) => x.player.id === id);
+      const start = e.started ? 0 : (e.subOn || 0);
+      const end = e.subOff || (e.red ? 70 : 90);
+      e.minutes = Math.max(0, end - start);
+    }
+  }
+
+  // Ratings for the user's side, and stats for the report.
+  const ratingsFor = (s) => {
+    const out = {};
+    const conceded = s === sides.home ? sides.away.goals : sides.home.goals;
+    const result = s.goals - conceded;
+    for (const id in s.effects) {
+      const e = s.effects[id];
+      if (!e.minutes) continue;
+      const entry = s.onPitch.find((x) => x.player.id === id);
+      const pos = entry ? POS_GROUP[entry.slot.pos] : 'MF';
+      let r = 6.1 + e.goals * 1.15 + e.assists * 0.65;
+      r += result > 0 ? 0.3 : result < 0 ? -0.25 : 0;
+      if (pos === 'GK' || pos === 'DF') r += conceded === 0 ? 0.55 : 0;
+      if (pos === 'GK') r += 0.15;
+      r -= e.yellow * 0.3 + e.red * 1.4;
+      if (e.injury) r -= 0.3;
+      out[id] = Math.round(Math.max(3, Math.min(9.8, r)) * 10) / 10;
+    }
+    return out;
+  };
+
+  const report = {
+    matchday: null,
+    home: { id: home.club.id, name: home.club.name, short: home.club.short, color: home.club.color },
+    away: { id: away.club.id, name: away.club.name, short: away.club.short, color: away.club.color },
+    homeGoals,
+    awayGoals,
+    moments,
+    stats: {
+      possession: poss,
+      shots: [shots.home, shots.away],
+      onTarget: [onTarget.home, onTarget.away],
+      passes: [Math.round(poss[0] * 5.6), Math.round(poss[1] * 5.4)],
+      fouls: [sides.home.fouls, sides.away.fouls],
+      yellow: [sides.home.cards.yellow, sides.away.cards.yellow],
+      red: [sides.home.cards.red, sides.away.cards.red],
+    },
+    ratings: { home: ratingsFor(sides.home), away: ratingsFor(sides.away) },
+    effects: { home: sides.home.effects, away: sides.away.effects },
+  };
+  return report;
+}
+
+// ── Applying a match to the career ───────────────────────────────────────
+export function applyReport(state, report) {
+  const sides = { home: report.home.id, away: report.away.id };
+  for (const key of ['home', 'away']) {
+    const clubId = sides[key];
+    const squad = state.squads[clubId];
+    const byId = Object.fromEntries(squad.map((p) => [p.id, p]));
+    const effects = report.effects[key];
+    const gf = key === 'home' ? report.homeGoals : report.awayGoals;
+    const ga = key === 'home' ? report.awayGoals : report.homeGoals;
+    const result = gf > ga ? 1 : gf < ga ? -1 : 0;
+    const tacticalPress = key === 'home' || clubId === state.clubId
+      ? (PRESSING[(clubId === state.clubId ? state.tactics : { pressing: 'Medium' }).pressing] || PRESSING.Medium).stamina
+      : 1;
+    for (const p of squad) {
+      const e = effects[p.id];
+      if (e) {
+        p.apps++;
+        p.goals += e.goals;
+        p.assists += e.assists;
+        p.yellow += e.yellow;
+        p.red += e.red;
+        p.fitness = Math.round(Math.max(30, Math.min(100, p.fitness - e.minutes * 0.19 * tacticalPress + 15)));
+        if (e.injury) p.injury = Math.max(p.injury, e.injury);
+        p.morale = Math.round(Math.max(20, Math.min(100, p.morale + (result > 0 ? 5 : result < 0 ? -5 : 1))));
+        p.lastRating = report.ratings[key][p.id] || null;
+        p.lastMinutes = e.minutes;
+      } else {
+        // Rested players recover.
+        p.fitness = Math.round(Math.min(100, p.fitness + 15));
+        if (p.injury > 0) p.injury = Math.max(0, p.injury - 1);
+        p.morale = Math.round(Math.min(100, Math.max(20, p.morale + 1)));
+      }
+    }
+  }
+  // Keep the user's eleven fit where injuries took a starter out.
+  if (state.clubId === report.home.id || state.clubId === report.away.id) fixLineup(state);
+}
+
+export function playMatchday(state) {
+  const md = state.matchday;
+  if (md >= state.fixtures.length) return [];
+  const reports = [];
+  state.fixtures[md].forEach((f, i) => {
+    const home = teamFor(state, f.home);
+    const away = teamFor(state, f.away);
+    const report = simulateMatch(home, away, matchSeed(state.seed, md, i));
+    report.matchday = md + 1;
+    report.fixtureIndex = i;
+    reports.push(report);
+  });
+  for (const report of reports) applyReport(state, report);
+  for (const r of reports) {
+    state.results.push({
+      matchday: r.matchday,
+      home: r.home,
+      away: r.away,
+      homeGoals: r.homeGoals,
+      awayGoals: r.awayGoals,
+    });
+  }
+  state.lastReport = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
+  state.matchday = md + 1;
+  state.finished = state.matchday >= state.fixtures.length;
+  return reports;
+}
+
+// ── A career ─────────────────────────────────────────────────────────────
+export function buildInitialState(clubId, managerName, seed) {
+  const club = CLUB_BY_ID[clubId];
+  if (!club) throw new Error('Unknown club');
+  const squads = clubSquads(seed);
+  const state = {
+    version: 1,
+    managerName,
+    clubId,
+    seed,
+    squads,
+    fixtures: buildFixtures(seed),
+    results: [],
+    tactics: { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' },
+    roles: {},
+    lineup: [],
+    matchday: 0,
+    finished: false,
+    lastReport: null,
+  };
+  for (const id of Object.keys(squads)) {
+    for (const p of squads[id]) state.roles[p.id] = defaultRole(p.pos);
+  }
+  state.lineup = autoLineup(squads[clubId], state.tactics.formation, state.roles);
+  return state;
+}
+
+export function clubSummary(seed, club) {
+  const squad = buildSquad(seed, CLUBS.indexOf(club), club.rep);
+  const avg = squad.reduce((s, p) => s + p.overall, 0) / squad.length;
+  return { avg: Math.round(avg) };
+}
+
+// The staging demo: Harbourside eleven matchdays in, with one injury and one
+// booking to show, the last result and the table already filled in.
+export function buildDemoState(seed) {
+  const state = buildInitialState('harbourside', 'Demo Manager', seed);
+  for (let i = 0; i < 11; i++) playMatchday(state);
+  // The demo shows exactly one injured player and one booked player.
+  const squad = state.squads.harbourside;
+  for (const p of squad) { p.injury = 0; p.yellow = 0; p.red = 0; }
+  const benchPick = squad.filter((p) => !state.lineup.includes(p.id) && POS_GROUP[p.pos] !== 'GK')
+    .sort((a, b) => b.overall - a.overall)[0] || squad[squad.length - 1];
+  if (benchPick) benchPick.injury = 2;
+  const booked = squad.find((p) => POS_GROUP[p.pos] === 'DF' && p !== benchPick) || squad[1];
+  if (booked) booked.yellow = 1;
+  state.lineup = autoLineup(squad, state.tactics.formation, state.roles);
+  fixLineup(state);
+  state.managerName = 'Demo Manager';
+  return state;
+}
+
+// Find a seed whose demo puts Harbourside third after eleven matchdays. Done
+// once, offline, and the answer is written into server.js as DEMO_SEED.
+export function findDemoSeed(max = 400) {
+  for (let seed = 1; seed <= max; seed++) {
+    const state = buildDemoState(seed);
+    const table = leagueTable(state);
+    const me = table.find((r) => r.id === 'harbourside');
+    if (me && me.rank === 3 && me.played === 11) return { seed, points: me.points, table: table.map((r) => [r.rank, r.name, r.points]) };
+  }
+  return null;
+}
