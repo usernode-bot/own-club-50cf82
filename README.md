@@ -5,9 +5,9 @@ wallet of 1,000 Dummy USDC and buy one of the 72 Division 3 clubs for 100, then
 set your eleven on a pitch diagram, choose the formation, mentality and pressing,
 and follow your club through its group's 34 matchdays. Six tabs split the club
 screen: Home, Squad, Tactics, Competition, Club and Transfers, in a bar along the
-bottom on a phone and a sidebar on a laptop. Matches play by themselves at 9 am, 3 pm and
-9 pm on the manager's own clock, with the lineup and tactics last saved, so a
-season takes about twelve days. Squads tire, pick up cards and injuries, and the
+bottom on a phone and a sidebar on a laptop. Matches play by themselves at 12 am, 6 am, 12 pm
+and 6 pm on the manager's own clock, with the lineup and tactics last saved, so a
+season takes about nine days. Squads tire, pick up cards and injuries, and the
 group table builds up as the season goes.
 
 A Division 3 club has one manager, so a taken club shows as Taken in the shop.

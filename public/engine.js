@@ -1768,13 +1768,13 @@ export function playMatchday(state) {
 }
 
 // ── The match schedule ───────────────────────────────────────────────────
-// Three matchdays a day open on the manager's own clock, at mealtimes. The
+// Four matchdays a day, every six hours, open on the manager's own clock. The
 // server plays every slot that has passed since the career's nextMatchAt, so
 // no button is pressed. Times are wall-clock times in the career's saved IANA
-// zone, so 9 am stays 9 am through a daylight-saving change. Nothing here
+// zone, so 6 am stays 6 am through a daylight-saving change. Nothing here
 // reads the clock itself: `now` and `zone` are arguments.
-export const MATCH_SLOTS = [9, 15, 21];
-export const MATCHES_PER_DAY = 3;
+export const MATCH_SLOTS = [0, 6, 12, 18];
+export const MATCHES_PER_DAY = 4;
 
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -1813,8 +1813,9 @@ export function localClock(date, zone) {
   };
 }
 
-// '9 am', '3 pm', '9 pm'.
+// '12 am', '6 am', '12 pm', '6 pm'.
 export function slotLabel(hour) {
+  if (hour === 0) return '12 am';
   if (hour < 12) return hour + ' am';
   if (hour === 12) return '12 pm';
   return (hour - 12) + ' pm';
@@ -1870,7 +1871,7 @@ export function slotAfter(instant, zone) {
   return slotOnDay(addDays(day, 1), zone)[0];
 }
 
-// 9 am local on `now`'s local day.
+// 12 am local on `now`'s local day.
 export function firstSlotOfDay(now, zone) {
   const at = now instanceof Date ? now : new Date(now);
   return wallClock(localClock(at, zone).day, MATCH_SLOTS[0], zone);
