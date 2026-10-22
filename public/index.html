@@ -78,6 +78,7 @@
        classes, swap this link for the platform-hosted engine instead:
        <script src="/usernode-tailwind/v1/tailwind.js"></script> -->
   <link rel="stylesheet" href="/tailwind.css">
+  <link rel="stylesheet" href="/screens.css">
   <!-- The platform bridge, centrally hosted and loaded by RELATIVE path (the
        handler in server.js serves it under a plain "node server.js"; the
        platform's edge answers it everywhere else). Never vendor it and never
@@ -115,21 +116,74 @@
   <!-- (Named in prose on purpose: Tailwind compiles any class-name word in
        these files, comments included, and the starter should ship only the
        components its screen uses.) -->
-  <main class="mx-auto flex max-w-md flex-col gap-8 px-4 py-10">
-
-    <!-- usernode-starter-notice@1 — starter-template messaging. When building
-         the user's real app, replace this whole screen and delete this block,
-         both sentinel comments included. -->
-    <section class="card flex flex-col items-start gap-3">
-      <div class="flex h-20 w-20 items-center justify-center rounded-2xl border border-line bg-ground text-title">⚽</div>
-      <span class="rounded-full bg-raised px-3 py-1 text-small font-medium text-muted">Starter template</span>
-      <h1 class="text-title">Own Club</h1>
-      <p class="text-body text-muted">Welcome to your new app! Everything on this screen is placeholder content that came with it.</p>
-      <p class="text-body text-muted">To change this app, ask Homeroom bot: tap the <strong class="font-semibold text-fg">Homeroom icon</strong>, then <strong class="font-semibold text-fg">Suggest an improvement</strong>. Describe what you'd like in plain English, and it will be turned into your real app.</p>
-    </section>
-    <!-- /usernode-starter-notice@1 -->
-
-    <p class="text-center text-small text-muted">Built on Homeroom. This template screen disappears once you build your real app.</p>
-  </main>
+  <!-- usernode-spec-screens@1: the screens the spec drew, carried over by the platform as this
+       first version's starting point. Their styles are in public/screens.css.
+       Change them where behaviour needs it; do not redraw them. -->
+  <div data-spec-screen="1">
+    <div class="app">
+    <div class="top"><div class="sm">Matchday 12 of 18</div><h1>Harbourside FC</h1><div class="sm">3rd in the Coastal League</div></div>
+    <div class="next">
+    <div class="row"><div class="team"><span class="badge" style="background:rgb(var(--pitch))">HF</span>Harbourside</div><div class="mid">Next match<b>vs</b>Home</div><div class="team"><span class="badge" style="background:#7a3b8f">RA</span>Redvale Athletic</div></div>
+    <button class="btn-primary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/></svg>Play match</button></div>
+    <div class="sec"><div class="section-label"><span>Your lineup</span><span>Drag a player to swap</span></div>
+    <div class="pitch"><svg viewBox="0 0 358 300" fill="none"><g stroke="#fff" stroke-opacity=".55" stroke-width="2"><rect x="10" y="10" width="338" height="280"/><line x1="10" y1="150" x2="348" y2="150"/><circle cx="179" cy="150" r="36"/><rect x="95" y="10" width="168" height="48"/><rect x="95" y="242" width="168" height="48"/></g>
+    <g fill="#fff"><circle cx="70" cy="60" r="16"/><circle cx="179" cy="48" r="16"/><circle cx="288" cy="60" r="16"/><circle cx="90" cy="130" r="16"/><circle cx="179" cy="118" r="16"/><circle cx="268" cy="130" r="16"/><circle cx="48" cy="205" r="16"/><circle cx="135" cy="215" r="16"/><circle cx="223" cy="215" r="16"/><circle cx="310" cy="205" r="16"/></g>
+    <circle cx="179" cy="268" r="16" fill="#d97706"/>
+    <g font-family="system-ui" font-size="11" font-weight="700" fill="#16241c" text-anchor="middle"><text x="70" y="64">Ode</text><text x="179" y="52">Kerr</text><text x="288" y="64">Mensah</text><text x="90" y="134">Bell</text><text x="179" y="122">Voss</text><text x="268" y="134">Ito</text><text x="48" y="209">Lam</text><text x="135" y="219">Okafor</text><text x="223" y="219">Hale</text><text x="310" y="209">Pike</text><text x="179" y="272" fill="#2a1602">Brandt</text></g></svg></div>
+    <div class="formrow"><div class="chip">Formation<b>4-3-3</b></div><div class="chip">Mentality<b>Positive</b></div><div class="chip">Pressing<b>High</b></div></div></div>
+    <div class="sec"><div class="section-label"><span>Squad</span><span>Fitness</span></div>
+    <ul class="list">
+    <li class="list-row"><span class="pos">GK</span><span class="nm">Tomas Brandt<small>Starter, 4 clean sheets</small></span><span class="fit"><i style="width:96%"></i></span><span class="ovr">76</span></li>
+    <li class="list-row"><span class="pos">CB</span><span class="nm">Dunn Okafor<small>Starter, 1 yellow card</small></span><span class="fit"><i style="width:82%"></i></span><span class="ovr">74</span></li>
+    <li class="list-row"><span class="pos">CM</span><span class="nm">Marco Voss<small>Starter, captain</small></span><span class="fit"><i style="width:64%"></i></span><span class="ovr">79</span></li>
+    <li class="list-row"><span class="pos">RW</span><span class="nm">Sam Ruiz<small>Bench, back from injury</small></span><span class="fit"><i style="width:48%;background:rgb(var(--card-y))"></i></span><span class="ovr">72</span></li>
+    </ul></div>
+    <div class="sec"><div class="section-label"><span>Last result</span><span>Matchday 11</span></div>
+    <ul class="list"><li class="list-row"><span class="nm">Northmoor Town 1–2 Harbourside<small>Shots 9–14, possession 44%–56%</small></span><span class="form"><i class="w">W</i></span></li></ul></div>
+    <div class="sec"><div class="section-label"><span>League table</span><span class="form"><i class="w">W</i><i class="w">W</i><i class="d">D</i><i class="l">L</i><i class="w">W</i></span></div>
+    <ul class="list tbl">
+    <li class="list-row"><span class="n">1</span><span class="t">Redvale Athletic</span><span class="g">+12</span><span class="p">27</span></li>
+    <li class="list-row"><span class="n">2</span><span class="t">Kingsmoor United</span><span class="g">+8</span><span class="p">24</span></li>
+    <li class="list-row me"><span class="n">3</span><span class="t">Harbourside FC (you)</span><span class="g">+7</span><span class="p">22</span></li>
+    <li class="list-row"><span class="n">4</span><span class="t">Northmoor Town</span><span class="g">+2</span><span class="p">19</span></li>
+    </ul></div>
+    </div>
+  </div>
+  <!-- Screen 2 as the spec drew it: inert until moved where that view belongs. -->
+  <template data-spec-screen="2">
+    <div data-spec-screen="2">
+      <div class="app">
+      <div class="top">
+      <div class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>Club</div>
+      <div class="sm">Full time, matchday 12</div>
+      <div class="score"><div class="team"><span class="badge" style="background:rgb(var(--pitch2))">HF</span>Harbourside FC</div><div class="big">2–1</div><div class="team"><span class="badge" style="background:#7a3b8f">RA</span>Redvale Athletic</div></div>
+      </div>
+      <div class="sec"><div class="section-label"><span>Key moments</span></div>
+      <ul class="list">
+      <li class="list-row"><span class="min">23'</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(22 36 28)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg><span class="ev">Goal, Eli Kerr<small>Assist: Marco Voss</small></span></li>
+      <li class="list-row"><span class="min">41'</span><svg width="20" height="20" viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(234 179 8)"/></svg><span class="ev">Yellow card, Dunn Okafor<small>Foul on Ansel Grey</small></span></li>
+      <li class="list-row"><span class="min">58'</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(78 94 84)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg><span class="ev away">Goal, Redvale: Ansel Grey<small>Assist: Pia Lund</small></span></li>
+      <li class="list-row"><span class="min">66'</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(78 94 84)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3"/></svg><span class="ev">Sub: Sam Ruiz on for Kofi Mensah<small>Mensah tired, fitness 41%</small></span></li>
+      <li class="list-row"><span class="min">81'</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgb(22 36 28)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg><span class="ev">Goal, Sam Ruiz<small>Assist: Lee Ode</small></span></li>
+      </ul></div>
+      <div class="sec"><div class="section-label"><span>Harbourside</span><span>Redvale</span></div>
+      <ul class="list">
+      <li class="stat"><div class="h"><span>56%</span><span>Possession</span><span>44%</span></div><div class="bar"><i style="width:56%"></i><u style="width:43%"></u></div></li>
+      <li class="stat list-row" style="display:block"><div class="h"><span>15</span><span>Shots</span><span>8</span></div><div class="bar"><i style="width:65%"></i><u style="width:34%"></u></div></li>
+      <li class="stat list-row" style="display:block"><div class="h"><span>6</span><span>On target</span><span>3</span></div><div class="bar"><i style="width:66%"></i><u style="width:33%"></u></div></li>
+      <li class="stat list-row" style="display:block"><div class="h"><span>11</span><span>Fouls</span><span>14</span></div><div class="bar"><i style="width:44%"></i><u style="width:55%"></u></div></li>
+      </ul></div>
+      <div class="sec"><div class="section-label"><span>Player ratings</span><span>Harbourside</span></div>
+      <ul class="list">
+      <li class="list-row"><span class="nm">Eli Kerr<small>ST, 1 goal, 4 shots</small></span><span class="rt top1">8.4</span></li>
+      <li class="list-row"><span class="nm">Marco Voss<small>CM, 1 assist, 61 passes</small></span><span class="rt">7.6</span></li>
+      <li class="list-row"><span class="nm">Sam Ruiz<small>RW, on 66', 1 goal</small></span><span class="rt">7.4</span></li>
+      <li class="list-row"><span class="nm">Dunn Okafor<small>CB, yellow card</small></span><span class="rt">6.5</span></li>
+      </ul></div>
+      <div class="sec"><button class="btn-primary">Back to club</button></div>
+      </div>
+    </div>
+  </template>
+  <!-- /usernode-spec-screens@1 -->
 </body>
 </html>
