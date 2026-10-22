@@ -8,7 +8,7 @@ import {
   divisionClubIds, placeName, seasonSeed, seasonOutcome, nextPlacement, startNextSeason,
   buildInitialState, buildFixtures, buildSquad, buildDemoState,
   leagueTable, playMatchday, objectiveMet, clubSummary, defaultRole, autoLineup,
-  openingBalance,
+  openingBalance, CREDIT_REWARDS, creditsForResult,
 } from '../public/engine.js';
 
 const avgOverall = (squad) => squad.reduce((s, p) => s + p.overall, 0) / squad.length;
@@ -349,6 +349,32 @@ test('a finished season stays well inside the save limit', () => {
   assert.ok(JSON.stringify(state).length < 1024 * 1024);
 });
 
+test('Club credits pay 50 for a win, 25 for a draw and 10 for a loss', () => {
+  assert.deepEqual(CREDIT_REWARDS, { win: 50, draw: 25, loss: 10 });
+  assert.equal(creditsForResult(2, 0), 50);
+  assert.equal(creditsForResult(1, 1), 25);
+  assert.equal(creditsForResult(0, 3), 10);
+});
+
+test('a career starts with no Club credits and earns them from its own result', () => {
+  const state = buildInitialState(GROUPS[8].clubIds[5], 'Test manager', 12);
+  assert.equal(state.credits, 0);
+  playMatchday(state);
+  const own = state.results[0] && state.results.find(
+    (r) => r.home.id === state.clubId || r.away.id === state.clubId
+  );
+  const atHome = own.home.id === state.clubId;
+  const expected = creditsForResult(
+    atHome ? own.homeGoals : own.awayGoals,
+    atHome ? own.awayGoals : own.homeGoals
+  );
+  assert.equal(state.credits, expected);
+  // Only the manager's club keeps a balance: the other clubs earn nothing.
+  for (const id of Object.keys(state.squads)) {
+    if (id !== state.clubId) assert.equal(state.squads[id].credits, undefined);
+  }
+});
+
 test('the staging demo shows Harbourside third in Division 1 with 900 USDC', () => {
   const demo = buildDemoState(1);
   assert.equal(demo.version, 3);
@@ -363,6 +389,18 @@ test('the staging demo shows Harbourside third in Division 1 with 900 USDC', () 
   assert.equal(demo.purchase.clubId, 'harbourside');
   assert.equal(demo.purchase.price, 100);
   assert.equal(demo.purchase.demo, true);
+  // 9 wins, 5 draws and 3 losses in its 17 matchdays.
+  assert.equal(demo.credits, 9 * CREDIT_REWARDS.win + 5 * CREDIT_REWARDS.draw + 3 * CREDIT_REWARDS.loss);
+  assert.equal(demo.credits, 605);
+});
+
+test('Club credits stay with the club when the season rolls over', () => {
+  const state = finishedCareer(GROUPS[8].clubIds[5], 21);
+  assert.ok(state.credits > 0);
+  const earned = state.credits;
+  const next = startNextSeason(state);
+  assert.equal(next.matchday, 0);
+  assert.equal(next.credits, earned);
 });
 
 test('the wallet a first-time manager is given, and the one an earlier career kept', () => {

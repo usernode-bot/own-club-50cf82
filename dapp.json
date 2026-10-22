@@ -30,6 +30,11 @@
       ]
     },
     {
+      "name": "Demo club shows Club credits",
+      "path": "/?demo=1",
+      "expectText": "Club credits"
+    },
+    {
       "name": "Demo club offers the sale",
       "path": "/?demo=1",
       "expectText": "Sell Harbourside"

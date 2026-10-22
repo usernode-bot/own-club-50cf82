@@ -28,6 +28,17 @@ Nobody leaves Division 3, and every group stays at 18. Start next season takes
 the same club and players into its new group. Lower tiers start with weaker
 players.
 
+Every club also has Club credits, a second in-game currency that belongs to the
+career rather than to the person. Its balance shows under your Dummy USDC in the
+Wallet section on Home. A match earns 50 credits for a win, 25 for a draw and 10
+for a loss, however it was played: at its kick-off while you were away or while
+you were watching. The engine adds them when it plays the manager's own fixture,
+the server keeps the stored balance whatever the page sends, they carry into the
+next season, and they end with the career when the club is sold. Nothing spends
+them yet: the player market, academy and stadium upgrades will. Facility income
+(stadium level, shops, food stands, hotel) and costs (coaches, physio, salaries,
+scouting) come with those features.
+
 Dummy USDC is a mock: there is no crypto wallet, no payment and no real money
 anywhere in the app. The club price and the sale values live only in
 `server.js`, which owns the `wallets` table and the only two places a balance

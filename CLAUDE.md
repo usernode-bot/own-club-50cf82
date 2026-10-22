@@ -137,6 +137,20 @@ screen shows the kept balance. The sale value comes from the division the club
 is in when it is sold: `SALE_VALUE` in `server.js` pays 900/300/100 for
 Divisions 1/2/3.
 
+Club credits are the club's own in-game currency, a per-career field
+(`state.credits`, non-negative integer) rather than a table like `wallets`. The
+engine owns them: `CREDIT_REWARDS` (50 for a win, 25 for a draw, 10 for a loss)
+and `creditsForResult` in `engine.js`, added in `playMatchday` for the fixture
+involving `state.clubId` only, so the server's catch-up, a watched kick-off and
+the demo's 17 matchdays all earn the same way. `buildInitialState` starts at 0,
+`repairCareer` fills a missing or invalid value as 0, `startNextSeason` carries
+them, and a sale deletes the career so they end with it. `PUT /api/career` keeps
+the stored balance whatever the page sends. Nothing spends them yet; the player
+market, academy, stadium upgrades and training ground will. Home shows the
+balance as the second row of the Wallet section, and that section's tag reads
+"Staging mock" rather than "Dummy USDC (staging mock)". Facility income and costs
+(tianbuyung's lists) come with the stadium and facilities features.
+
 The ten original clubs make up most of Division 1; the other 152 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
 squads that get weaker with each tier down. Only the manager's own group is
@@ -172,8 +186,9 @@ change follows it, and updates it when a request changes the look on purpose.
   grass in the light look, green-black in the dark. Each club also has one
   badge colour of its own, stored as data in `engine.js` (Harbourside uses the
   pitch token).
-- The Wallet section is one row of the same list: the balance in `.bal`, the
-  price in `.price` (bold, tabular numbers); the group chips reuse the division
+- The Wallet section is one list of the same rows, Dummy USDC then Club
+  credits: the balance in `.bal`, the price in `.price` (bold, tabular
+  numbers); the group chips reuse the division
   chip row, four wide.
 - **Navigation:** four tabs, Home, Squad, Tactics and Competition, each with a
   line icon in the same stroke as the report's icons (a house, two players, a
