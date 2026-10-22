@@ -99,7 +99,10 @@ A football management game. A new career starts with your manager name, a mock
 wallet of 1,000 Dummy USDC and a shop of the 72 Division 3 clubs at 100 each;
 then you set the eleven on a pitch diagram, choose formation, mentality,
 pressing and each player's role, and play each of your group's 34 matchdays
-and read the report. Training, transfers, finances and cups come later.
+and read the report. A Club tab lists the six club facilities (stadium,
+training ground, academy, shop, food stand, hotel), each level 1 to 5, and
+upgrades them with Club credits. Training, transfers, finances and cups come
+later.
 
 The Coastal League has three tiers and 162 clubs. Division 1 is one group of
 18; Divisions 2 and 3 have four groups, A to D, of 18. The bottom 8 of
@@ -145,8 +148,16 @@ involving `state.clubId` only, so the server's catch-up, a watched kick-off and
 the demo's 17 matchdays all earn the same way. `buildInitialState` starts at 0,
 `repairCareer` fills a missing or invalid value as 0, `startNextSeason` carries
 them, and a sale deletes the career so they end with it. `PUT /api/career` keeps
-the stored balance whatever the page sends. Nothing spends them yet; the player
-market, academy, stadium upgrades and training ground will. Home shows the
+the stored balance whatever the page sends. Facilities spend them: `FACILITIES`,
+`UPGRADE_COSTS` (100/250/500/1000 to reach levels 2 to 5) and `upgradeFacility`
+in `engine.js`, and `POST /api/career/facility` in `server.js`, which names only
+a facility and a target level from the page, checks the balance against the
+stored career, deducts the credits and saves the level in one version-checked
+UPDATE. `state.facilities` holds one integer per facility; `repairCareer` fills a
+missing or invalid one with 1, `startNextSeason` carries them, and the demo has
+its stadium at 4 and training ground at 2. An upgrade changes only what the
+facility says it has; income and costs come with the stadium and facilities
+features. Home shows the
 balance as the second row of the Wallet section, and that section's tag reads
 "Staging mock" rather than "Dummy USDC (staging mock)". Facility income and costs
 (tianbuyung's lists) come with the stadium and facilities features.
@@ -190,9 +201,10 @@ change follows it, and updates it when a request changes the look on purpose.
   credits: the balance in `.bal`, the price in `.price` (bold, tabular
   numbers); the group chips reuse the division
   chip row, four wide.
-- **Navigation:** four tabs, Home, Squad, Tactics and Competition, each with a
-  line icon in the same stroke as the report's icons (a house, two players, a
-  tactics board and a cup). A fixed bottom bar on phones (56 px items,
+- **Navigation:** five tabs, Home, Squad, Tactics, Competition and Club, each
+  with a line icon in the same stroke as the report's icons (a house, two
+  players, a tactics board, a cup and a stadium). A fixed bottom bar on phones
+  (56 px items,
   safe-area padding) becomes a 240 px sticky left sidebar from `md` up, with
   the club's badge and name. The bar and sidebar use surface with a line
   border; the current tab is pitch green, on a raised background in the
@@ -202,6 +214,11 @@ change follows it, and updates it when a request changes the look on purpose.
   as white player tokens you drag to swap, the goalkeeper in amber. Small line
   icons mark each kind of moment in the report (a ball, a card, a swap arrow,
   a cross).
+- **Facility levels:** the Club tab's five-step bar reuses the Squad list's
+  fitness green (`pitch-ink`) for filled steps on the raised background, the
+  step that just filled flashing amber once (off under reduced motion); the
+  upgrade button is the plain secondary button, not amber. The balance at the
+  top of the tab is the same `.bal` row as Home's Wallet.
 - **Type scale:** `text-title`, `text-heading`, `text-body`, `text-small`
   (unchanged sizes), in the rounded system typeface; scores, stats, ratings
   and the table use tabular numbers.

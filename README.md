@@ -3,9 +3,9 @@
 A football management game for the browser. You name your manager, get a mock
 wallet of 1,000 Dummy USDC and buy one of the 72 Division 3 clubs for 100, then
 set your eleven on a pitch diagram, choose the formation, mentality and pressing,
-and follow your club through its group's 34 matchdays. Four tabs split the club
-screen: Home, Squad, Tactics and Competition, in a bar along the bottom on a
-phone and a sidebar on a laptop. Matches play by themselves at 9 am, 3 pm and
+and follow your club through its group's 34 matchdays. Five tabs split the club
+screen: Home, Squad, Tactics, Competition and Club, in a bar along the bottom on
+a phone and a sidebar on a laptop. Matches play by themselves at 9 am, 3 pm and
 9 pm on the manager's own clock, with the lineup and tactics last saved, so a
 season takes about twelve days. Squads tire, pick up cards and injuries, and the
 group table builds up as the season goes.
@@ -34,10 +34,19 @@ Wallet section on Home. A match earns 50 credits for a win, 25 for a draw and 10
 for a loss, however it was played: at its kick-off while you were away or while
 you were watching. The engine adds them when it plays the manager's own fixture,
 the server keeps the stored balance whatever the page sends, they carry into the
-next season, and they end with the career when the club is sold. Nothing spends
-them yet: the player market, academy and stadium upgrades will. Facility income
-(stadium level, shops, food stands, hotel) and costs (coaches, physio, salaries,
-scouting) come with those features.
+next season, and they end with the career when the club is sold. They are spent
+in the Club tab, on the club's facilities.
+
+The Club tab lists six facilities, Stadium, Training ground, Academy, Shop, Food
+stand and Hotel. Each starts at level 1, goes up to level 5, and says what it has
+at its level and what the next level adds. One upgrade raises a facility one
+level for Club credits: 100 to reach level 2, 250 for level 3, 500 for level 4
+and 1,000 for level 5, the same for every facility. The levels are saved with the
+career and carry into the next season. For now an upgrade changes only what the
+facility says it has; income and costs (stadium takings, shop and food sales,
+hotel rooms, coaches and physio) come with later features. The upgrade is the
+server's: the page names the facility and the level, and the server checks the
+balance, deducts the credits and saves the new level in one write.
 
 Dummy USDC is a mock: there is no crypto wallet, no payment and no real money
 anywhere in the app. The club price and the sale values live only in
@@ -63,7 +72,8 @@ signed in, and keeps each person's career in its own Postgres table.
 - `server.js` boots the `careers` table, serves the API, the shop's price, the
   balances and sale values, the `club_owners` table (one manager per club), the
   `wallets` table (the money a person keeps between careers, credited on a
-  sale), and the demo. A career saved by an earlier version of the
+  sale), the facility upgrades, and the demo. A career saved by an earlier
+  version of the
   app passes through `repairCareer` in `engine.js` as it loads, which fills in
   only what is missing, so it still opens. A career saved in the old eight
   divisions finishes its season and joins the three tiers at Start next
