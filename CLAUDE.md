@@ -161,6 +161,22 @@ features. Home shows the
 balance as the second row of the Wallet section, and that section's tag reads
 "Staging mock" rather than "Dummy USDC (staging mock)".
 
+Players move between clubs through the public `transfer_listings` table
+(`id`, `seller_user_id`, `seller_club_id`, a `player` snapshot, `asking_price`,
+`created_at`), read by `GET /api/transfers`, written by `POST /api/transfers` and
+`DELETE /api/transfers/:id`, and bought through `transfers-db.js`'s
+`buyListing`, which locks the listing, the buyer and the seller in that order.
+`seller_user_id` is in `usernode-user-data.js`'s `OWNED_BY`. Selling the club
+deletes the seller's listings. `engine.js` owns the rules: `playerWage`,
+`wageBill`, `systemSaleValue`, `leaveError` (11 players, one goalkeeper),
+`signError` (40 players, price plus one matchday of wages and upkeep),
+`listPlayer`, `buyPlayer`, `returnListing`, `sellToLeague`, `releasePlayer`,
+`ageingFor` and `academyGraduate`; `playMatchday` charges `wageBill` beside
+`GROUND_UPKEEP` into `finance.wage` and `startNextSeason` ages the squad and
+replaces each retiree with a graduate. `PUT /api/career` keeps the stored squad
+(and, on a rollover, the aged one) whatever the page sends, and rebuilds an
+unusable lineup with `autoLineup`.
+
 The finances are Club credits only; the wallet and Dummy USDC are never
 touched. A career has fans (`state.fans`, seeded by tier at 15,000 / 6,000 /
 2,500 and carried across seasons), which move after each of the club's matches
@@ -211,13 +227,17 @@ change follows it, and updates it when a request changes the look on purpose.
   grass in the light look, green-black in the dark. Each club also has one
   badge colour of its own, stored as data in `engine.js` (Harbourside uses the
   pitch token).
+- Market rows follow the Club tab's rows: a position chip, name and a small grey
+  line, ending in the plain secondary button (Buy, Withdraw) or a muted
+  "N needed" / "Squad full" in the same place.
 - The Wallet section is one list of the same rows, Dummy USDC then Club
   credits: the balance in `.bal`, the price in `.price` (bold, tabular
   numbers); the group chips reuse the division
   chip row, four wide.
-- **Navigation:** five tabs, Home, Squad, Tactics, Competition and Club, each
-  with a line icon in the same stroke as the report's icons (a house, two
-  players, a tactics board, a cup and a stadium). A fixed bottom bar on phones
+- **Navigation:** six tabs, Home, Squad, Tactics, Competition, Club and
+  Transfers, each with a line icon in the same stroke as the report's icons (a
+  house, two players, a tactics board, a cup, a stadium and two opposite
+  arrows). On phones the six labels are 10 px so all six fit at 360 px. A fixed bottom bar on phones
   (56 px items,
   safe-area padding) becomes a 240 px sticky left sidebar from `md` up, with
   the club's badge and name. The bar and sidebar use surface with a line

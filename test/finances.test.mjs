@@ -42,9 +42,9 @@ test('an away match earns no gate', () => {
   assert.equal(f.attendance, 0);
   assert.equal(f.gate, 0);
   assert.equal(state.credits, 1000 + creditsForResult(
-    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0) - f.upkeep);
+    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0) - f.upkeep - f.wage);
   assert.equal(f.net, creditsForResult(
-    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0) - f.upkeep);
+    f.result === 'win' ? 1 : 0, f.result === 'loss' ? 1 : 0) - f.upkeep - f.wage);
 });
 
 test('a home gate is the smaller of the fans and the seats, at 5 each', () => {
@@ -150,7 +150,7 @@ test('a sponsor pays once at the rollover when its target was met', () => {
   assert.equal(next.lastSponsor.name, met.sponsor.name);
   assert.equal(next.sponsor.season, met.season + 1);
   assert.equal(next.sponsor.fee, SPONSOR_FEES[nextPlacement(met).tier]);
-  assert.deepEqual(next.finance, { season: met.season + 1, gate: 0, upkeep: 0, homeGames: 0 });
+  assert.deepEqual(next.finance, { season: met.season + 1, gate: 0, upkeep: 0, homeGames: 0, wage: 0 });
   assert.deepEqual(seasonEndMoney(met), {
     credits: next.credits,
     fans: next.fans,
@@ -194,7 +194,7 @@ test('moneyFields fills what a saved career is missing, and leaves a filled one 
   assert.equal(filled.fans, FAN_SEED[clubTier(old)]);
   assert.equal(filled.sponsor.season, old.season);
   assert.equal(filled.lastSponsor, null);
-  assert.deepEqual(filled.finance, { season: old.season, gate: 0, upkeep: 0, homeGames: 0 });
+  assert.deepEqual(filled.finance, { season: old.season, gate: 0, upkeep: 0, homeGames: 0, wage: 0 });
   const repaired = repairCareer(old);
   assert.deepEqual(moneyFields(repaired), filled);
 

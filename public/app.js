@@ -13,6 +13,7 @@ import {
   repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
   moneyFields, creditsForResult, GROUND_CAPACITY, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
+  SQUAD_MAX, SQUAD_MIN, playerWage, wageBill, systemSaleValue, leaveError, signCost, signError, ageingFor,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -47,7 +48,7 @@ let refreshFailed = false;
 // from. Cleared once a new club is bought.
 let lastSale = null;
 
-const TABS = ['home', 'squad', 'tactics', 'competition', 'club'];
+const TABS = ['home', 'squad', 'tactics', 'competition', 'club', 'transfers'];
 function hashTab() {
   const h = (location.hash || '').replace(/^#/, '');
   return TABS.includes(h) ? h : 'home';
@@ -60,6 +61,10 @@ function showTab(next) {
     else a.removeAttribute('aria-current');
   }
   if (tab === 'tactics' && career) drawPitch();
+  if (tab === 'transfers' && career) {
+    renderMarket();
+    loadMarket();
+  }
 }
 
 async function refreshShop() {
@@ -363,6 +368,8 @@ function playerStatus(p, starters) {
   if (p.captain) parts.push('captain');
   if (p.yellow > 0 && p.injury <= 0) parts.push(p.yellow + (p.yellow === 1 ? ' yellow card' : ' yellow cards'));
   if (p.goals > 0) parts.push(p.goals + (p.goals === 1 ? ' goal' : ' goals'));
+  parts.push('Age ' + p.age + ', wage ' + playerWage(p));
+  if (career && p.academy === career.season) parts.push('academy graduate');
   return parts.join(', ');
 }
 
@@ -467,6 +474,11 @@ function renderClub() {
       ? settle.sponsor.name + '\'s target is met: Start next season pays ' + num(settle.sponsor.fee) + ' Club credits.'
       : settle.sponsor.name + '\'s target was missed, so no sponsor fee is paid.');
     bits.push('You took ' + me.points + ' points from ' + me.played + ' matches.');
+    const retiring = ageingFor(career).retiring;
+    if (retiring.length) {
+      bits.push('Retiring this summer: ' + retiring.map((r) => r.name + ' (' + r.age + ')').join(', ')
+        + '. The academy brings in one young player for each.');
+    }
     if (outcome.joinsNewLeague) bits.push('Next season the Coastal League becomes three tiers, and your club starts in ' + to + '.');
     $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + place;
     $('season-text').textContent = bits.join(' ');
@@ -494,6 +506,7 @@ function renderClub() {
   $('val-pressing').textContent = career.tactics.pressing;
 
   const squad = career.squads[career.clubId];
+  $('squad-label').textContent = 'Squad, ' + squad.length + ' of ' + SQUAD_MAX;
   const starters = new Set(career.lineup);
   const ordered = [...squad].sort((a, b) => {
     const sa = starters.has(a.id) ? 0 : 1;
@@ -604,6 +617,7 @@ function renderClub() {
       ? money.finance.homeGames + (money.finance.homeGames === 1 ? ' home match' : ' home matches')
       : 'No home match yet this season'}</small></span><span class="price">${num(money.finance.gate)}</span></li>
     <li class="list-row"><span class="nm">Ground upkeep this season<small>${GROUND_UPKEEP} Club credits every matchday, home or away</small></span><span class="price">${money.finance.upkeep ? '−' + num(money.finance.upkeep) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Wages this season<small>${squad.length} players, ${num(wageBill(squad))} Club credits every matchday, home or away</small></span><span class="price">${money.finance.wage ? '−' + num(money.finance.wage) : '0'}</span></li>
     <li class="list-row"><span class="nm">Sponsor: ${esc(sponsor.name)}<small>${esc(sponsorNote)}</small></span><span class="price">${num(sponsor.fee)}</span></li>`;
 
   // Selling the club: the price comes from the division it is in today, and
@@ -1033,7 +1047,8 @@ function openSheet(id) {
   const starters = new Set(career.lineup);
   const isStarter = starters.has(id);
   $('sheet-name').textContent = p.name;
-  $('sheet-sub').textContent = p.pos + ', ' + (p.captain ? 'captain, ' : '') + (isStarter ? 'starter' : p.injury > 0 ? 'injured for ' + p.injury + ' matches' : 'bench');
+  $('sheet-sub').textContent = p.pos + ', ' + (p.captain ? 'captain, ' : '') + (isStarter ? 'starter' : p.injury > 0 ? 'injured for ' + p.injury + ' matches' : 'bench')
+    + '. Age ' + p.age + ', wage ' + playerWage(p) + ' Club credits a matchday';
 
   $('sheet-vitals').innerHTML = `
     <div class="vital"><span>Fitness</span><span class="vital-track"><i style="width:${p.fitness}%${p.fitness < 60 ? ';background:rgb(var(--card-y))' : ''}"></i></span><b>${p.fitness}%</b></div>
@@ -1066,6 +1081,7 @@ function openSheet(id) {
       </li>`;
     }).join('');
   }
+  renderSheetTransfer(p);
   $('sheet').hidden = false;
   $('sheet-close').focus();
 }
@@ -1114,6 +1130,325 @@ $('sheet-bench').addEventListener('click', (e) => {
     }
   }
 });
+
+// ── The transfer market ──────────────────────────────────────────────────
+let market = { listings: [], mine: [], loading: false, error: false, loaded: false };
+let marketBusy = null;
+let marketErrorText = '';
+let sheetTransfer = { mode: 'rows', busy: false, error: '' };
+
+const LEAVE_TEXT = {
+  min: 'Your squad needs at least 11 players.',
+  goalkeeper: 'Your squad needs a goalkeeper.',
+  player: 'That player is not in your squad.',
+};
+
+function money(n) { return num(n); }
+
+function marketRow(l) {
+  return `<li class="list-row">
+    <span class="pos">${esc(l.player.pos)}</span>
+    <span class="nm">${esc(l.player.name)}<small>Age ${l.player.age}, ${l.player.overall} overall, wage ${l.player.wage}. ${esc(displayName(l.club))}</small></span>
+    <span data-listing-end="${l.id}"></span>
+  </li>`;
+}
+
+function renderMarket() {
+  if (!career) return;
+  const squad = career.squads[career.clubId];
+  $('transfers-credits').textContent = credits(career.credits || 0);
+  $('transfers-squad').textContent = 'Squad ' + squad.length + ' of ' + SQUAD_MAX;
+  $('transfers-demo').hidden = !DEMO;
+
+  const mine = market.mine || [];
+  $('listing-sec').hidden = !mine.length;
+  $('listing-count').textContent = mine.length + (mine.length === 1 ? ' player' : ' players');
+  $('listing-list').innerHTML = mine.map((l) => `<li class="list-row">
+    <span class="pos">${esc(l.player.pos)}</span>
+    <span class="nm">${esc(l.player.name)}<small>Asking ${num(l.price)} Club credits</small></span>
+    <button class="btn-secondary small" type="button" data-withdraw="${l.id}"${marketBusy ? ' disabled' : ''}>${marketBusy === 'w' + l.id ? 'Withdrawing...' : 'Withdraw'}</button>
+  </li>`).join('');
+
+  $('market-loading').hidden = userHidden();
+  function userHidden() { return !(market.loading && !market.loaded); }
+  $('market-error').hidden = !market.error;
+  $('market-empty').hidden = !(market.loaded && !market.error && !(market.listings || []).length);
+  const listings = market.listings || [];
+  $('market-count').textContent = market.loaded && !market.error
+    ? listings.length + (listings.length === 1 ? ' player' : ' players') : '';
+  $('market-list').innerHTML = listings.map((l) => marketRow(l)).join('');
+  if (market.error && marketErrorText) {
+    $('market-error').querySelector('.state-text').textContent = marketErrorText;
+  }
+  // The end of each row: Buy, what is needed, or Squad full.
+  for (const l of listings) {
+    const slot = $('market-list').querySelector('[data-listing-end="' + l.id + '"]');
+    if (!slot) continue;
+    const err = signError(career, l.player, l.price);
+    if (DEMO) {
+      slot.innerHTML = '<span class="need">Demo</span>';
+    } else if (err === 'full') {
+      slot.innerHTML = '<span class="need">Squad full</span>';
+    } else if (err === 'credits') {
+      const short = Math.max(1, signCost(career, l.player, l.price) - (career.credits || 0));
+      slot.innerHTML = '<span class="need">' + num(short) + ' needed</span>';
+    } else {
+      const busy = marketBusy === 'b' + l.id;
+      slot.innerHTML = '<button class="btn-secondary small" type="button" data-buy="' + l.id + '"' + (marketBusy ? ' disabled' : '') + '>'
+        + (busy ? 'Buying...' : 'Buy for ' + num(l.price)) + '</button>';
+    }
+  }
+}
+
+async function loadMarket() {
+  if (!career) return;
+  market.loading = true;
+  market.error = false;
+  marketErrorText = '';
+  renderMarket();
+  try {
+    const { status, data } = await api('GET', null, '/api/transfers');
+    if (status === 200 && data) {
+      market.listings = Array.isArray(data.listings) ? data.listings : [];
+      market.mine = Array.isArray(data.mine) ? data.mine : [];
+      market.error = false;
+    } else {
+      market.error = true;
+    }
+  } catch (_) {
+    market.error = true;
+  }
+  market.loading = false;
+  market.loaded = true;
+  if (tab === 'transfers') renderMarket();
+}
+
+function takeCareer(data) {
+  const repaired = data && data.career ? repairCareer(data.career) : null;
+  if (!repaired) return false;
+  career = repaired;
+  version = data.version;
+  return true;
+}
+
+function marketFailure(data, fallback) {
+  marketErrorText = (data && data.message) || fallback;
+}
+
+// Buy a listing. Goes through saveChain so it runs after a pending save.
+function buyListing(id) {
+  if (!career || marketBusy) return saveChain;
+  marketBusy = 'b' + id;
+  marketErrorText = '';
+  renderMarket();
+  saveChain = saveChain.then(() => buyNow(id), () => buyNow(id));
+  return saveChain;
+}
+
+async function buyNow(id) {
+  try {
+    const { status, data } = await api('POST', {}, '/api/transfers/' + id + '/buy');
+    marketBusy = null;
+    if (status === 200 && takeCareer(data)) {
+      render();
+      await loadMarket();
+      return;
+    }
+    if (status === 401) {
+      renderMarket();
+      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'sign a player' });
+      return;
+    }
+    if (status === 409 && data && data.error === 'version_mismatch') {
+      renderMarket();
+      await refresh();
+      return;
+    }
+    marketFailure(data, 'The transfer did not go through, and no Club credits were spent.');
+    market.error = true;
+    if (status === 409 && data && data.error === 'gone') await loadMarket().then(() => { market.error = true; marketErrorText = data.message; renderMarket(); });
+    else renderMarket();
+  } catch (_) {
+    marketBusy = null;
+    market.error = true;
+    marketErrorText = 'The transfer did not go through, and no Club credits were spent.';
+    renderMarket();
+  }
+}
+
+function withdrawListing(id) {
+  if (!career || marketBusy) return saveChain;
+  marketBusy = 'w' + id;
+  marketErrorText = '';
+  renderMarket();
+  saveChain = saveChain.then(() => withdrawNow(id), () => withdrawNow(id));
+  return saveChain;
+}
+
+async function withdrawNow(id) {
+  try {
+    const { status, data } = await api('DELETE', null, '/api/transfers/' + id);
+    marketBusy = null;
+    if (status === 200 && takeCareer(data)) {
+      render();
+      await loadMarket();
+      return;
+    }
+    if (status === 401) {
+      renderMarket();
+      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'withdraw a listing' });
+      return;
+    }
+    if (status === 409 && data && data.error === 'version_mismatch') {
+      renderMarket();
+      await refresh();
+      return;
+    }
+    marketFailure(data, 'The listing was not withdrawn.');
+    market.error = true;
+    await loadMarket();
+    market.error = true;
+    renderMarket();
+  } catch (_) {
+    marketBusy = null;
+    market.error = true;
+    marketErrorText = 'The listing was not withdrawn.';
+    renderMarket();
+  }
+}
+
+// ── The player sheet's Transfer section ──────────────────────────────────
+function renderSheetTransfer(p) {
+  if (!p) return;
+  const reason = leaveError(career, p.id);
+  const blocked = reason ? LEAVE_TEXT[reason] : '';
+  const dis = reason || sheetTransfer.busy;
+  $('sheet-transfer-error').hidden = !sheetTransfer.error;
+  if (sheetTransfer.error) $('sheet-transfer-error-text').textContent = sheetTransfer.error;
+  const name = esc(p.name);
+  const box = $('sheet-transfer');
+  if (sheetTransfer.mode === 'list') {
+    box.innerHTML = `<li class="list-row sheet-form">
+      <label class="sheet-label" for="ask-price">Asking price in Club credits</label>
+      <input class="field" id="ask-price" inputmode="numeric" placeholder="e.g. 2,000" autocomplete="off">
+      <div class="confirm-row">
+        <button class="btn-primary" type="button" data-sheet-act="list-go"${sheetTransfer.busy ? ' disabled' : ''}>${sheetTransfer.busy ? 'Listing...' : 'List player'}</button>
+        <button class="btn-secondary" type="button" data-sheet-act="cancel">Cancel</button>
+      </div>
+    </li>`;
+    return;
+  }
+  if (sheetTransfer.mode === 'sell' || sheetTransfer.mode === 'release') {
+    const sell = sheetTransfer.mode === 'sell';
+    box.innerHTML = `<li class="list-row sheet-form">
+      <div class="confirm">
+        <p class="state-text">${sell
+          ? 'Sell ' + name + ' to the league for ' + num(systemSaleValue(p)) + ' Club credits? ' + name + ' leaves your squad now.'
+          : 'Release ' + name + '? ' + name + ' leaves your squad now and you are paid nothing.'}</p>
+        <div class="confirm-row">
+          <button class="btn-primary" type="button" data-sheet-act="${sell ? 'sell-go' : 'release-go'}"${sheetTransfer.busy ? ' disabled' : ''}>${sheetTransfer.busy ? 'Working...' : sell ? 'Sell for ' + num(systemSaleValue(p)) : 'Release'}</button>
+          <button class="btn-secondary" type="button" data-sheet-act="cancel">Cancel</button>
+        </div>
+      </div>
+    </li>`;
+    return;
+  }
+  box.innerHTML = `
+    <li class="list-row"><span class="nm">List on market<small>${DEMO ? 'The demo season cannot list players.' : 'Other managers can buy ' + name + ' at your asking price.'}</small></span><button class="btn-secondary small" type="button" data-sheet-act="list"${dis || DEMO ? ' disabled' : ''}>List</button></li>
+    <li class="list-row"><span class="nm">Sell to the league<small>${escapeSmall(blocked || 'Paid now. ' + name + ' leaves your squad.')}</small></span><button class="btn-secondary small" type="button" data-sheet-act="sell"${dis ? ' disabled' : ''}>Sell for ${num(systemSaleValue(p))}</button></li>
+    <li class="list-row"><span class="nm">Release<small>${escapeSmall(blocked || 'Leaves for nothing, and you stop paying the wage.')}</small></span><button class="btn-secondary small" type="button" data-sheet-act="release"${dis ? ' disabled' : ''}>Release</button></li>`;
+}
+
+function escapeSmall(text) { return esc(text); }
+
+async function sheetTransferAction(mode) {
+  const p = sheetPlayerId ? findPlayer(sheetPlayerId) : null;
+  if (!p) return;
+  if (mode === 'cancel') {
+    sheetTransfer = { mode: 'rows', busy: false, error: '' };
+    renderSheetTransfer(p);
+    return;
+  }
+  if (mode === 'list') {
+    sheetTransfer = { mode: 'list', busy: false, error: '' };
+    renderSheetTransfer(p);
+    const input = $('ask-price');
+    if (input) input.focus();
+    return;
+  }
+  if (mode === 'sell' || mode === 'release') {
+    sheetTransfer = { mode, busy: false, error: '' };
+    renderSheetTransfer(p);
+    return;
+  }
+  let path = '/api/career/player/release';
+  let body = { playerId: p.id };
+  if (mode === 'list-go') {
+    const raw = ($('ask-price').value || '').replace(/[^0-9]/g, '');
+    const price = raw ? Number(raw) : NaN;
+    if (!Number.isInteger(price) || price < 1 || price > 1000000) {
+      sheetTransfer = { mode: 'list', busy: false, error: 'An asking price is a whole number from 1 to 1,000,000 Club credits.' };
+      renderSheetTransfer(p);
+      return;
+    }
+    path = '/api/transfers';
+    body = { playerId: p.id, price };
+  } else if (mode === 'sell-go') {
+    path = '/api/career/player/sell';
+  }
+  sheetTransfer.busy = true;
+  sheetTransfer.error = '';
+  renderSheetTransfer(p);
+  try {
+    const { status, data } = await api('POST', body, path);
+    if (status === 200 && takeCareer(data)) {
+      sheetTransfer = { mode: 'rows', busy: false, error: '' };
+      closeSheet();
+      render();
+      if (tab === 'transfers') await loadMarket();
+      return;
+    }
+    if (status === 401) {
+      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'change your squad' });
+      sheetTransfer = { mode: 'rows', busy: false, error: '' };
+      renderSheetTransfer(p);
+      return;
+    }
+    if (status === 409 && data && data.error === 'version_mismatch') {
+      sheetTransfer = { mode: 'rows', busy: false, error: '' };
+      await refresh();
+      return;
+    }
+    sheetTransfer = {
+      mode: mode === 'list-go' ? 'list' : mode === 'sell-go' ? 'sell' : mode === 'release-go' ? 'release' : 'rows',
+      busy: false,
+      error: (data && data.message) || 'The change did not go through.',
+    };
+    renderSheetTransfer(p);
+    if (data && data.error === 'version_mismatch') refresh();
+  } catch (_) {
+    sheetTransfer = {
+      mode: mode === 'list-go' ? 'list' : 'rows',
+      busy: false,
+      error: 'The change did not go through. Check the connection and try again.',
+    };
+    renderSheetTransfer(p);
+  }
+}
+
+$('sheet-transfer').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-sheet-act]');
+  if (btn && !btn.disabled) sheetTransferAction(btn.dataset.sheetAct);
+});
+$('market-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-buy]');
+  if (btn && !btn.disabled) buyListing(Number(btn.dataset.buy));
+});
+$('listing-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-withdraw]');
+  if (btn && !btn.disabled) withdrawListing(Number(btn.dataset.withdraw));
+});
+$('market-retry').addEventListener('click', () => { loadMarket(); });
 
 // ── Match report ─────────────────────────────────────────────────────────
 const ICONS = {
@@ -1207,6 +1542,7 @@ function renderReport() {
       <li class="list-row"><span class="nm">Result<small>${fin.result === 'win' ? 'A win' : fin.result === 'loss' ? 'A loss' : 'A draw'}</small></span><span class="price">${signed(resultCredits)}</span></li>
       <li class="list-row"><span class="nm">Gate<small>${gateNote}</small></span><span class="price">${signed(fin.gate)}</span></li>
       <li class="list-row"><span class="nm">Ground upkeep${upkeepNote ? '<small>' + upkeepNote + '</small>' : ''}</span><span class="price">${fin.upkeep ? '−' + num(fin.upkeep) : '0'}</span></li>
+      <li class="list-row"><span class="nm">Wages<small>${fin.wageDue != null && fin.wage < fin.wageDue ? (fin.wageDue - fin.wage) + ' short; the balance never goes below 0' : num(fin.wageDue || 0) + ' due this matchday'}</small></span><span class="price">${fin.wage ? '−' + num(fin.wage) : '0'}</span></li>
       <li class="list-row net"><span class="nm">Net</span><span class="price">${signed(fin.net)}</span></li>
       <li class="list-row"><span class="nm">Fans<small>Now ${num(fin.fansAfter)}</small></span><span class="price">${signed(fin.fansAfter - fin.fansBefore)}</span></li>`;
   }

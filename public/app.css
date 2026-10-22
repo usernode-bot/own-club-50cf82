@@ -240,7 +240,9 @@ button.chip[aria-expanded="true"] {
 .ico.own { color: rgb(var(--fg)); }
 .min, .big, .rt, .ovr, .tbl, .stat .h { font-variant-numeric: tabular-nums; }
 
-/* ── The five club tabs ────────────────────────────────────────────────── */
+/* ── The six club tabs ────────────────────────────────────────────────── */
+/* The bar carries six labels; below a tablet they drop to 10px so all six
+   fit at 360px. */
 
 /* The tab bar is a bar along the bottom of a phone: fixed, above the
    safe-area inset, with the panels padded to match. */
@@ -271,6 +273,9 @@ button.chip[aria-expanded="true"] {
   text-decoration: none;
 }
 .tab svg { display: block; }
+@media (max-width: 767px) {
+  .tab { min-width: 0; white-space: nowrap; font-size: 10px; line-height: 14px; }
+}
 .tab[aria-current="page"] { color: rgb(var(--pitch-ink)); }
 .tab:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: -2px; }
 .tab-club { display: none; }
@@ -303,8 +308,7 @@ button.chip[aria-expanded="true"] {
 .chev { color: rgb(var(--muted)); }
 
 /* A club another manager runs is not selectable. */
-.taken-row { cursor: default; }
-.taken-row .nm, .taken-row .badge { opacity: .6; }
+.taken-row { cursor: default; }.taken-row .nm, .taken-row .badge { opacity: .6; }
 .taken { font-weight: 600; color: rgb(var(--muted)); white-space: nowrap; }
 
 /* The Club tab: each facility's five-step level bar, and its upgrade. The
@@ -380,3 +384,9 @@ button.chip[aria-expanded="true"] {
   .club-app .club-main { flex: 1; min-width: 0; max-width: 42rem; margin-inline: auto; }
   .club-app .app { width: 100%; }
 }
+
+/* The player sheet's Transfer section: the inline price form and confirms. */
+.sheet-form { display: block; }
+.sheet-label { display: block; font-size: 14px; line-height: 20px; font-weight: 500; color: rgb(var(--muted)); margin-bottom: 8px; }
+.sheet-form .field { width: 100%; margin-bottom: 4px; }
+#market-loading[hidden], #market-empty[hidden], #market-error[hidden], #listing-sec[hidden] { display: none; }
