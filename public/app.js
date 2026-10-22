@@ -9,6 +9,7 @@ import {
   DIVISIONS, clubToDivision, divisionClubIds, seasonOutcome, startNextSeason,
   buildInitialState, arrangeLineup, autoLineup, validateLineup, playMatchday,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
+  repairCareer,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -65,25 +66,71 @@ function render() {
   if (screen === 'report' && career && career.lastReport) renderReport();
 }
 
+// Why a career did not load, in one line under the message. The codes in
+// brackets name the exact failure in a report.
+const LOAD_CAUSE = {
+  signin: 'Your Homeroom sign-in has run out. Close Own Club and open it again from Homeroom.',
+  server: (code) => 'The server could not read your career (' + code + '). Try again in a moment.',
+  network: 'Own Club could not reach the server. Check your connection, then press Retry.',
+  shown: 'Your saved career was read but could not be shown on this screen (career_unreadable).',
+};
+
+function setLoadCause(text) {
+  const el = $('error-cause');
+  el.textContent = text || '';
+  el.hidden = !text;
+}
+
 async function load() {
   screen = 'loading';
   career = null;
+  setLoadCause('');
   render();
+
+  let cause = '';
+  let answer = null;
   try {
-    const { status, data } = await api('GET');
-    if (status === 404 || (status === 200 && data && data.career === null)) { screen = 'new'; render(); return; }
-    if (status !== 200 || !data || !data.career) throw new Error('HTTP ' + status);
-    career = data.career;
-    if (!career.roles) career.roles = {};
-    version = data.version;
-    screen = 'club';
-    render();
+    answer = await api('GET');
   } catch (err) {
-    loadError = String(err && err.message || err);
-    $('error-text').textContent = 'Your career could not be read from the server. Your last saved matchday is kept.';
-    screen = 'error';
-    render();
+    cause = LOAD_CAUSE.network;
   }
+
+  if (!cause && answer) {
+    if (answer.status === 404 || (answer.status === 200 && answer.data && answer.data.career === null)) {
+      screen = 'new';
+      render();
+      return;
+    }
+    if (answer.status === 401) cause = LOAD_CAUSE.signin;
+    else if (answer.status !== 200 || !answer.data || !answer.data.career) {
+      cause = LOAD_CAUSE.server((answer.data && answer.data.error) || 'HTTP ' + answer.status);
+    }
+  }
+
+  if (!cause) {
+    const repaired = repairCareer(answer.data.career);
+    if (!repaired) {
+      cause = LOAD_CAUSE.shown;
+    } else {
+      career = repaired;
+      version = answer.data.version;
+      screen = 'club';
+      try {
+        render();
+        return;
+      } catch (err) {
+        console.error('career render failed', err);
+        career = null;
+        cause = LOAD_CAUSE.shown;
+      }
+    }
+  }
+
+  loadError = cause;
+  $('error-text').textContent = 'Your career could not be read from the server. Your last saved matchday is kept.';
+  setLoadCause(cause);
+  screen = 'error';
+  render();
 }
 
 // ── New career ───────────────────────────────────────────────────────────
@@ -832,9 +879,10 @@ async function saveNow() {
     const { status, data } = await api('PUT', { state: career, version });
     if (status === 409) {
       const res = await api('GET');
-      if (res.status === 200 && res.data && res.data.career) {
-        career = res.data.career;
-        if (!career.roles) career.roles = {};
+      const reloaded = res.status === 200 && res.data && res.data.career
+        ? repairCareer(res.data.career) : null;
+      if (reloaded) {
+        career = reloaded;
         version = res.data.version;
         saveFailed = false;
         render();
@@ -870,6 +918,12 @@ async function doStartOver() {
     const { status } = await api('DELETE');
     if (status === 401) {
       if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'start a new career' });
+      return;
+    }
+    if (status !== 200) {
+      // Only leave the club once the server says the old career is gone.
+      saveFailed = true;
+      $('save-error').hidden = false;
       return;
     }
     career = null;

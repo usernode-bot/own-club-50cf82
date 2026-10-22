@@ -113,6 +113,8 @@ by the browser and the server: the same state and seed always produce the same
 match. `public/app.js` renders and saves; `server.js` owns the `careers` table
 and the `?demo=1` staging season. Careers saved before the pyramid (`version 1`)
 still play their ten-club, 18-matchday season and then join Division 1.
+A saved career that is missing something today's club screen reads passes
+through `repairCareer` in `engine.js` on load, which fills only what is missing.
 
 ## Your people's data
 

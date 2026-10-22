@@ -193,6 +193,25 @@ async function boot() {
     PRIMARY KEY (user_id, is_demo)
   )`);
   await pool.query("COMMENT ON TABLE careers IS 'staging:private'");
+  // A table that already exists from an earlier version of the app keeps its
+  // rows: only columns that are missing are added, never dropped or retyped.
+  const guards = [
+    'is_demo boolean NOT NULL DEFAULT false',
+    "manager_name text NOT NULL DEFAULT ''",
+    "club_id text NOT NULL DEFAULT ''",
+    'seed integer NOT NULL DEFAULT 1',
+    'state jsonb',
+    'version integer NOT NULL DEFAULT 1',
+    'updated_at timestamptz NOT NULL DEFAULT now()',
+  ];
+  for (const column of guards) {
+    const name = column.split(' ')[0];
+    try {
+      await pool.query('ALTER TABLE careers ADD COLUMN IF NOT EXISTS ' + column);
+    } catch (err) {
+      console.error('careers guard failed: ' + name + ' ' + (err && err.message));
+    }
+  }
 }
 
 // ?demo=1 acts on the viewer's demo career, and only in staging.
@@ -220,7 +239,12 @@ app.get('/api/career', async (req, res) => {
       [req.user.id, demo]
     );
     if (rows.length) {
-      return res.json({ career: rows[0].state, version: rows[0].version, demo });
+      const state = rows[0].state;
+      if (!state || typeof state !== 'object' || Array.isArray(state)) {
+        console.error('career load failed: career_unreadable state is not an object');
+        return res.status(500).json({ error: 'career_unreadable', message: 'The saved career could not be shown.' });
+      }
+      return res.json({ career: state, version: rows[0].version, demo });
     }
     if (demo) {
       const e = await engine();
@@ -240,8 +264,8 @@ app.get('/api/career', async (req, res) => {
     // No career yet is an ordinary answer: the page shows New career.
     return res.json({ career: null, version: 0, demo: false });
   } catch (err) {
-    console.error('career load failed: ' + err.message);
-    return res.status(500).json({ error: 'career_load_failed' });
+    console.error('career load failed: ' + (err && err.code ? err.code + ' ' : '') + (err && err.message));
+    return res.status(500).json({ error: 'career_load_failed', message: 'The saved career could not be read.' });
   }
 });
 

@@ -148,6 +148,7 @@ button.chip[aria-expanded="true"] {
 }
 .error-card .btn-primary { width: auto; min-width: 120px; margin-top: 8px; }
 .state-text { margin: 0; max-width: 32rem; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+.error-cause { color: rgb(var(--fg)); font-weight: 600; }
 
 /* Loading shapes, in the rows' own height. */
 .skeleton { display: inline-block; }

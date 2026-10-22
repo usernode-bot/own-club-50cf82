@@ -24,6 +24,9 @@ signed in, and keeps each person's career in its own Postgres table.
   match report; `public/app.css` adds the pitch canvas, the player sheet and
   the rest of the interaction.
 - `server.js` boots the `careers` table, serves the API and the demo.
+  A career saved by an earlier version of the app passes through
+  `repairCareer` in `engine.js` as it loads, which fills in only what is
+  missing, so it still opens.
 
 ## Running it
 
