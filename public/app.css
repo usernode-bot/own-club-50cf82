@@ -37,6 +37,29 @@ button.chip[aria-expanded="true"] {
   border-color: rgb(var(--accent));
 }
 
+/* The eight divisions on New career, as one row of equal buttons. */
+.divrow { display: flex; gap: 6px; }
+.divrow .chip {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: rgb(var(--fg));
+}
+.divrow .chip[aria-pressed="true"] {
+  border-color: rgb(var(--accent));
+  background: rgb(var(--raised));
+}
+
+/* Start a new career is the plain button under Start next season. */
+.next .btn-secondary { width: 100%; margin-top: 10px; }
+
 .menu { margin-top: 8px; }
 .menu .list-row {
   width: 100%;

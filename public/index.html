@@ -166,11 +166,24 @@
       <div class="top">
         <div class="sm">The Coastal League</div>
         <h1>New career</h1>
-        <div class="sm">Ten clubs, 18 matchdays</div>
+        <div class="sm">Eight divisions of 18 clubs, 34 matchdays</div>
       </div>
       <div class="sec">
         <label class="section-label" for="manager-name">Manager name</label>
         <input class="field" id="manager-name" maxlength="40" placeholder="e.g. Alex Morgan" autocomplete="off">
+      </div>
+      <div class="sec">
+        <div class="section-label"><span id="division-label">Division</span><span>1 is the top</span></div>
+        <div class="divrow" id="division-row" role="group" aria-labelledby="division-label">
+          <button class="chip" type="button" data-division="1" aria-pressed="true" aria-label="Division 1">1</button>
+          <button class="chip" type="button" data-division="2" aria-pressed="false" aria-label="Division 2">2</button>
+          <button class="chip" type="button" data-division="3" aria-pressed="false" aria-label="Division 3">3</button>
+          <button class="chip" type="button" data-division="4" aria-pressed="false" aria-label="Division 4">4</button>
+          <button class="chip" type="button" data-division="5" aria-pressed="false" aria-label="Division 5">5</button>
+          <button class="chip" type="button" data-division="6" aria-pressed="false" aria-label="Division 6">6</button>
+          <button class="chip" type="button" data-division="7" aria-pressed="false" aria-label="Division 7">7</button>
+          <button class="chip" type="button" data-division="8" aria-pressed="false" aria-label="Division 8">8</button>
+        </div>
       </div>
       <div class="sec">
         <div class="section-label"><span>Choose a club</span><span>Reputation</span></div>
@@ -209,7 +222,8 @@
           <h2 class="season-title" id="season-title">Season complete</h2>
           <p class="season-text" id="season-text"></p>
         </div>
-        <button class="btn-primary" id="new-from-season">Start a new career</button>
+        <button class="btn-primary" id="next-season" type="button">Start next season</button>
+        <button class="btn-secondary" id="new-from-season" type="button">Start a new career</button>
       </div>
 
       <div class="sec">

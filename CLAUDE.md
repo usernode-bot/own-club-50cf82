@@ -95,17 +95,24 @@ tables you've marked private), etc.
 
 ## About Own Club
 
-A football management game. You manage one of ten fictional clubs in the
-Coastal League through an 18-matchday season: set the eleven on a pitch
-diagram, choose formation, mentality, pressing and each player's role, then
-play each match and read the report. This first version is matchday only
-(squad, tactics, matches); training, transfers, finances, cups and further
-seasons come later.
+A football management game. You manage one of 144 fictional clubs in eight
+divisions of the Coastal League: set the eleven on a pitch diagram, choose
+formation, mentality, pressing and each player's role, then play each of a
+division's 34 matchdays and read the report. The top three of each division go
+up and the bottom three go down, and Start next season carries your club, its
+players and their roles into its new division. Training, transfers, finances
+and cups come later.
+
+The ten original clubs make up most of Division 1; the other 134 are generated
+from a fixed seed in `engine.js`, so every career meets the same clubs, with
+squads that get weaker with each division down. Only the manager's own division
+is saved; the rest are played out from the career seed when a season rolls over.
 
 The simulation lives in `public/engine.js` as a pure, seeded ES module shared
 by the browser and the server: the same state and seed always produce the same
 match. `public/app.js` renders and saves; `server.js` owns the `careers` table
-and the `?demo=1` staging season.
+and the `?demo=1` staging season. Careers saved before the pyramid (`version 1`)
+still play their ten-club, 18-matchday season and then join Division 1.
 
 ## Your people's data
 

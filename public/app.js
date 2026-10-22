@@ -6,6 +6,7 @@
 import {
   CLUBS, CLUB_BY_ID, LEAGUE_NAME, FORMATIONS, FORMATION_NAMES,
   MENTALITY_NAMES, PRESSING_NAMES, ROLES, POS_GROUP,
+  DIVISIONS, clubToDivision, divisionClubIds, seasonOutcome, startNextSeason,
   buildInitialState, arrangeLineup, autoLineup, validateLineup, playMatchday,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
 } from './engine.js';
@@ -24,6 +25,7 @@ let career = null;
 let version = null;
 let screen = 'loading';
 let pickedClub = 'harbourside';
+let pickedDivision = 1;
 let menuKind = null;
 let sheetPlayerId = null;
 let saveFailed = false;
@@ -86,7 +88,7 @@ async function load() {
 
 // ── New career ───────────────────────────────────────────────────────────
 const CLUB_PREVIEW = {};
-for (const c of CLUBS) CLUB_PREVIEW[c.id] = clubSummary(1, c).avg;
+for (const c of CLUBS) CLUB_PREVIEW[c.id] = clubSummary(1, c, clubToDivision[c.id]).avg;
 
 const STAR_PATH = 'M12 3.2l2.7 5.47 6.04.88-4.37 4.26 1.03 6.02L12 16.99l-5.4 2.84 1.03-6.02L3.26 9.55l6.04-.88z';
 
@@ -108,13 +110,18 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="
 
 function renderNew() {
   $('manager-name').value = $('manager-name').value || '';
+  for (const btn of $('division-row').querySelectorAll('[data-division]')) {
+    btn.setAttribute('aria-pressed', String(Number(btn.dataset.division) === pickedDivision));
+  }
+  const ids = DIVISIONS[pickedDivision - 1].clubIds;
   const list = $('club-list');
-  list.innerHTML = CLUBS.map((c) => `
+  list.innerHTML = ids.map((id) => CLUB_BY_ID[id]).map((c) => `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
       <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
       <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, ${esc(c.objective)}</small></span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`).join('');
+  $('start-career').textContent = 'Start career at ' + CLUB_BY_ID[pickedClub].name;
 }
 
 async function startCareer() {
@@ -185,10 +192,18 @@ function renderClub() {
   const club = CLUB_BY_ID[career.clubId];
   const total = career.fixtures.length;
   const next = nextFixture(career);
+  const pyramid = career.version >= 2 && Array.isArray(career.divisions);
+  const place = pyramid ? 'Division ' + career.division : LEAGUE_NAME;
 
-  $('club-md').textContent = career.finished ? 'Season complete' : 'Matchday ' + (career.matchday + 1) + ' of ' + total;
+  if (pyramid) {
+    $('club-md').textContent = career.finished
+      ? 'Season ' + career.season + ' complete'
+      : 'Season ' + career.season + ', matchday ' + (career.matchday + 1) + ' of ' + total;
+  } else {
+    $('club-md').textContent = career.finished ? 'Season complete' : 'Matchday ' + (career.matchday + 1) + ' of ' + total;
+  }
   $('club-name').textContent = club.name;
-  $('club-pos').textContent = ordinal(me.rank) + ' in ' + LEAGUE_NAME;
+  $('club-pos').textContent = ordinal(me.rank) + ' in ' + place;
 
   // Next match, or the wrap-up.
   if (next && !career.finished) {
@@ -208,9 +223,20 @@ function renderClub() {
   } else {
     $('next-card').hidden = true;
     $('season-card').hidden = false;
-    const met = objectiveMet(me.rank, club.objective);
-    $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + LEAGUE_NAME;
-    $('season-text').textContent = 'The board asked you to ' + club.objective.toLowerCase() + '. That was ' + (met ? 'met.' : 'not met.') + ' You took ' + me.points + ' points from ' + me.played + ' matches.';
+    const outcome = seasonOutcome(career);
+    const met = objectiveMet(me.rank, club.objective, divisionClubIds(career).length);
+    const bits = [];
+    if (pyramid) {
+      bits.push(outcome.kind === 'champions' ? 'Champions of the ' + LEAGUE_NAME + '.'
+        : outcome.kind === 'promoted' ? 'Promoted to Division ' + outcome.toDivision + '.'
+          : outcome.kind === 'relegated' ? 'Relegated to Division ' + outcome.toDivision + '.'
+            : 'You stay in Division ' + career.division + '.');
+    }
+    bits.push('The board asked you to ' + club.objective.toLowerCase() + '. That was ' + (met ? 'met.' : 'not met.'));
+    bits.push('You took ' + me.points + ' points from ' + me.played + ' matches.');
+    if (!pyramid) bits.push('Next season the Coastal League grows to eight divisions, and your club starts in Division 1.');
+    $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + place;
+    $('season-text').textContent = bits.join(' ');
   }
 
   $('val-formation').textContent = career.tactics.formation;
@@ -654,6 +680,32 @@ function playMatch() {
 
 $('play-btn').addEventListener('click', playMatch);
 
+// The summer: promotion and relegation, then a fresh season in the new
+// division. The other seven divisions are played out from the career's seed.
+async function nextSeason() {
+  if (!career || busy || !career.finished) return;
+  busy = true;
+  const btn = $('next-season');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Starting next season...';
+  try {
+    career = startNextSeason(career);
+    saveFailed = false;
+    render();
+    save();
+    window.scrollTo(0, 0);
+  } catch (err) {
+    saveFailed = true;
+    $('save-error').hidden = false;
+  } finally {
+    busy = false;
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+$('next-season').addEventListener('click', nextSeason);
+
 // ── Match report ─────────────────────────────────────────────────────────
 const ICONS = {
   goal: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg>',
@@ -823,6 +875,7 @@ async function doStartOver() {
     career = null;
     version = null;
     pickedClub = 'harbourside';
+    pickedDivision = 1;
     $('manager-name').value = '';
     closeSheet();
     closeMenu();
@@ -839,6 +892,12 @@ $('confirm-over-no').addEventListener('click', () => { $('confirm-over').hidden 
 $('confirm-over-yes').addEventListener('click', doStartOver);
 
 // ── Wiring ───────────────────────────────────────────────────────────────
+$('division-row').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-division]');
+  if (!btn) return;
+  pickedDivision = Number(btn.dataset.division);
+  renderNew();
+});
 $('club-list').addEventListener('click', (e) => {
   const row = e.target.closest('[data-club-id]');
   if (!row) return;
