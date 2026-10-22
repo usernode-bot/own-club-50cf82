@@ -4,10 +4,17 @@ const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
+const { queryWithRetry, loadFailureBody } = require('./career-db');
 
 const app = express();
 const port = process.env.PORT || 3000;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// node-pg emits 'error' on the pool when an idle client's connection dies.
+// With no listener Node would throw it and the process would exit, which is
+// itself one way players see the career error screen.
+pool.on('error', (err) => {
+  console.error('db idle client error: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+});
 
 // The platform signs user-identity tokens with an RSA private key it never
 // shares. Containers get only the PUBLIC half, so this app can verify who a
@@ -209,7 +216,12 @@ async function boot() {
     try {
       await pool.query('ALTER TABLE careers ADD COLUMN IF NOT EXISTS ' + column);
     } catch (err) {
-      console.error('careers guard failed: ' + name + ' ' + (err && err.message));
+      // A table this version cannot bring up to date would fail every
+      // career read later. Stop the start instead, so the deployed app
+      // never runs against a drifted careers table.
+      const wrapped = new Error('careers guard failed: ' + name + ': ' + (err && err.message));
+      if (err && err.code) wrapped.code = err.code;
+      throw wrapped;
     }
   }
 }
@@ -234,15 +246,17 @@ app.get('/api/career', async (req, res) => {
       }
       return res.json({ career: null, version: 0, demo: false });
     }
-    const { rows } = await pool.query(
+    const { rows } = await queryWithRetry(
+      pool,
       'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
       [req.user.id, demo]
     );
     if (rows.length) {
       const state = rows[0].state;
       if (!state || typeof state !== 'object' || Array.isArray(state)) {
-        console.error('career load failed: career_unreadable state is not an object');
-        return res.status(500).json({ error: 'career_unreadable', message: 'The saved career could not be shown.' });
+        const requestId = crypto.randomUUID().slice(0, 8);
+        console.error('career load failed [' + requestId + '] career_unreadable state is not an object');
+        return res.status(500).json({ error: 'career_unreadable', requestId, message: 'The saved career could not be shown.' });
       }
       return res.json({ career: state, version: rows[0].version, demo });
     }
@@ -264,8 +278,9 @@ app.get('/api/career', async (req, res) => {
     // No career yet is an ordinary answer: the page shows New career.
     return res.json({ career: null, version: 0, demo: false });
   } catch (err) {
-    console.error('career load failed: ' + (err && err.code ? err.code + ' ' : '') + (err && err.message));
-    return res.status(500).json({ error: 'career_load_failed', message: 'The saved career could not be read.' });
+    const requestId = crypto.randomUUID().slice(0, 8);
+    console.error('career load failed [' + requestId + '] ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json(loadFailureBody(err, requestId));
   }
 });
 
