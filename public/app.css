@@ -315,7 +315,8 @@ button.chip[aria-expanded="true"] {
    filled steps use the Squad list's fitness green; the step that just filled
    flashes amber once, unless the device asks for reduced motion. */
 .fac-row { flex-wrap: wrap; }
-.fac-row .nm { min-width: 0; }
+.fac-row .nm { flex: 1 1 200px; min-width: 0; }
+.fac-acts { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
 .lvl { display: flex; gap: 3px; margin: 6px 0 2px; }
 .lvl i { width: 18px; height: 6px; border-radius: 3px; background: rgb(var(--raised)); }
 .lvl i.on { background: rgb(var(--pitch-ink)); }

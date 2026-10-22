@@ -61,6 +61,12 @@
       "expectSelector": "#facility-list .list-row"
     },
     {
+      "name": "Demo club offers facility downgrades",
+      "path": "/?demo=1#club",
+      "expectText": "Downgrade",
+      "expectSelector": "#facility-list [data-facility-dir=\"down\"]"
+    },
+    {
       "name": "Demo transfers tab",
       "path": "/?demo=1#transfers",
       "expectText": "On the market",

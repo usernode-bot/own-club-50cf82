@@ -364,7 +364,9 @@ export function youthFields(state) {
   const list = state && Array.isArray(state.youth) ? state.youth : [];
   const good = list.filter((p) => p && typeof p.id === 'string' && POS_GROUP[p.pos]
     && Number.isInteger(p.overall) && p.attrs && typeof p.attrs === 'object');
-  return good.slice(0, academyCapacity(state));
+  // A downgrade can leave more prospects than the academy's new places, and
+  // they all stay; 60 still bounds a malformed list.
+  return good.slice(0, ACADEMY_CAPACITY[ACADEMY_CAPACITY.length - 1]);
 }
 
 // The players the academy takes in after a matchday: more and better at a
@@ -372,8 +374,11 @@ export function youthFields(state) {
 export function academyIntake(state, matchday) {
   const level = facilityLevels(state).academy;
   const season = state.season || 1;
-  const rng = mulberry32(hash(state.seed, 'youth', season, matchday));
   const cap = ACADEMY_CAPACITY[level - 1];
+  const kept = (Array.isArray(state.youth) ? state.youth : []).slice();
+  // Over its places after a downgrade: keep everyone and take in nobody.
+  if (kept.length > cap) return state;
+  const rng = mulberry32(hash(state.seed, 'youth', season, matchday));
   const used = new Set([
     ...(state.squads[state.clubId] || []).map((p) => p.name),
     ...(Array.isArray(state.youth) ? state.youth.map((p) => p.name) : []),
@@ -408,7 +413,6 @@ export function academyIntake(state, matchday) {
       joined: { season, matchday },
     });
   }
-  const kept = (Array.isArray(state.youth) ? state.youth : []).slice();
   state.youth = fresh.concat(kept).slice(0, cap);
   return state;
 }
@@ -583,6 +587,17 @@ export function upgradeFacility(state, key, toLevel) {
   const held = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
   if (held < cost) return { error: 'credits' };
   return { state: { ...state, facilities: { ...levels, [key]: toLevel }, credits: held - cost } };
+}
+
+// Lower one facility by one level. Free, and nothing is refunded. The level
+// asked for must be the current one minus one, never below 1. Never mutates
+// its input.
+export function downgradeFacility(state, key, toLevel) {
+  if (!FACILITY_BY_KEY[key]) return { error: 'facility' };
+  if (!Number.isInteger(toLevel) || toLevel < 1) return { error: 'level' };
+  const levels = facilityLevels(state);
+  if (levels[key] - 1 !== toLevel) return { error: 'level' };
+  return { state: { ...state, facilities: { ...levels, [key]: toLevel } } };
 }
 
 // ── Transfers, wages, ageing ─────────────────────────────────────────────

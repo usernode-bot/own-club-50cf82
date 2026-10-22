@@ -4,7 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   FACILITIES, FACILITY_MAX_LEVEL, UPGRADE_COSTS, upgradeCost,
-  facilityLevels, upgradeFacility, buildInitialState, buildDemoState,
+  facilityLevels, upgradeFacility, downgradeFacility, maintenanceDue,
+  academyIntake, buildInitialState, buildDemoState,
   repairCareer, startNextSeason, playMatchday,
 } from '../public/engine.js';
 
@@ -62,6 +63,58 @@ test('an upgrade is refused when it is unaffordable, out of turn or unknown', ()
   assert.equal(upgradeFacility(state, 'car_park', 2).error, 'facility');
   // Nothing is spent on a refusal.
   assert.equal(state.credits, 99);
+});
+
+test('a downgrade lowers the level and keeps the credits', () => {
+  const state = { ...buildInitialState('harbourside', 'Alex Morgan', 7), credits: 300, facilities: { ...facilityLevels({}), training: 3 } };
+  const out = downgradeFacility(state, 'training', 2);
+  assert.ok(out.state);
+  assert.equal(out.state.facilities.training, 2);
+  assert.equal(out.state.facilities.stadium, 1);
+  assert.equal(out.state.credits, 300);
+  // The state it was given is unchanged.
+  assert.equal(state.facilities.training, 3);
+});
+
+test('a downgrade is refused out of turn, at level 1 or for an unknown facility', () => {
+  const state = { ...buildInitialState('harbourside', 'Alex Morgan', 7), facilities: { ...facilityLevels({}), training: 2 } };
+  assert.equal(downgradeFacility(state, 'training', 1).state.facilities.training, 1);
+  assert.equal(downgradeFacility(state, 'stadium', 0).error, 'level');
+  assert.equal(downgradeFacility(state, 'training', 0).error, 'level');
+  assert.equal(downgradeFacility(state, 'training', 2).error, 'level');
+  assert.equal(downgradeFacility(state, 'training', 3).error, 'level');
+  assert.equal(downgradeFacility(state, 'training', 1.5).error, 'level');
+  assert.equal(downgradeFacility(state, 'training', '2').error, 'level');
+  assert.equal(downgradeFacility(state, 'car_park', 1).error, 'facility');
+});
+
+test('a downgrade lowers the maintenance due', () => {
+  const state = { ...buildInitialState('harbourside', 'Alex Morgan', 7), facilities: { ...facilityLevels({}), stadium: 4 } };
+  assert.equal(maintenanceDue(state), 1500);
+  const out = downgradeFacility(state, 'stadium', 3);
+  assert.equal(maintenanceDue(out.state), 500);
+});
+
+test('prospects stay when the academy is downgraded', () => {
+  const prospect = (i) => ({ id: 'y' + i, name: 'Prospect ' + i, pos: 'GK', overall: 40, attrs: {} });
+  const base = buildInitialState('harbourside', 'Alex Morgan', 7);
+  const withYouth = {
+    ...base,
+    facilities: { ...facilityLevels(base), academy: 2 },
+    youth: Array.from({ length: 15 }, (_, i) => prospect(i)),
+  };
+  const down = downgradeFacility(withYouth, 'academy', 1).state;
+  // Reloading and the rollover keep every prospect, over the new places.
+  assert.equal(repairCareer(down).youth.length, 15);
+  // No intake and nobody pushed out while it is over its places.
+  const over = academyIntake({ ...down, youth: down.youth.slice() }, 1);
+  assert.equal(over.youth.length, 15);
+  assert.deepEqual(over.youth.map((p) => p.id), down.youth.map((p) => p.id));
+  // Back within its places, the next intake runs again.
+  const room = { ...down, youth: down.youth.slice(0, 10) };
+  const after = academyIntake(room, 2);
+  assert.equal(after.youth.length, 10);
+  assert.equal(after.youth[0].id, 'y1-2-0');
 });
 
 test('the facilities and the credits carry into the next season', () => {

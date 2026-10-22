@@ -153,7 +153,10 @@ the stored balance whatever the page sends. Facilities spend them: `FACILITIES`,
 in `engine.js`, and `POST /api/career/facility` in `server.js`, which names only
 a facility and a target level from the page, checks the balance against the
 stored career, deducts the credits and saves the level in one version-checked
-UPDATE. `state.facilities` holds one integer per facility; `repairCareer` fills a
+UPDATE. `downgradeFacility` in `engine.js` lowers a facility one level for free
+(nothing is refunded, floor 1); the same route sends a level one below the
+stored one to it. Maintenance, seats and academy capacity follow the new level
+from the next matchday. `state.facilities` holds one integer per facility; `repairCareer` fills a
 missing or invalid one with 1, `startNextSeason` carries them, and the demo has
 its stadium at 4 and training ground at 2. An upgrade changes only what the
 facility says it has; income and costs come with the stadium and facilities
@@ -208,7 +211,8 @@ released by `hireStaff`/`releaseStaff` (no refund) through
 They do not change matches yet. The academy takes in `ACADEMY_INTAKE` young
 players after every matchday (1/1/2/2/3 at levels 1 to 5), stronger at a higher
 level, up to `ACADEMY_CAPACITY` (10/20/30/45/60, matching the facility text);
-when full the longest waiting leaves. `academyIntake` is called from
+when full the longest waiting leaves. Prospects above a downgraded capacity
+stay, and the academy takes in none while over; `youthFields` caps at 60. `academyIntake` is called from
 `playMatchday`; `state.youth` holds prospects newest first, earn nothing, and
 `promoteYouth` moves one into the squad (`SQUAD_MAX` 25) on a wage through
 `POST /api/career/youth`. `PUT /api/career` keeps the stored `staff` and
@@ -273,8 +277,10 @@ change follows it, and updates it when a request changes the look on purpose.
 - **Facility levels:** the Club tab's five-step bar reuses the Squad list's
   fitness green (`pitch-ink`) for filled steps on the raised background, the
   step that just filled flashing amber once (off under reduced motion); the
-  upgrade button is the plain secondary button, not amber. The balance at the
-  top of the tab is the same `.bal` row as Home's Wallet.
+  upgrade button is the plain secondary button, not amber. A Downgrade button
+  is the plain secondary button before Upgrade, absent at level 1, free, with
+  no flash; the maintenance line names the level-down cost too. The balance at
+  the top of the tab is the same `.bal` row as Home's Wallet.
 - **Staff and Academy:** two more sections on the Club tab below Facilities,
   built from the same list rows. There is no new primary action: Hire, Release
   and Promote are the plain secondary button, never amber, and a role you

@@ -665,18 +665,19 @@ app.put('/api/career', async (req, res) => {
   }
 });
 
-// Upgrading a facility. The page names a facility and the level it wants;
-// whether it can be afforded, and the new balance, are the server's. One
-// UPDATE with the version check makes the deduction and the level change a
-// single write, so nothing is charged twice.
+// Changing a facility, up or down. The page names a facility and the level it
+// wants; whether it can be afforded, and the new balance, are the server's. A
+// level one below the stored one is a free downgrade. One UPDATE with the
+// version check makes any deduction and the level change a single write, so
+// nothing is charged twice.
 app.post('/api/career/facility', async (req, res) => {
   const demo = wantsDemo(req);
   const { facility, level } = req.body || {};
   try {
     const e = await engine();
     if (!e.FACILITY_BY_KEY[facility] || !Number.isInteger(level)
-      || level < 2 || level > e.FACILITY_MAX_LEVEL) {
-      return res.status(400).json({ error: 'facility', message: 'Choose a facility and the level after it.' });
+      || level < 1 || level > e.FACILITY_MAX_LEVEL) {
+      return res.status(400).json({ error: 'facility', message: 'Choose a facility and the level next to it.' });
     }
     const { rows } = await pool.query(
       'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
@@ -687,7 +688,10 @@ app.post('/api/career/facility', async (req, res) => {
     const up = await catchUpAndSave(req.user.id, demo, rows[0], req.now);
     const state = e.repairCareer(up.state);
     if (!state) return res.status(500).json({ error: 'facility_upgrade_failed' });
-    const out = e.upgradeFacility(state, facility, level);
+    const stored = e.facilityLevels(state)[facility];
+    const out = level === stored - 1
+      ? e.downgradeFacility(state, facility, level)
+      : e.upgradeFacility(state, facility, level);
     if (out.error === 'level') return res.status(409).json({ error: 'level' });
     if (out.error === 'credits') return res.status(409).json({ error: 'credits' });
     if (out.error) return res.status(400).json({ error: 'facility' });
@@ -698,7 +702,7 @@ app.post('/api/career/facility', async (req, res) => {
     if (!upd.rows.length) return res.status(409).json({ error: 'version_mismatch' });
     return res.json({ career: out.state, version: upd.rows[0].version });
   } catch (err) {
-    console.error('facility upgrade failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    console.error('facility change failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
     return res.status(500).json({ error: 'facility_upgrade_failed' });
   }
 });

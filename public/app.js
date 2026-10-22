@@ -657,9 +657,10 @@ function renderClub() {
 }
 
 // ── Club: the facilities ─────────────────────────────────────────────────
-// Which facility's upgrade is in flight, which one failed, and which one just
-// went up a level (for the one-shot bar flash).
+// Which facility change is in flight and in which direction, which one
+// failed, and which one just went up a level (for the one-shot bar flash).
 let facilityBusy = null;
+let facilityDir = 'up';
 let facilityError = null;
 let facilityRetry = null;
 let facilityNew = null;
@@ -672,24 +673,30 @@ function facilityRow(f, level) {
   const now = 'Level ' + level + ': ' + f.levels[level - 1] + '.';
   const next = level < FACILITY_MAX_LEVEL ? ' Next: ' + f.levels[level] + '.' : '';
   const here = MAINTENANCE[level] || 0;
+  const below = level > 1 ? MAINTENANCE[level - 1] || 0 : null;
   const ahead = level < FACILITY_MAX_LEVEL ? MAINTENANCE[level + 1] || 0 : null;
   const maintenance = here === 0
     ? 'No maintenance at level 1, ' + num(ahead) + ' at the next level.'
     : 'Maintenance ' + num(here) + ' every matchday'
+      + (below != null ? ', ' + (below ? num(below) : 'nothing') + ' a level down' : '')
       + (ahead != null ? ', ' + num(ahead) + ' at the next level.' : '.');
   const cost = upgradeCost(level + 1);
+  const down = level > 1
+    ? `<button class="btn-secondary small" type="button" data-facility="${esc(f.key)}" data-facility-dir="down"${facilityBusy ? ' disabled' : ''}>${
+      facilityBusy === f.key && facilityDir === 'down' ? 'Downgrading...' : 'Downgrade'}</button>`
+    : '';
   let end;
   if (level >= FACILITY_MAX_LEVEL) {
     end = '<span class="need">Top level</span>';
   } else if ((career.credits || 0) >= cost) {
-    end = `<button class="btn-secondary small" type="button" data-facility="${esc(f.key)}"${facilityBusy ? ' disabled' : ''}>${
-      facilityBusy === f.key ? 'Upgrading...' : 'Upgrade for ' + cost.toLocaleString('en-US')}</button>`;
+    end = `<button class="btn-secondary small" type="button" data-facility="${esc(f.key)}" data-facility-dir="up"${facilityBusy ? ' disabled' : ''}>${
+      facilityBusy === f.key && facilityDir === 'up' ? 'Upgrading...' : 'Upgrade for ' + cost.toLocaleString('en-US')}</button>`;
   } else {
     end = `<span class="need">${cost.toLocaleString('en-US')} needed</span>`;
   }
   return `<li class="list-row fac-row">
     <span class="nm">${esc(f.name)}<span class="lvl" aria-hidden="true">${steps}</span><small>${esc(now + next + ' ' + maintenance)}</small></span>
-    ${end}
+    <span class="fac-acts">${down}${end}</span>
   </li>`;
 }
 
@@ -864,8 +871,10 @@ function renderFacilities() {
   const failed = FACILITIES.find((f) => f.key === facilityError);
   $('facility-error').hidden = !failed;
   if (failed) {
-    $('facility-error-text').textContent = 'The ' + failed.name.toLowerCase()
-      + ' upgrade did not go through, and no Club credits were spent. Your other facilities are unchanged.';
+    $('facility-error-text').textContent = facilityDir === 'down'
+      ? 'The ' + failed.name.toLowerCase() + ' downgrade did not go through. Your facilities are unchanged.'
+      : 'The ' + failed.name.toLowerCase()
+        + ' upgrade did not go through, and no Club credits were spent. Your other facilities are unchanged.';
   }
   facilityNew = null;
 }
@@ -873,18 +882,19 @@ function renderFacilities() {
 // The page names the facility and the level; the server decides whether it can
 // be afforded and moves the credits. Goes through saveChain so it runs after a
 // pending save, with the version that save left behind.
-function upgrade(key) {
+function changeFacility(key, dir) {
   if (!career || facilityBusy) return saveChain;
-  const target = facilityLevels(career)[key] + 1;
+  const target = facilityLevels(career)[key] + (dir === 'down' ? -1 : 1);
   facilityBusy = key;
-  facilityRetry = key;
+  facilityDir = dir;
+  facilityRetry = { key, dir };
   facilityError = null;
   renderFacilities();
-  saveChain = saveChain.then(() => upgradeNow(key, target), () => upgradeNow(key, target));
+  saveChain = saveChain.then(() => changeFacilityNow(key, target, dir), () => changeFacilityNow(key, target, dir));
   return saveChain;
 }
 
-async function upgradeNow(key, level) {
+async function changeFacilityNow(key, level, dir) {
   try {
     const { status, data } = await api('POST', { facility: key, level }, '/api/career/facility');
     facilityBusy = null;
@@ -893,7 +903,7 @@ async function upgradeNow(key, level) {
       if (repaired) {
         career = repaired;
         version = data.version;
-        facilityNew = key;
+        facilityNew = dir === 'up' ? key : null;
         facilityError = null;
         render();
         return;
@@ -901,7 +911,7 @@ async function upgradeNow(key, level) {
     }
     if (status === 401) {
       renderFacilities();
-      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'upgrade a facility' });
+      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: dir === 'down' ? 'downgrade a facility' : 'upgrade a facility' });
       return;
     }
     // The stored career moved on: show its real levels and balance, no error.
@@ -1911,10 +1921,10 @@ $('squad-list').addEventListener('keydown', (e) => {
 $('start-career').addEventListener('click', startCareer);
 $('facility-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-facility]');
-  if (btn && !btn.disabled) upgrade(btn.dataset.facility);
+  if (btn && !btn.disabled) changeFacility(btn.dataset.facility, btn.dataset.facilityDir || 'up');
 });
 $('facility-retry').addEventListener('click', () => {
-  if (facilityRetry) upgrade(facilityRetry);
+  if (facilityRetry) changeFacility(facilityRetry.key, facilityRetry.dir);
 });
 $('staff-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-staff]');
