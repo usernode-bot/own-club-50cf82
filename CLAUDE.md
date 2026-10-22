@@ -112,9 +112,9 @@ same-letter Division 3 group; the top 2 of each Division 3 group go up. Nobody
 leaves Division 3, and every group stays at 18. Start next season carries your
 club, its players and their roles into its new group.
 
-Matches play by themselves at 09:00, 15:00 and 21:00 on the manager's own
+Matches play by themselves at 00:00, 06:00, 12:00 and 18:00 on the manager's own
 clock, with the lineup, tactics and roles last saved: a season's 34 matchdays
-take about twelve days. Times follow the IANA zone saved with the career at
+take about nine days. Times follow the IANA zone saved with the career at
 purchase (`timeZone`, never moved afterwards; the demo always uses
 `Europe/London`), not the server's UTC clock. The server owns the schedule:
 `state.nextMatchAt` is stamped at purchase and after every match, and each

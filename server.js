@@ -186,7 +186,7 @@ function engine() {
 const DEMO_SEED = 1;
 
 // The demo season is always shown in London time, so every voter sees the
-// same day and the same three match times.
+// same day and the same four match times.
 function demoCareer(e, now) {
   const state = e.buildDemoState(DEMO_SEED);
   state.timeZone = 'Europe/London';
