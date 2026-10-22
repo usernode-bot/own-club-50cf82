@@ -173,7 +173,7 @@
         <div class="section-label"><span>Wallet</span><span>Dummy USDC (staging mock)</span></div>
         <ul class="list">
           <li class="list-row">
-            <span class="nm"><span class="bal" id="wallet-balance">1,000 USDC</span><small>Every new manager gets this to buy a club. No real payment is taken.</small></span>
+            <span class="nm"><span class="bal" id="wallet-balance">1,000 USDC</span><small id="wallet-note">Every new manager gets this to buy a club. No real payment is taken.</small></span>
           </li>
         </ul>
       </div>
@@ -243,7 +243,7 @@
               <p class="season-text" id="season-text"></p>
             </div>
             <button class="btn-primary" id="next-season" type="button">Start next season</button>
-            <button class="btn-secondary" id="new-from-season" type="button">Start a new career</button>
+            <button class="btn-secondary" id="new-from-season" type="button">Sell your club</button>
           </div>
 
           <div class="sec" id="last-sec">
@@ -265,13 +265,13 @@
 
           <div class="sec" id="home-actions">
             <div class="confirm" id="confirm-over" hidden>
-              <p class="state-text" id="confirm-text">Start a new career? This career and its results will be deleted.</p>
+              <p class="state-text" id="confirm-text">Sell your club? This career and its results end, and the money goes into your wallet for your next club.</p>
               <div class="confirm-row">
-                <button class="btn-primary" id="confirm-over-yes" type="button">Delete career</button>
+                <button class="btn-primary" id="confirm-over-yes" type="button">Sell club</button>
                 <button class="btn-secondary" id="confirm-over-no" type="button">Cancel</button>
               </div>
             </div>
-            <button class="btn-secondary wide" id="start-over" type="button">Start a new career</button>
+            <button class="btn-secondary wide" id="start-over" type="button">Sell your club</button>
           </div>
         </div>
 

@@ -10,7 +10,7 @@ import {
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
-  repairCareer, slotLabel, upcomingSlots,
+  repairCareer, slotLabel, upcomingSlots, clubTier, saleValue,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -41,6 +41,9 @@ let autoPlayed = 0;
 let tab = 'home';
 let reportFrom = 'home';
 let refreshFailed = false;
+// The sale just made, so the New career screen can say where the money came
+// from. Cleared once a new club is bought.
+let lastSale = null;
 
 const TABS = ['home', 'squad', 'tactics', 'competition'];
 function hashTab() {
@@ -229,7 +232,14 @@ function renderNew() {
   for (const btn of $('group-row').querySelectorAll('[data-group]')) {
     btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
   }
-  $('wallet-balance').textContent = usdc(shop.startingBalance);
+  $('wallet-balance').textContent = usdc(shop.balance == null ? shop.startingBalance : shop.balance);
+  const sold = lastSale ? CLUB_BY_ID[lastSale.clubId] : null;
+  $('wallet-note').textContent = sold
+    ? 'You sold ' + sold.name + ' for ' + usdc(lastSale.price)
+      + '. Your wallet keeps it for your next club. No real payment is taken.'
+    : shop.kept
+      ? 'Your wallet, kept from your earlier clubs. No real payment is taken.'
+      : 'Every new manager gets this to buy a club. No real payment is taken.';
   const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
   const groups = SHOP_GROUPS.map((g) => ({ group: g.group, clubIds: g.clubIds, free: g.clubIds.filter((id) => !taken.has(id)) }));
   const freeTotal = groups.reduce((n, g) => n + g.free.length, 0);
@@ -237,7 +247,7 @@ function renderNew() {
   const buy = $('start-career');
   const errBox = $('career-error');
   if (!freeTotal) {
-    list.innerHTML = '<li class="list-row"><span class="nm">No Division 3 club is free right now. A club comes free when its manager starts a new career.</span></li>';
+    list.innerHTML = '<li class="list-row"><span class="nm">No Division 3 club is free right now. A club comes free when its manager sells it.</span></li>';
     $('group-row').hidden = true;
     buy.disabled = true;
     buy.textContent = 'No club is free right now';
@@ -321,6 +331,7 @@ async function startCareer() {
     career = data.career;
     version = data.version;
     autoPlayed = 0;
+    lastSale = null;
     screen = 'club';
     tab = 'home';
     if (!location.hash) location.hash = '#home';
@@ -552,8 +563,22 @@ function renderClub() {
     $('wallet-sec').hidden = true;
   }
 
-  $('confirm-text').textContent = 'Start a new career? This career and its results will be deleted, and '
-    + club.name + ' goes back in the shop.';
+  // Selling the club: the price comes from the division it is in today, and
+  // the money stays in the manager's wallet for their next club.
+  const price = saleValue(career, shop.saleValues || {});
+  const forPrice = price > 0 ? ' for ' + usdc(price) : '';
+  $('start-over').textContent = 'Sell ' + club.name + forPrice;
+  $('new-from-season').textContent = 'Sell ' + club.name;
+  $('confirm-over-yes').textContent = 'Sell club';
+  if (DEMO) {
+    $('confirm-text').textContent = 'Sell ' + club.name
+      + '? This is the staging demo season, so no wallet is credited.';
+  } else {
+    $('confirm-text').textContent = 'Sell ' + club.name + forPrice
+      + '? This career and its results end, and the ' + usdc(price)
+      + ' goes into your wallet for your next club.'
+      + (clubTier(career) === 3 ? ' ' + club.name + ' goes back in the shop.' : '');
+  }
   $('save-error').hidden = !saveFailed;
   if (tab === 'tactics') drawPitch();
 }
@@ -1117,16 +1142,21 @@ function startOver() {
 async function doStartOver() {
   $('confirm-over').hidden = true;
   try {
-    const { status } = await api('DELETE');
+    const { status, data } = await api('DELETE');
     if (status === 401) {
-      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'start a new career' });
+      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'sell your club' });
       return;
     }
     if (status !== 200) {
-      // Only leave the club once the server says the old career is gone.
+      // Only leave the club once the server says the career is gone and the
+      // money is in the wallet.
       saveFailed = true;
       $('save-error').hidden = false;
       return;
+    }
+    if (data && data.sale) {
+      lastSale = data.sale;
+      shop = { ...shop, balance: data.sale.balance, kept: true };
     }
     career = null;
     version = null;
@@ -1139,6 +1169,9 @@ async function doStartOver() {
     history.replaceState(null, '', location.pathname + location.search);
     screen = 'new';
     render();
+    // The shop's taken list and the wallet come from the server. Not in the
+    // demo: a demo GET would create the demo career again.
+    if (!DEMO) refreshShop();
   } catch (_) {
     saveFailed = true;
     $('save-error').hidden = false;
