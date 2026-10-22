@@ -109,6 +109,18 @@ same-letter Division 3 group; the top 2 of each Division 3 group go up. Nobody
 leaves Division 3, and every group stays at 18. Start next season carries your
 club, its players and their roles into its new group.
 
+Each day three matchdays open, at 09:00, 15:00 and 21:00 on the manager's own
+clock, like mealtimes: a season's 34 matchdays take about twelve days. A time
+that has passed stays open until local midnight, so a late visit can still play
+all three. The times follow the IANA time zone saved with the career
+(`timeZone`, set from the device the first time the page saves, never moved
+afterwards; the demo season always uses `Europe/London`), not the server's UTC
+clock. The server owns the day's record: `plays` holds the last three match
+instants, `PUT /api/career` counts the matchdays the incoming state advanced
+and answers `400 match_limit` for a fourth in a day or a slot not yet open, and
+`public/app.js` greys out Play match and says when the next one opens.
+`playMatchday` itself is unrestricted, so the tests still play whole seasons.
+
 The ten original clubs make up most of Division 1; the other 152 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
 squads that get weaker with each tier down. Only the manager's own group is

@@ -135,6 +135,9 @@ button.chip[aria-expanded="true"] {
   color: rgb(var(--danger));
 }
 
+/* Waiting for the next match time is not an error. */
+.play-note.is-wait { color: rgb(var(--muted)); }
+
 .season-head { display: flex; flex-direction: column; gap: 6px; }
 .season-title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 700; }
 .season-text { margin: 0; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }

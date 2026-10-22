@@ -184,6 +184,15 @@ function engine() {
 // matchdays of a Division 1 season, as the spec's staging demo describes.
 const DEMO_SEED = 1;
 
+// The demo season is always shown in London time, so every voter sees the
+// same day and the same three match times.
+function demoCareer(e) {
+  const state = e.buildDemoState(DEMO_SEED);
+  state.timeZone = 'Europe/London';
+  state.plays = [];
+  return state;
+}
+
 // The dummy money: a staging mock, never a real payment. Every new manager is
 // given this much to buy one Division 3 club. The values live here only, so
 // the browser never decides what a club costs or how much is in a wallet.
@@ -250,7 +259,9 @@ app.get('/api/career', async (req, res) => {
       // A guest looking around in staging sees the demo season, unread-only.
       if (demo) {
         const e = await engine();
-        return res.json({ career: e.buildDemoState(DEMO_SEED), version: 1, demo: true, shop: SHOP });
+        return res.json({
+          career: demoCareer(e), version: 1, demo: true, shop: SHOP,
+        });
       }
       return res.json({ career: null, version: 0, demo: false, shop: SHOP });
     }
@@ -270,7 +281,7 @@ app.get('/api/career', async (req, res) => {
     }
     if (demo) {
       const e = await engine();
-      const state = e.buildDemoState(DEMO_SEED);
+      const state = demoCareer(e);
       await pool.query(
         `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
          VALUES ($1, true, $2, $3, $4, $5, 1)
@@ -343,6 +354,31 @@ app.put('/api/career', async (req, res) => {
   try {
     const e = await engine();
     if (!e.CLUB_BY_ID[state.clubId]) return res.status(400).json({ error: 'club' });
+    // The three matchdays a day are the server's record, the way the wallet
+    // is: read what was stored, count the matchdays the incoming state has
+    // advanced and refuse one the day has no slot for. A staging preview
+    // reads req.now, so ?un-now shows another moment.
+    const { rows: storedRows } = await pool.query(
+      `SELECT state->'plays' AS plays, state->'timeZone' AS zone,
+              state->'matchday' AS matchday, state->'season' AS season
+         FROM careers WHERE user_id = $1 AND is_demo = $2`,
+      [req.user.id, demo]
+    );
+    if (!storedRows.length) return res.status(404).json({ error: 'no_career' });
+    const stored = storedRows[0];
+    // The demo always uses London time, so every voter sees the same day. A
+    // career keeps the first zone it saved; an unusable one reads as UTC.
+    const zone = demo ? 'Europe/London'
+      : e.validTimeZone(stored.zone) ? stored.zone
+        : e.validTimeZone(state.timeZone) ? state.timeZone
+          : 'UTC';
+    const limit = e.matchLimitError({
+      matchday: Number(stored.matchday) || 0,
+      season: Number(stored.season) || 1,
+      plays: Array.isArray(stored.plays) ? stored.plays : [],
+    }, state, req.now, zone);
+    if (limit.message) return res.status(400).json({ error: 'match_limit', message: limit.message });
+    const saved = { ...state, plays: limit.plays, timeZone: zone };
     const { rows } = await pool.query(
       // The browser never sets the money: a career that has a wallet keeps
       // the one already stored, and a career without one cannot gain one.
@@ -352,7 +388,7 @@ app.put('/api/career', async (req, res) => {
         version = version + 1, updated_at = now()
         WHERE user_id = $1 AND is_demo = $2 AND version = $4
         RETURNING version`,
-      [req.user.id, demo, state, version]
+      [req.user.id, demo, saved, version]
     );
     if (rows.length) return res.json({ version: rows[0].version });
     const exists = await pool.query(
