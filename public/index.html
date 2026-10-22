@@ -167,27 +167,31 @@
       <div class="top">
         <div class="sm">The Coastal League</div>
         <h1>New career</h1>
-        <div class="sm">Eight divisions of 18 clubs, 34 matchdays</div>
+        <div class="sm">Three tiers, 162 clubs, 34 matchdays</div>
       </div>
       <div class="sec">
         <label class="section-label" for="manager-name">Manager name</label>
         <input class="field" id="manager-name" maxlength="40" placeholder="e.g. Alex Morgan" autocomplete="off">
       </div>
       <div class="sec">
-        <div class="section-label"><span id="division-label">Division</span><span>1 is the top</span></div>
-        <div class="divrow" id="division-row" role="group" aria-labelledby="division-label">
-          <button class="chip" type="button" data-division="1" aria-pressed="true" aria-label="Division 1">1</button>
-          <button class="chip" type="button" data-division="2" aria-pressed="false" aria-label="Division 2">2</button>
-          <button class="chip" type="button" data-division="3" aria-pressed="false" aria-label="Division 3">3</button>
-          <button class="chip" type="button" data-division="4" aria-pressed="false" aria-label="Division 4">4</button>
-          <button class="chip" type="button" data-division="5" aria-pressed="false" aria-label="Division 5">5</button>
-          <button class="chip" type="button" data-division="6" aria-pressed="false" aria-label="Division 6">6</button>
-          <button class="chip" type="button" data-division="7" aria-pressed="false" aria-label="Division 7">7</button>
-          <button class="chip" type="button" data-division="8" aria-pressed="false" aria-label="Division 8">8</button>
+        <div class="section-label"><span>Wallet</span><span>Dummy USDC (staging mock)</span></div>
+        <ul class="list">
+          <li class="list-row">
+            <span class="nm"><span class="bal" id="wallet-balance">1,000 USDC</span><small>Every new manager gets this to buy a club. No real payment is taken.</small></span>
+          </li>
+        </ul>
+      </div>
+      <div class="sec">
+        <div class="section-label"><span id="group-label">Division 3 group</span><span>New clubs start here</span></div>
+        <div class="divrow" id="group-row" role="group" aria-labelledby="group-label">
+          <button class="chip" type="button" data-group="A" aria-pressed="true" aria-label="Division 3 Group A">A</button>
+          <button class="chip" type="button" data-group="B" aria-pressed="false" aria-label="Division 3 Group B">B</button>
+          <button class="chip" type="button" data-group="C" aria-pressed="false" aria-label="Division 3 Group C">C</button>
+          <button class="chip" type="button" data-group="D" aria-pressed="false" aria-label="Division 3 Group D">D</button>
         </div>
       </div>
       <div class="sec">
-        <div class="section-label"><span>Choose a club</span><span>Reputation</span></div>
+        <div class="section-label"><span>Choose a club</span><span>Price</span></div>
         <ul class="list" id="club-list"></ul>
         <div class="state-error" id="career-error" hidden>
           <p class="state-text" id="career-error-text"></p>
@@ -255,6 +259,13 @@
       <div class="sec">
         <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
         <ul class="list tbl" id="table-list"></ul>
+      </div>
+
+      <div class="sec" id="wallet-sec" hidden>
+        <div class="section-label"><span>Wallet</span><span>Dummy USDC (staging mock)</span></div>
+        <ul class="list">
+          <li class="list-row"><span class="nm"><span class="bal" id="club-wallet"></span><small id="club-wallet-note"></small></span></li>
+        </ul>
       </div>
 
       <div class="sec">

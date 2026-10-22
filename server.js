@@ -177,6 +177,14 @@ function engine() {
 // matchdays of a Division 1 season, as the spec's staging demo describes.
 const DEMO_SEED = 1;
 
+// The dummy money: a staging mock, never a real payment. Every new manager is
+// given this much to buy one Division 3 club. The values live here only, so
+// the browser never decides what a club costs or how much is in a wallet.
+const CURRENCY = 'Dummy USDC';
+const CLUB_PRICE = 100;
+const STARTING_BALANCE = 1000;
+const SHOP = { price: CLUB_PRICE, startingBalance: STARTING_BALANCE, currency: CURRENCY };
+
 // ── The career table ─────────────────────────────────────────────────────
 // One row per person (and one demo row per person), holding the whole saved
 // season as JSON. It carries the manager's name, so it is staging:private.
@@ -230,9 +238,9 @@ app.get('/api/career', async (req, res) => {
       // A guest looking around in staging sees the demo season, unread-only.
       if (demo) {
         const e = await engine();
-        return res.json({ career: e.buildDemoState(DEMO_SEED), version: 1, demo: true });
+        return res.json({ career: e.buildDemoState(DEMO_SEED), version: 1, demo: true, shop: SHOP });
       }
-      return res.json({ career: null, version: 0, demo: false });
+      return res.json({ career: null, version: 0, demo: false, shop: SHOP });
     }
     const { rows } = await pool.query(
       'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
@@ -244,7 +252,7 @@ app.get('/api/career', async (req, res) => {
         console.error('career load failed: career_unreadable state is not an object');
         return res.status(500).json({ error: 'career_unreadable', message: 'The saved career could not be shown.' });
       }
-      return res.json({ career: state, version: rows[0].version, demo });
+      return res.json({ career: state, version: rows[0].version, demo, shop: SHOP });
     }
     if (demo) {
       const e = await engine();
@@ -259,10 +267,10 @@ app.get('/api/career', async (req, res) => {
         'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = true',
         [req.user.id]
       );
-      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true });
+      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP });
     }
     // No career yet is an ordinary answer: the page shows New career.
-    return res.json({ career: null, version: 0, demo: false });
+    return res.json({ career: null, version: 0, demo: false, shop: SHOP });
   } catch (err) {
     console.error('career load failed: ' + (err && err.code ? err.code + ' ' : '') + (err && err.message));
     return res.status(500).json({ error: 'career_load_failed', message: 'The saved career could not be read.' });
@@ -277,10 +285,20 @@ app.post('/api/career', async (req, res) => {
   }
   try {
     const e = await engine();
-    if (!e.CLUB_BY_ID[clubId]) return res.status(400).json({ error: 'club' });
+    // The shop and the price are the server's: a forged club or balance in the
+    // request body never gets through.
+    const refusal = e.purchaseError(clubId, STARTING_BALANCE, CLUB_PRICE);
+    if (refusal === 'club') {
+      return res.status(400).json({ error: 'club', message: 'That club is not in the shop. Choose a Division 3 club.' });
+    }
+    if (refusal === 'balance') {
+      return res.status(400).json({ error: 'balance', message: 'Your Dummy USDC does not cover this club.' });
+    }
     const seed = crypto.randomInt(1, 2147483647);
     const state = e.buildInitialState(clubId, managerName.trim(), seed);
     state.managerName = managerName.trim();
+    state.wallet = { currency: CURRENCY, balance: STARTING_BALANCE - CLUB_PRICE };
+    state.purchase = { clubId, price: CLUB_PRICE, at: new Date().toISOString() };
     const { rows } = await pool.query(
       `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
        VALUES ($1, $2, $3, $4, $5, $6, 1)
@@ -311,7 +329,12 @@ app.put('/api/career', async (req, res) => {
     const e = await engine();
     if (!e.CLUB_BY_ID[state.clubId]) return res.status(400).json({ error: 'club' });
     const { rows } = await pool.query(
-      `UPDATE careers SET state = $3, version = version + 1, updated_at = now()
+      // The browser never sets the money: a career that has a wallet keeps
+      // the one already stored, and a career without one cannot gain one.
+      `UPDATE careers SET state = CASE WHEN careers.state ? 'wallet'
+          THEN $3::jsonb || jsonb_build_object('wallet', careers.state->'wallet', 'purchase', careers.state->'purchase')
+          ELSE $3::jsonb - 'wallet' - 'purchase' END,
+        version = version + 1, updated_at = now()
         WHERE user_id = $1 AND is_demo = $2 AND version = $4
         RETURNING version`,
       [req.user.id, demo, state, version]
