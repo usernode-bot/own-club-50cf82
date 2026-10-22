@@ -270,6 +270,26 @@ export function stadiumSeats(state) {
   return STADIUM_SEATS[facilityLevels(state).stadium - 1];
 }
 
+// Facilities that bring extra fans through the gate on a home matchday: each
+// level above 1 adds a share of the fan base to the crowd.
+export const CROWD_FACILITIES = ['toilets', 'parking', 'vip'];
+export const CROWD_BONUS = { 1: 0, 2: 0.02, 3: 0.04, 4: 0.06, 5: 0.08 };
+
+export function crowdBonus(state) {
+  const levels = facilityLevels(state);
+  return CROWD_FACILITIES.reduce((sum, key) => sum + (CROWD_BONUS[levels[key]] || 0), 0);
+}
+
+// The crowd a home match draws: the fans, plus the crowd facilities' share,
+// never more than the stadium's seats or the division's fan limit. The bonus
+// never changes the fan total itself.
+export function homeCrowd(state, fans, cap) {
+  const seats = stadiumSeats(state);
+  const base = Math.min(fans, seats, cap);
+  const attendance = Math.min(fans + Math.round(fans * crowdBonus(state)), seats, cap);
+  return { attendance, extra: attendance - base };
+}
+
 // What every facility above level 1 costs to run each matchday.
 export const MAINTENANCE = { 1: 0, 2: 150, 3: 500, 4: 1500, 5: 4000 };
 
@@ -526,8 +546,9 @@ export function fanChange(fans, goalsFor, goalsAgainst, cap) {
 }
 
 // The club's facilities, each from level 1 to level 5. Upgrading one changes
-// what it says it has; the shop, food stand and hotel also earn from a home
-// crowd, and every level above the first costs maintenance.
+// what it says it has; the toilets, parking and VIP room add fans at home, the
+// shop, food stand and hotel also earn from a home crowd, and every level above
+// the first costs maintenance.
 export const FACILITY_MAX_LEVEL = 5;
 
 export const FACILITIES = [
@@ -572,6 +593,39 @@ export const FACILITIES = [
     key: 'hotel',
     name: 'Hotel',
     levels: ['10 rooms', '25 rooms', '50 rooms', '100 rooms', '200 rooms'],
+  },
+  {
+    key: 'toilets',
+    name: 'Toilets',
+    levels: [
+      'portable toilets',
+      '2 toilet blocks, 2% more fans at home',
+      '4 toilet blocks, 4% more fans at home',
+      '6 toilet blocks, 6% more fans at home',
+      '10 toilet blocks, 8% more fans at home',
+    ],
+  },
+  {
+    key: 'parking',
+    name: 'Parking',
+    levels: [
+      'a gravel car park',
+      '200 parking spaces, 2% more fans at home',
+      '500 parking spaces, 4% more fans at home',
+      '1,000 parking spaces, 6% more fans at home',
+      '2,500 parking spaces and a shuttle bus, 8% more fans at home',
+    ],
+  },
+  {
+    key: 'vip',
+    name: 'VIP room',
+    levels: [
+      'no VIP seating',
+      'a VIP box, 2% more fans at home',
+      '3 VIP boxes, 4% more fans at home',
+      'a VIP room, 6% more fans at home',
+      'a VIP room and 10 boxes, 8% more fans at home',
+    ],
   },
 ];
 
@@ -1750,7 +1804,7 @@ export function playMatchday(state) {
     const m = moneyFields(state);
     const result = creditsForResult(goalsFor, goalsAgainst);
     const seats = stadiumSeats(state);
-    const attendance = atHome ? Math.min(m.fans, seats, fanCap) : 0;
+    const attendance = atHome ? homeCrowd(state, m.fans, fanCap).attendance : 0;
     const gate = attendance * TICKET_PRICE;
     const sales = matchdaySales(state, attendance);
     const levels = facilityLevels(state);
@@ -2308,7 +2362,7 @@ export function buildDemoState(seed) {
   const state = buildInitialState('harbourside', 'Demo Manager', seed);
   // A partly built club, with a coach and a physio, so the money lines and
   // the academy have something from the first matchday on.
-  state.facilities = { ...facilityLevels(state), stadium: 4, training: 2 };
+  state.facilities = { ...facilityLevels(state), stadium: 4, training: 2, toilets: 3 };
   state.staff = staffFields({
     staff: {
       coach: { name: 'Theo Marsh', season: 1, matchday: 0 },

@@ -15,7 +15,7 @@ import {
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
   STAFF_ROLES, staffFields, staffWagesDue, MAINTENANCE, maintenanceDue,
   MATCHDAY_SALES, matchdaySales,
-  wageBill, playerWage, stadiumSeats, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
+  wageBill, playerWage, stadiumSeats, homeCrowd, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
 } from './engine.js';
 
@@ -602,7 +602,8 @@ function renderClub() {
   const tier = clubTier(career);
   const capacity = FAN_CAP[tier] || FAN_CAP[3];
   const seats = stadiumSeats(career);
-  const seated = Math.min(capacity, money.fans, seats);
+  const crowd = homeCrowd(career, money.fans, capacity);
+  const seated = crowd.attendance;
   const upkeepDue = GROUND_UPKEEP;
   const maintenanceNow = maintenanceDue(career);
   const wagesNow = wageBill(career);
@@ -633,7 +634,9 @@ function renderClub() {
     : '';
   $('finance-list').innerHTML = `
     <li class="list-row"><span class="nm">Fans<small>Division ${tier} holds at most ${num(capacity)} fans. Wins add ${fanRate(FAN_CHANGE.win)}%, draws ${fanRate(FAN_CHANGE.draw)}%, losses take ${fanRate(-FAN_CHANGE.loss)}%.</small></span><span class="price">${num(money.fans)}</span></li>
-    <li class="list-row"><span class="nm">Home gate<small>${num(seated)} of ${num(seats)} seats at ${TICKET_PRICE} Club credits. Away matches earn no gate.</small></span><span class="price">${num(seated * TICKET_PRICE)}</span></li>
+    <li class="list-row"><span class="nm">Home gate<small>${num(seated)} of ${num(seats)} seats at ${TICKET_PRICE} Club credits${crowd.extra > 0
+      ? ', with ' + num(crowd.extra) + ' extra fans from toilets, parking and the VIP room'
+      : ''}. Away matches earn no gate.</small></span><span class="price">${num(seated * TICKET_PRICE)}</span></li>
     <li class="list-row"><span class="nm">Gate this season<small>${money.finance.homeGames
       ? money.finance.homeGames + (money.finance.homeGames === 1 ? ' home match' : ' home matches')
       : 'No home match yet this season'}</small></span><span class="price">${num(money.finance.gate)}</span></li>
