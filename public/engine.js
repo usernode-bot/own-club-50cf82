@@ -505,6 +505,61 @@ export function fixLineup(state) {
   return state.lineup;
 }
 
+// A career saved by an earlier version of the app, made ready for today's club
+// screen: only what is missing or unusable is filled in, from the career's own
+// squad. A valid career comes back equal; null means it cannot be shown. It
+// never touches the version, the divisions, the season, the seed, the results
+// or the squads.
+export function repairCareer(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
+  const club = CLUB_BY_ID[state.clubId];
+  if (!club) return null;
+  if (!state.squads || !Array.isArray(state.squads[state.clubId])) return null;
+  if (!Array.isArray(state.fixtures) || !Array.isArray(state.results)) return null;
+
+  const squad = state.squads[state.clubId];
+  const roles = state.roles && typeof state.roles === 'object' && !Array.isArray(state.roles)
+    ? state.roles : {};
+  const given = state.tactics && typeof state.tactics === 'object' ? state.tactics : {};
+  const formation = FORMATION_NAMES.includes(given.formation) ? given.formation : club.formation;
+  const tactics = {
+    ...given,
+    formation,
+    mentality: MENTALITY_NAMES.includes(given.mentality) ? given.mentality : 'Balanced',
+    pressing: PRESSING_NAMES.includes(given.pressing) ? given.pressing : 'Medium',
+  };
+
+  const ids = new Set(squad.map((p) => p && p.id));
+  const givenLineup = state.lineup;
+  const lineupOk = Array.isArray(givenLineup) && givenLineup.length === 11
+    && new Set(givenLineup).size === 11 && givenLineup.every((id) => ids.has(id));
+  const lineup = lineupOk ? givenLineup : autoLineup(squad, formation, roles);
+
+  const total = state.fixtures.length;
+  let matchday = state.matchday;
+  if (!Number.isInteger(matchday) || matchday < 0 || matchday > total) {
+    matchday = Number.isInteger(matchday) ? Math.min(Math.max(matchday, 0), total) : 0;
+  }
+
+  const report = state.lastReport;
+  const reportOk = !!report && typeof report === 'object'
+    && report.home && report.home.id
+    && report.away && report.away.id
+    && report.stats && typeof report.stats === 'object'
+    && report.ratings && typeof report.ratings === 'object'
+    && Array.isArray(report.moments);
+
+  return {
+    ...state,
+    tactics,
+    roles,
+    lineup,
+    matchday,
+    finished: Boolean(state.finished),
+    lastReport: reportOk ? report : null,
+  };
+}
+
 // ── Validation ───────────────────────────────────────────────────────────
 export function validateLineup(state) {
   const squad = state.squads[state.clubId];

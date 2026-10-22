@@ -25,6 +25,11 @@
       ]
     },
     {
+      "name": "Demo club screen shows the league table",
+      "path": "/?demo=1",
+      "expectSelector": "#table-list .list-row"
+    },
+    {
       "name": "Health",
       "path": "/health",
       "expectText": "ok"
