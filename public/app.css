@@ -52,7 +52,7 @@ button.chip[aria-expanded="true"] {
 .menu .list-row:first-child { border-top: 0; }
 .menu .list-row[aria-pressed="true"] { background: rgb(var(--raised)); }
 
-.tick { color: rgb(var(--accent)); font-weight: 700; }
+.tick { display: inline-flex; align-items: center; color: rgb(var(--accent)); font-weight: 700; }
 
 /* The pitch is painted on the canvas, inside the drawn pitch panel. */
 .pitch canvas {
@@ -70,6 +70,11 @@ button.chip[aria-expanded="true"] {
 .pitch canvas:active { cursor: grabbing; }
 
 .pitch-skeleton { aspect-ratio: 358 / 300; display: flex; align-items: center; justify-content: center; }
+
+/* The loading chips share the loaded row's three equal columns, 8 px apart,
+   so they end at the 16 px gutter. */
+.formrow .chip { min-width: 0; }
+.chip > .skeleton { width: 100%; max-width: 100%; }
 .sk-pitch { width: 70%; height: 60%; border-radius: 12px; background: rgba(255,255,255,.18); }
 
 /* A list row that opens something. */
@@ -77,8 +82,9 @@ button.chip[aria-expanded="true"] {
 .club-row .badge { flex: none; }
 .club-row.me { background: rgb(var(--raised)); }
 
-.stars { color: rgb(var(--accent)); letter-spacing: 1px; }
-.stars-off { color: rgb(var(--muted)); opacity: .45; }
+.stars { display: inline-flex; align-items: center; gap: 2px; vertical-align: -2px; margin-right: 4px; color: rgb(var(--star)); }
+.stars svg { display: block; }
+.stars .star-off { opacity: .6; }
 
 .wide { width: 100%; margin-top: 12px; }
 
@@ -90,6 +96,10 @@ button.chip[aria-expanded="true"] {
   margin-bottom: 4px;
 }
 .confirm-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* In the dark look the form chips' letters need more contrast. */
+.dark .form i.d { color: rgb(var(--on-accent)); }
+.dark .form i.l { background: rgb(var(--card-r-ink)); }
 
 .play-note {
   margin: 10px 0 0;
@@ -103,6 +113,17 @@ button.chip[aria-expanded="true"] {
 .season-text { margin: 0; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
 
 .state-title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 700; }
+
+/* The load error: one surface card, centred in the upper third of the screen. */
+.error-card {
+  margin-top: 14vh;
+  padding: 24px 16px;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 12px;
+  gap: 8px;
+}
+.error-card .btn-primary { width: auto; min-width: 120px; margin-top: 8px; }
 .state-text { margin: 0; max-width: 32rem; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
 
 /* Loading shapes, in the rows' own height. */

@@ -88,9 +88,23 @@ async function load() {
 const CLUB_PREVIEW = {};
 for (const c of CLUBS) CLUB_PREVIEW[c.id] = clubSummary(1, c).avg;
 
-function stars(n) {
-  return '<span class="stars" aria-label="' + n + ' of 5 stars">' + '★'.repeat(n) + '<span class="stars-off">' + '★'.repeat(5 - n) + '</span></span>';
+const STAR_PATH = 'M12 3.2l2.7 5.47 6.04.88-4.37 4.26 1.03 6.02L12 16.99l-5.4 2.84 1.03-6.02L3.26 9.55l6.04-.88z';
+
+function starIcon(filled) {
+  return '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false" ' +
+    (filled
+      ? 'fill="currentColor" '
+      : 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" ') +
+    'class="star' + (filled ? '' : ' star-off') + '"><path d="' + STAR_PATH + '"/></svg>';
 }
+
+function stars(n) {
+  let icons = '';
+  for (let i = 0; i < 5; i++) icons += starIcon(i < n);
+  return '<span class="stars" role="img" aria-label="' + n + ' of 5 stars">' + icons + '</span>';
+}
+
+const CHECK_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
 
 function renderNew() {
   $('manager-name').value = $('manager-name').value || '';
@@ -99,7 +113,7 @@ function renderNew() {
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
       <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
       <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, ${esc(c.objective)}</small></span>
-      <span class="tick" aria-hidden="true">${c.id === pickedClub ? '✓' : ''}</span>
+      <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`).join('');
 }
 
@@ -350,18 +364,51 @@ function drawPitch() {
 
 function drawToken(player, x, y, r, accent, onAccent, isGk) {
   if (!player) return;
+  const { w, h } = pitchSize();
+  const scale = r / 16;
   ctx.save();
+
+  // The circle carries the position, so a long name never spills off it.
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = isGk ? accent : '#ffffff';
   ctx.fill();
   ctx.fillStyle = isGk ? onAccent : '#16241c';
-  const name = player.name.split(' ').slice(1).join(' ') || player.name;
-  const label = name.length > 8 ? name.slice(0, 7) + '.' : name;
-  ctx.font = '700 ' + Math.max(9, 11 * (r / 16)) + 'px ui-rounded, system-ui, -apple-system, sans-serif';
+  ctx.font = '700 ' + Math.max(9, 10 * scale) + 'px ui-rounded, system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, x, y + 0.5);
+  ctx.fillText(player.pos, x, y + 0.5);
+
+  // The name is a white label on a dark pill, under the token (above it when
+  // the token sits on the bottom edge of the pitch).
+  const name = player.name.split(' ').slice(1).join(' ') || player.name;
+  const fs = Math.min(13, Math.max(10, 12 * scale));
+  ctx.font = '600 ' + fs + 'px ui-rounded, system-ui, -apple-system, sans-serif';
+  const maxW = 82 * scale;
+  let label = name;
+  if (ctx.measureText(label).width > maxW) {
+    while (label.length > 1 && ctx.measureText(label + '…').width > maxW) label = label.slice(0, -1);
+    label += '…';
+  }
+  const textW = ctx.measureText(label).width;
+  const pillW = textW + 10 * scale;
+  const pillH = fs + 7 * scale;
+  let pillY = y + r + 2 * scale;
+  if (pillY + pillH > h - 1) pillY = h - 1 - pillH;
+  const pillX = Math.min(Math.max(x - pillW / 2, 2), w - pillW - 2);
+  const rad = pillH / 2;
+  ctx.beginPath();
+  ctx.moveTo(pillX + rad, pillY);
+  ctx.lineTo(pillX + pillW - rad, pillY);
+  ctx.arc(pillX + pillW - rad, pillY + rad, rad, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(pillX + rad, pillY + pillH);
+  ctx.arc(pillX + rad, pillY + rad, rad, Math.PI / 2, -Math.PI / 2);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(9, 20, 13, 0.82)';
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, pillX + pillW / 2, pillY + pillH / 2 + 0.5);
   ctx.restore();
 }
 

@@ -45,6 +45,8 @@
     --pitch-ink: 21 94 58;    /* green text on a light surface */
     --card-y: 234 179 8;      /* a yellow card */
     --card-r: 200 35 35;      /* a red card */
+    --card-r-ink: 200 35 35;  /* a form chip's L */
+    --star: 180 83 9;         /* a reputation star, dark enough on white */
   }
   .dark {
     --ground: 14 22 17;
@@ -63,6 +65,8 @@
     --pitch-ink: 160 214 178;
     --card-y: 250 204 21;
     --card-r: 239 68 68;
+    --card-r-ink: 185 28 28;
+    --star: 245 158 11;
   }
   /* el.hidden = true hides an element even when a class gives it a display
      (flex, the components below). */
