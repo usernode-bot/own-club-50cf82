@@ -99,9 +99,9 @@ A football management game. A new career starts with your manager name, a mock
 wallet of 1,000 Dummy USDC and a shop of the 72 Division 3 clubs at 100 each;
 then you set the eleven on a pitch diagram, choose formation, mentality,
 pressing and each player's role, and play each of your group's 34 matchdays
-and read the report. A Club tab lists the six club facilities (stadium,
-training ground, academy, shop, food stand, hotel), each level 1 to 5, and
-upgrades them with Club credits. Training, transfers, finances and cups come
+and read the report. A Club tab lists the nine club facilities (stadium,
+training ground, academy, shop, food stand, hotel, toilets, parking, VIP room),
+each level 1 to 5, and upgrades them with Club credits. Training and cups come
 later.
 
 The Coastal League has three tiers and 162 clubs. Division 1 is one group of
@@ -155,9 +155,16 @@ a facility and a target level from the page, checks the balance against the
 stored career, deducts the credits and saves the level in one version-checked
 UPDATE. `state.facilities` holds one integer per facility; `repairCareer` fills a
 missing or invalid one with 1, `startNextSeason` carries them, and the demo has
-its stadium at 4 and training ground at 2. An upgrade changes only what the
-facility says it has; income and costs come with the stadium and facilities
-features. Home shows the
+its stadium at 4, training ground at 2 and toilets at 3. An upgrade changes only
+what the facility says it has. Three of them are the crowd facilities:
+`CROWD_FACILITIES` (toilets, parking, VIP room) bring more fans through the gate
+at home through `CROWD_BONUS` (2% of the fan base for each level above 1, up to
+8% each) and `homeCrowd`, which `playMatchday` uses for a home attendance. The
+bonus adds to the crowd only, never to `state.fans`, and the crowd still cannot
+pass `STADIUM_SEATS` or the division's `FAN_CAP`, so it pays only while the
+ground has empty seats; away matches earn nothing. Home's Home gate row shows
+the extra fans when there are any. Each level above 1 also adds its share of
+`MAINTENANCE` on every matchday, like every other facility. Home shows the
 balance as the second row of the Wallet section, and that section's tag reads
 "Staging mock" rather than "Dummy USDC (staging mock)".
 

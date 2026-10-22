@@ -9,6 +9,7 @@ import {
   leagueTable, divisionClubIds, nextPlacement, repairCareer, clubTier,
   FAN_SEED, GROUND_CAPACITY, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   SPONSOR_FEES, SPONSOR_TARGETS,
+  CROWD_FACILITIES, CROWD_BONUS, crowdBonus, homeCrowd, maintenanceDue, MAINTENANCE,
 } from '../public/engine.js';
 
 const CLUB = GROUPS[8].clubIds[5]; // a Division 3 club
@@ -70,6 +71,59 @@ test('a home gate is the smaller of the fans and the seats, at 5 each', () => {
   playMatchday(packed);
   assert.equal(packed.lastReport.finance.attendance, GROUND_CAPACITY[3]);
   assert.equal(packed.lastReport.finance.gate, GROUND_CAPACITY[3] * TICKET_PRICE);
+});
+
+test('the crowd facilities add fans at home, never past the seats or the fan cap', () => {
+  assert.deepEqual(CROWD_FACILITIES, ['toilets', 'parking', 'vip']);
+  assert.deepEqual(CROWD_BONUS, { 1: 0, 2: 0.02, 3: 0.04, 4: 0.06, 5: 0.08 });
+
+  const state = buildInitialState(CLUB, 'Test manager', 31);
+  assert.equal(crowdBonus(state), 0);
+  const toilets = { ...state, facilities: { ...state.facilities, toilets: 3 } };
+  assert.equal(crowdBonus(toilets), 0.04);
+  const all = { ...state, facilities: { ...state.facilities, toilets: 5, parking: 5, vip: 5 } };
+  assert.equal(crowdBonus(all), 0.24);
+
+  // 2,500 fans in a 5,000-seat ground: Toilets at 3 bring 100 more.
+  const ground = { ...toilets, facilities: { ...toilets.facilities, stadium: 2 } };
+  assert.deepEqual(homeCrowd(ground, 2500, GROUND_CAPACITY[3]), { attendance: 2600, extra: 100 });
+
+  // The seats cap the crowd: a full ground gains nothing.
+  const full = { ...all, facilities: { ...all.facilities, stadium: 1 } };
+  assert.deepEqual(homeCrowd(full, 2000, GROUND_CAPACITY[3]), { attendance: 2000, extra: 0 });
+
+  // So does the division's fan limit.
+  const capped = { ...ground, facilities: { ...ground.facilities, stadium: 5 } };
+  assert.deepEqual(homeCrowd(capped, 4900, GROUND_CAPACITY[3]), { attendance: 5000, extra: 100 });
+});
+
+test('a home gate includes the extra fans the crowd facilities bring', () => {
+  const state = careerBefore(CLUB, 9, 'Home');
+  assert.ok(state, 'the career has a home matchday');
+  state.fans = 900;
+  state.credits = 0;
+  state.facilities = { ...state.facilities, toilets: 3 };
+  playMatchday(state);
+  const f = state.lastReport.finance;
+  assert.equal(f.venue, 'Home');
+  assert.equal(f.attendance, 936);
+  assert.equal(f.gate, 936 * TICKET_PRICE);
+  // The bonus never changes the fan total itself.
+  assert.equal(f.fansBefore, 900);
+
+  // Away from home the crowd stays 0.
+  const away = careerBefore(CLUB, 9, 'Away');
+  away.credits = 0;
+  away.facilities = { ...away.facilities, toilets: 3 };
+  playMatchday(away);
+  assert.equal(away.lastReport.finance.venue, 'Away');
+  assert.equal(away.lastReport.finance.attendance, 0);
+  assert.equal(away.lastReport.finance.gate, 0);
+
+  // And a crowd facility above level 1 is charged its maintenance.
+  const level1 = buildInitialState(CLUB, 'Test manager', 33);
+  assert.equal(maintenanceDue(level1), 0);
+  assert.equal(maintenanceDue({ ...level1, facilities: { ...level1.facilities, toilets: 3 } }), MAINTENANCE[3]);
 });
 
 test('fans move with the result and never go below zero', () => {

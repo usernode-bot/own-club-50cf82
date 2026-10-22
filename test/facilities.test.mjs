@@ -1,4 +1,4 @@
-// The club's facilities: six of them, level 1 to 5, raised one level at a time
+// The club's facilities: nine of them, level 1 to 5, raised one level at a time
 // with Club credits won from matches.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +8,7 @@ import {
   repairCareer, startNextSeason, playMatchday,
 } from '../public/engine.js';
 
-const KEYS = ['stadium', 'training', 'academy', 'shop', 'food', 'hotel'];
+const KEYS = ['stadium', 'training', 'academy', 'shop', 'food', 'hotel', 'toilets', 'parking', 'vip'];
 
 test('a new career starts with every facility at level 1', () => {
   const state = buildInitialState('harbourside', 'Alex Morgan', 7);
@@ -82,12 +82,30 @@ test('the demo club is partly built', () => {
   const demo = buildDemoState(1);
   assert.equal(demo.facilities.stadium, 4);
   assert.equal(demo.facilities.training, 2);
-  for (const key of KEYS.filter((k) => k !== 'stadium' && k !== 'training')) {
+  assert.equal(demo.facilities.toilets, 3);
+  for (const key of KEYS.filter((k) => k !== 'stadium' && k !== 'training' && k !== 'toilets')) {
     assert.equal(demo.facilities[key], 1);
   }
 });
 
-test('there are six facilities, each with a name and five effects', () => {
+test('a career saved before the crowd facilities reads them as level 1', () => {
+  const old = buildInitialState('harbourside', 'Alex Morgan', 7);
+  old.facilities = { stadium: 2, training: 2, academy: 1, shop: 1, food: 1, hotel: 1 };
+  const repaired = repairCareer(old);
+  assert.equal(repaired.facilities.toilets, 1);
+  assert.equal(repaired.facilities.parking, 1);
+  assert.equal(repaired.facilities.vip, 1);
+});
+
+test('a VIP room upgrades for the same cost as any other facility', () => {
+  const state = { ...buildInitialState('harbourside', 'Alex Morgan', 7), credits: 100 };
+  const out = upgradeFacility(state, 'vip', 2);
+  assert.ok(out.state);
+  assert.equal(out.state.facilities.vip, 2);
+  assert.equal(out.state.credits, 0);
+});
+
+test('there are nine facilities, each with a name and five effects', () => {
   assert.equal(FACILITY_MAX_LEVEL, 5);
   assert.deepEqual(FACILITIES.map((f) => f.key), KEYS);
   for (const f of FACILITIES) {
