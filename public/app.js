@@ -11,8 +11,11 @@ import {
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
   repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
-  moneyFields, creditsForResult, GROUND_CAPACITY, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
+  moneyFields, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
+  STAFF_ROLES, staffFields, staffWagesDue, MAINTENANCE, maintenanceDue,
+  wageBill, playerWage, stadiumSeats, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
+  youthFields, SQUAD_MAX,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -503,9 +506,10 @@ function renderClub() {
   });
   $('squad-list').innerHTML = ordered.map((p) => {
     const low = p.fitness < 60;
+    const wage = playerWage(p, clubTier(career));
     return `<li class="list-row row-btn" data-player-id="${esc(p.id)}" tabindex="0" role="button" aria-label="${esc(p.name)}, ${esc(p.pos)}, ${esc(playerStatus(p, starters))}">
       <span class="pos">${esc(p.pos)}</span>
-      <span class="nm">${esc(p.name)}<small>${esc(playerStatus(p, starters))}</small></span>
+      <span class="nm">${esc(p.name)}<small>${esc(playerStatus(p, starters))}, wage ${num(wage)}</small></span>
       <span class="fit"><i style="width:${Math.max(4, p.fitness)}%${low ? ';background:rgb(var(--card-y))' : ''}"></i></span>
       <span class="ovr">${p.overall}</span>
     </li>`;
@@ -574,7 +578,7 @@ function renderClub() {
     $('club-credits').textContent = credits(career.credits || 0);
     $('club-credits-note').textContent = 'Earned from results ('
       + CREDIT_REWARDS.win + ' a win, ' + CREDIT_REWARDS.draw + ' a draw, '
-      + CREDIT_REWARDS.loss + ' a loss) and home gates, less ground upkeep.';
+      + CREDIT_REWARDS.loss + ' a loss) and home gates, less upkeep, maintenance and wages.';
   } else {
     $('wallet-sec').hidden = true;
   }
@@ -582,8 +586,16 @@ function renderClub() {
   // Finances: where the club's credits come from and go. The figures arrive
   // with the career; moneyFields fills any a saved career predates.
   const money = moneyFields(career);
-  const capacity = GROUND_CAPACITY[clubTier(career)] || GROUND_CAPACITY[3];
-  const seated = Math.min(capacity, money.fans);
+  const tier = clubTier(career);
+  const capacity = FAN_CAP[tier] || FAN_CAP[3];
+  const seats = stadiumSeats(career);
+  const seated = Math.min(capacity, money.fans, seats);
+  const upkeepDue = GROUND_UPKEEP;
+  const maintenanceNow = maintenanceDue(career);
+  const wagesNow = wageBill(career);
+  const staffNow = staffWagesDue(career);
+  const squadSize = career.squads[career.clubId].length;
+  const staffCount = STAFF_ROLES.filter((s) => staffFields(career)[s.key]).length;
   const size = divisionClubIds(career).length;
   const sponsor = money.sponsor;
   const sponsorMet = objectiveMet(me.rank, sponsor.target, size);
@@ -598,12 +610,15 @@ function renderClub() {
   $('finance-sec').hidden = false;
   $('finance-season').textContent = 'Season ' + (career.season || 1);
   $('finance-list').innerHTML = `
-    <li class="list-row"><span class="nm">Fans<small>Wins add ${fanRate(FAN_CHANGE.win)}%, draws ${fanRate(FAN_CHANGE.draw)}%, losses take ${fanRate(-FAN_CHANGE.loss)}%.</small></span><span class="price">${num(money.fans)}</span></li>
-    <li class="list-row"><span class="nm">Home gate<small>${num(seated)} of ${num(capacity)} seats at ${TICKET_PRICE} Club credits. Away matches earn no gate.</small></span><span class="price">${num(seated * TICKET_PRICE)}</span></li>
+    <li class="list-row"><span class="nm">Fans<small>Division ${tier} holds at most ${num(capacity)} fans. Wins add ${fanRate(FAN_CHANGE.win)}%, draws ${fanRate(FAN_CHANGE.draw)}%, losses take ${fanRate(-FAN_CHANGE.loss)}%.</small></span><span class="price">${num(money.fans)}</span></li>
+    <li class="list-row"><span class="nm">Home gate<small>${num(seated)} of ${num(seats)} seats at ${TICKET_PRICE} Club credits. Away matches earn no gate.</small></span><span class="price">${num(seated * TICKET_PRICE)}</span></li>
     <li class="list-row"><span class="nm">Gate this season<small>${money.finance.homeGames
       ? money.finance.homeGames + (money.finance.homeGames === 1 ? ' home match' : ' home matches')
       : 'No home match yet this season'}</small></span><span class="price">${num(money.finance.gate)}</span></li>
-    <li class="list-row"><span class="nm">Ground upkeep this season<small>${GROUND_UPKEEP} Club credits every matchday, home or away</small></span><span class="price">${money.finance.upkeep ? '−' + num(money.finance.upkeep) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Ground upkeep this season<small>${upkeepDue} Club credits every matchday, home or away</small></span><span class="price">${money.finance.upkeep ? '−' + num(money.finance.upkeep) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Maintenance this season<small>${num(maintenanceNow)} Club credits every matchday for facilities above level 1</small></span><span class="price">${money.finance.maintenance ? '−' + num(money.finance.maintenance) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Player wages this season<small>${num(wagesNow)} Club credits every matchday for ${squadSize} players</small></span><span class="price">${money.finance.wages ? '−' + num(money.finance.wages) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Staff wages this season<small>${num(staffNow)} Club credits every matchday for ${staffCount} staff</small></span><span class="price">${money.finance.staffWages ? '−' + num(money.finance.staffWages) : '0'}</span></li>
     <li class="list-row"><span class="nm">Sponsor: ${esc(sponsor.name)}<small>${esc(sponsorNote)}</small></span><span class="price">${num(sponsor.fee)}</span></li>`;
 
   // Selling the club: the price comes from the division it is in today, and
@@ -624,6 +639,8 @@ function renderClub() {
   }
   $('save-error').hidden = !saveFailed;
   renderFacilities();
+  renderStaff();
+  renderAcademy();
   if (tab === 'tactics') drawPitch();
 }
 
@@ -635,15 +652,19 @@ let facilityError = null;
 let facilityRetry = null;
 let facilityNew = null;
 
-const creditsNote = () => 'Earned after each match: '
-  + CREDIT_REWARDS.win + ' for a win, ' + CREDIT_REWARDS.draw + ' for a draw, '
-  + CREDIT_REWARDS.loss + ' for a loss.';
+const creditsNote = () => 'Earned from results and home gates, less upkeep, maintenance and wages.';
 
 function facilityRow(f, level) {
   const steps = Array.from({ length: FACILITY_MAX_LEVEL }, (_, i) =>
     `<i class="${i < level ? 'on' : ''}${i === level - 1 && facilityNew === f.key ? ' new' : ''}"></i>`).join('');
   const now = 'Level ' + level + ': ' + f.levels[level - 1] + '.';
   const next = level < FACILITY_MAX_LEVEL ? ' Next: ' + f.levels[level] + '.' : '';
+  const here = MAINTENANCE[level] || 0;
+  const ahead = level < FACILITY_MAX_LEVEL ? MAINTENANCE[level + 1] || 0 : null;
+  const maintenance = here === 0
+    ? 'No maintenance at level 1, ' + num(ahead) + ' at the next level.'
+    : 'Maintenance ' + num(here) + ' every matchday'
+      + (ahead != null ? ', ' + num(ahead) + ' at the next level.' : '.');
   const cost = upgradeCost(level + 1);
   let end;
   if (level >= FACILITY_MAX_LEVEL) {
@@ -655,9 +676,172 @@ function facilityRow(f, level) {
     end = `<span class="need">${cost.toLocaleString('en-US')} needed</span>`;
   }
   return `<li class="list-row fac-row">
-    <span class="nm">${esc(f.name)}<span class="lvl" aria-hidden="true">${steps}</span><small>${esc(now + next)}</small></span>
+    <span class="nm">${esc(f.name)}<span class="lvl" aria-hidden="true">${steps}</span><small>${esc(now + next + ' ' + maintenance)}</small></span>
     ${end}
   </li>`;
+}
+
+// ── Club: staff and the academy ──────────────────────────────────────────
+// Which staff change or promotion is in flight, and which one failed.
+let staffBusy = null;
+let staffBusyAction = 'hire';
+let staffError = null;
+let staffRetry = null;
+let youthBusy = null;
+let youthError = null;
+let youthRetry = null;
+
+function staffRow(role) {
+  const staff = staffFields(career);
+  const hired = staff[role.key];
+  const note = hired
+    ? role.wage.toLocaleString('en-US') + ' Club credits every matchday.'
+    : 'Not hired. ' + role.wage.toLocaleString('en-US') + ' Club credits every matchday once hired.';
+  const label = hired ? role.name + ': ' + hired.name : role.name;
+  let end;
+  if (staffBusy === role.key) {
+    end = `<button class="btn-secondary small" type="button" disabled>${staffBusyAction === 'hire' ? 'Hiring...' : 'Releasing...'}</button>`;
+  } else if (hired) {
+    end = `<button class="btn-secondary small" type="button" data-staff="${esc(role.key)}" data-staff-action="release">Release</button>`;
+  } else if ((career.credits || 0) >= role.fee) {
+    end = `<button class="btn-secondary small" type="button" data-staff="${esc(role.key)}" data-staff-action="hire">Hire for ${role.fee.toLocaleString('en-US')}</button>`;
+  } else {
+    end = `<span class="need">${role.fee.toLocaleString('en-US')} needed</span>`;
+  }
+  return `<li class="list-row">
+    <span class="nm">${esc(label)}<small>${esc(note)}</small></span>
+    ${end}
+  </li>`;
+}
+
+function renderStaff() {
+  $('staff-list').innerHTML = STAFF_ROLES.map(staffRow).join('');
+  const failed = STAFF_ROLES.find((s) => s.key === staffError);
+  $('staff-error').hidden = !failed;
+  if (failed) {
+    $('staff-error-text').textContent = 'The change to your ' + failed.name.toLowerCase()
+      + ' did not go through, and no Club credits were spent. Your staff are unchanged.';
+  }
+}
+
+function youthRow(p) {
+  const joined = p.joined || {};
+  const when = joined.season != null && joined.season !== (career.season || 1)
+    ? 'joined last season'
+    : joined.matchday === career.matchday
+      ? 'new this matchday'
+      : joined.matchday != null ? 'joined on matchday ' + joined.matchday : '';
+  const small = 'Age ' + p.age + (when ? ', ' + when : '');
+  const full = career.squads[career.clubId].length >= SQUAD_MAX;
+  const end = youthBusy === p.id
+    ? '<button class="btn-secondary small" type="button" disabled>Promoting...</button>'
+    : full
+      ? '<span class="need">Squad full</span>'
+      : `<button class="btn-secondary small" type="button" data-youth="${esc(p.id)}">Promote</button>`;
+  return `<li class="list-row">
+    <span class="pos">${esc(p.pos)}</span>
+    <span class="nm">${esc(p.name)}<small>${esc(small)}</small></span>
+    <span class="ovr">${p.overall}</span>
+    ${end}
+  </li>`;
+}
+
+function renderAcademy() {
+  const youth = youthFields(career);
+  $('youth-places').textContent = youth.length + ' of ' + academyCapacity(career) + ' places';
+  if (youth.length) {
+    $('youth-list').innerHTML = youth.map(youthRow).join('');
+    $('youth-empty').hidden = true;
+  } else {
+    $('youth-list').innerHTML = '';
+    $('youth-empty').hidden = false;
+    const intake = ACADEMY_INTAKE[facilityLevels(career).academy] || 1;
+    $('youth-empty').textContent = 'No young players yet. The academy takes in ' + intake
+      + (intake === 1 ? ' after every matchday.' : ' after every matchday.');
+  }
+  $('youth-error').hidden = !youthError;
+  if (youthError) {
+    $('youth-error-text').textContent = 'The promotion did not go through, and your squad is unchanged.';
+  }
+}
+
+function changeStaff(key, action) {
+  if (!career || staffBusy) return saveChain;
+  staffBusy = key;
+  staffBusyAction = action;
+  staffRetry = { key, action };
+  staffError = null;
+  renderStaff();
+  saveChain = saveChain.then(() => changeStaffNow(key, action), () => changeStaffNow(key, action));
+  return saveChain;
+}
+
+async function changeStaffNow(key, action) {
+  try {
+    const { status, data } = await api('POST', { role: key, action }, '/api/career/staff');
+    staffBusy = null;
+    if (status === 200 && data && data.career && repairCareer(data.career)) {
+      career = repairCareer(data.career);
+      version = data.version;
+      staffError = null;
+      render();
+      return;
+    }
+    if (status === 401) {
+      renderStaff();
+      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: action === 'hire' ? 'hire staff' : 'release staff' });
+      return;
+    }
+    if (status === 409) {
+      renderStaff();
+      await refresh();
+      return;
+    }
+    throw new Error('HTTP ' + status);
+  } catch (err) {
+    staffBusy = null;
+    staffError = key;
+    renderStaff();
+  }
+}
+
+function promote(id) {
+  if (!career || youthBusy) return saveChain;
+  youthBusy = id;
+  youthRetry = id;
+  youthError = null;
+  renderAcademy();
+  saveChain = saveChain.then(() => promoteNow(id), () => promoteNow(id));
+  return saveChain;
+}
+
+async function promoteNow(id) {
+  try {
+    const { status, data } = await api('POST', { id }, '/api/career/youth');
+    youthBusy = null;
+    if (status === 200 && data && data.career && repairCareer(data.career)) {
+      career = repairCareer(data.career);
+      version = data.version;
+      youthError = null;
+      render();
+      return;
+    }
+    if (status === 401) {
+      renderAcademy();
+      if (window.usernode && window.usernode.askForAccount) window.usernode.askForAccount({ action: 'promote a young player' });
+      return;
+    }
+    if (status === 409) {
+      renderAcademy();
+      await refresh();
+      return;
+    }
+    throw new Error('HTTP ' + status);
+  } catch (err) {
+    youthBusy = null;
+    youthError = id;
+    renderAcademy();
+  }
 }
 
 function renderFacilities() {
@@ -1203,10 +1387,19 @@ function renderReport() {
     const upkeepNote = fin.upkeep < fin.upkeepDue
       ? fin.upkeepDue + ' due; the balance never goes below 0'
       : '';
+    const short = (paid, due, name) => (paid < due
+      ? name + ' ' + num(due) + ' due; the balance never goes below 0' : '');
+    const line = (label, paid, due) => {
+      const note = short(paid, due, label);
+      return `<li class="list-row"><span class="nm">${label}${note ? '<small>' + note + '</small>' : ''}</span><span class="price">${paid ? '−' + num(paid) : '0'}</span></li>`;
+    };
     $('report-finance').innerHTML = `
       <li class="list-row"><span class="nm">Result<small>${fin.result === 'win' ? 'A win' : fin.result === 'loss' ? 'A loss' : 'A draw'}</small></span><span class="price">${signed(resultCredits)}</span></li>
       <li class="list-row"><span class="nm">Gate<small>${gateNote}</small></span><span class="price">${signed(fin.gate)}</span></li>
       <li class="list-row"><span class="nm">Ground upkeep${upkeepNote ? '<small>' + upkeepNote + '</small>' : ''}</span><span class="price">${fin.upkeep ? '−' + num(fin.upkeep) : '0'}</span></li>
+      ${fin.maintenanceDue != null ? line('Maintenance', fin.maintenance, fin.maintenanceDue) : ''}
+      ${fin.wagesDue != null ? line('Player wages', fin.wages, fin.wagesDue) : ''}
+      ${fin.staffDue != null ? line('Staff wages', fin.staffWages, fin.staffDue) : ''}
       <li class="list-row net"><span class="nm">Net</span><span class="price">${signed(fin.net)}</span></li>
       <li class="list-row"><span class="nm">Fans<small>Now ${num(fin.fansAfter)}</small></span><span class="price">${signed(fin.fansAfter - fin.fansBefore)}</span></li>`;
   }
@@ -1389,6 +1582,20 @@ $('facility-list').addEventListener('click', (e) => {
 });
 $('facility-retry').addEventListener('click', () => {
   if (facilityRetry) upgrade(facilityRetry);
+});
+$('staff-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-staff]');
+  if (btn && !btn.disabled) changeStaff(btn.dataset.staff, btn.dataset.staffAction);
+});
+$('staff-retry').addEventListener('click', () => {
+  if (staffRetry) changeStaff(staffRetry.key, staffRetry.action);
+});
+$('youth-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-youth]');
+  if (btn && !btn.disabled) promote(btn.dataset.youth);
+});
+$('youth-retry').addEventListener('click', () => {
+  if (youthRetry) promote(youthRetry);
 });
 function openFromEvent(e) {
   const row = e.target.closest('[data-open-report]');

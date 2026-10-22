@@ -325,7 +325,7 @@
         <!-- Club: the facilities, and what the next level of each costs. -->
         <div class="panel" id="tab-club" hidden>
           <div class="sec">
-            <div class="section-label"><span>Club credits</span><span>Spent on upgrades</span></div>
+            <div class="section-label"><span>Club credits</span><span>Spent on upgrades and staff</span></div>
             <ul class="list">
               <li class="list-row"><span class="nm"><span class="bal" id="club-tab-credits"></span><small id="club-tab-credits-note"></small></span></li>
             </ul>
@@ -336,6 +336,25 @@
             <div class="state-error" id="facility-error" hidden>
               <p class="state-text" id="facility-error-text"></p>
               <button class="btn-secondary" id="facility-retry" type="button">Retry</button>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="section-label"><span>Staff</span><span>Paid every matchday</span></div>
+            <ul class="list" id="staff-list"></ul>
+            <p class="state-text">Releasing someone stops their wage. Hiring them again costs the fee again.</p>
+            <div class="state-error" id="staff-error" hidden>
+              <p class="state-text" id="staff-error-text"></p>
+              <button class="btn-secondary" id="staff-retry" type="button">Retry</button>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="section-label"><span>Academy</span><span id="youth-places"></span></div>
+            <ul class="list" id="youth-list"></ul>
+            <p class="state-text" id="youth-empty" hidden></p>
+            <p class="state-text">A promoted player joins your squad on a wage. When the academy is full, the one who has waited longest leaves.</p>
+            <div class="state-error" id="youth-error" hidden>
+              <p class="state-text" id="youth-error-text"></p>
+              <button class="btn-secondary" id="youth-retry" type="button">Retry</button>
             </div>
           </div>
         </div>

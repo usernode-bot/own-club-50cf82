@@ -252,12 +252,186 @@ export function creditsForResult(goalsFor, goalsAgainst) {
 // by the division and carry across seasons; the ground's capacity sets how
 // many of them can buy a seat.
 export const FAN_SEED = { 1: 15000, 2: 6000, 3: 2500 };
-export const GROUND_CAPACITY = { 1: 30000, 2: 12000, 3: 5000 };
+// The most fans a division holds; a stadium seats no more than that, and a
+// club never grows past it however well it plays.
+export const FAN_CAP = { 1: 30000, 2: 12000, 3: 5000 };
+export const GROUND_CAPACITY = FAN_CAP;
 export const TICKET_PRICE = 5;
 export const FAN_CHANGE = { win: 0.05, draw: 0.02, loss: -0.03 };
-// Flat for now: when stadium and facility buildings arrive, upkeep scales with
-// what has been built.
+// Flat ground upkeep; facilities above level 1 add maintenance on top.
 export const GROUND_UPKEEP = 250;
+
+// The stadium's seats, matching the facility text. A home gate is the smaller
+// of the fans, these seats and the division's fan limit.
+export const STADIUM_SEATS = [2000, 5000, 10000, 20000, 40000];
+
+export function stadiumSeats(state) {
+  return STADIUM_SEATS[facilityLevels(state).stadium - 1];
+}
+
+// What every facility above level 1 costs to run each matchday.
+export const MAINTENANCE = { 1: 0, 2: 150, 3: 500, 4: 1500, 5: 4000 };
+
+export function maintenanceDue(state) {
+  const levels = facilityLevels(state);
+  return FACILITIES.reduce((sum, f) => sum + (MAINTENANCE[levels[f.key]] || 0), 0);
+}
+
+// Every player earns a wage each matchday, worked out from the squad and the
+// division rather than stored, so promotion makes the squad dearer.
+export const WAGE_RATE = { 1: 45, 2: 24, 3: 14 };
+
+export function playerWage(player, tier) {
+  const rate = WAGE_RATE[tier] || WAGE_RATE[3];
+  return rate * Math.max(5, (player && player.overall ? player.overall : 0) - 40);
+}
+
+export function wageBill(state) {
+  const squad = state && state.squads && state.squads[state.clubId];
+  const tier = clubTier(state);
+  return Array.isArray(squad) ? squad.reduce((sum, p) => sum + playerWage(p, tier), 0) : 0;
+}
+
+// The staff a club can hire. Each has a one-off fee and a wage every
+// matchday until released; there is one of each.
+export const STAFF_ROLES = [
+  { key: 'coach', name: 'Coach', fee: 2000, wage: 300 },
+  { key: 'scout', name: 'Scout', fee: 1000, wage: 150 },
+  { key: 'doctor', name: 'Doctor', fee: 1000, wage: 150 },
+  { key: 'physio', name: 'Physio', fee: 800, wage: 120 },
+  { key: 'club', name: 'Club staff', fee: 500, wage: 80 },
+];
+
+export const STAFF_BY_KEY = Object.fromEntries(STAFF_ROLES.map((s) => [s.key, s]));
+
+function validStaffMember(m) {
+  return !!m && typeof m === 'object' && !Array.isArray(m)
+    && typeof m.name === 'string' && m.name
+    && Number.isInteger(m.season) && Number.isInteger(m.matchday);
+}
+
+// Each staff role, hired or null, filling anything unusable with null.
+export function staffFields(state) {
+  const given = state && state.staff && typeof state.staff === 'object' && !Array.isArray(state.staff)
+    ? state.staff : {};
+  const out = {};
+  for (const s of STAFF_ROLES) out[s.key] = validStaffMember(given[s.key]) ? given[s.key] : null;
+  return out;
+}
+
+export function staffWagesDue(state) {
+  const staff = staffFields(state);
+  return STAFF_ROLES.reduce((sum, s) => sum + (staff[s.key] ? s.wage : 0), 0);
+}
+
+// Hire a role for its fee, or release it (no refund). Never mutates its input.
+export function hireStaff(state, key) {
+  const role = STAFF_BY_KEY[key];
+  if (!role) return { error: 'role' };
+  const staff = staffFields(state);
+  if (staff[key]) return { error: 'hired' };
+  const held = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
+  if (held < role.fee) return { error: 'credits' };
+  const h = hash(state.seed, 'staff', key, state.season || 1, state.matchday || 0);
+  const name = FIRST_NAMES[h % FIRST_NAMES.length] + ' ' + LAST_NAMES[(h >>> 8) % LAST_NAMES.length];
+  return {
+    state: {
+      ...state,
+      credits: held - role.fee,
+      staff: { ...staff, [key]: { name, season: state.season || 1, matchday: state.matchday || 0 } },
+    },
+  };
+}
+
+export function releaseStaff(state, key) {
+  if (!STAFF_BY_KEY[key]) return { error: 'role' };
+  const staff = staffFields(state);
+  if (!staff[key]) return { error: 'not_hired' };
+  return { state: { ...state, staff: { ...staff, [key]: null } } };
+}
+
+// The academy: young players it took in, newest first, up to what the
+// academy facility says it can coach.
+export const ACADEMY_CAPACITY = [10, 20, 30, 45, 60];
+export const ACADEMY_INTAKE = { 1: 1, 2: 1, 3: 2, 4: 2, 5: 3 };
+export const SQUAD_MAX = 25;
+
+export function academyCapacity(state) {
+  return ACADEMY_CAPACITY[facilityLevels(state).academy - 1];
+}
+
+// Today's prospects, keeping only the entries today's screen can read.
+export function youthFields(state) {
+  const list = state && Array.isArray(state.youth) ? state.youth : [];
+  const good = list.filter((p) => p && typeof p.id === 'string' && POS_GROUP[p.pos]
+    && Number.isInteger(p.overall) && p.attrs && typeof p.attrs === 'object');
+  return good.slice(0, academyCapacity(state));
+}
+
+// The players the academy takes in after a matchday: more and better at a
+// higher level, the longest waiting leaving when it is full.
+export function academyIntake(state, matchday) {
+  const level = facilityLevels(state).academy;
+  const season = state.season || 1;
+  const rng = mulberry32(hash(state.seed, 'youth', season, matchday));
+  const cap = ACADEMY_CAPACITY[level - 1];
+  const used = new Set([
+    ...(state.squads[state.clubId] || []).map((p) => p.name),
+    ...(Array.isArray(state.youth) ? state.youth.map((p) => p.name) : []),
+  ]);
+  const fresh = [];
+  const count = ACADEMY_INTAKE[level] || 1;
+  for (let k = 0; k < count; k++) {
+    const pos = SQUAD_SHAPE[Math.floor(rng() * SQUAD_SHAPE.length) % SQUAD_SHAPE.length];
+    const centre = 38 + 4 * level;
+    const attrs = rollAttrs(rng, pos, centre - 8, centre + 8);
+    let name;
+    do {
+      name = pick(rng, FIRST_NAMES) + ' ' + pick(rng, LAST_NAMES);
+    } while (used.has(name));
+    used.add(name);
+    fresh.push({
+      id: 'y' + season + '-' + matchday + '-' + k,
+      name,
+      pos,
+      age: 16 + Math.floor(rng() * 2),
+      attrs,
+      overall: overallOf(attrs, pos),
+      fitness: 100,
+      morale: 60,
+      injury: 0,
+      goals: 0,
+      assists: 0,
+      apps: 0,
+      yellow: 0,
+      red: 0,
+      captain: false,
+      joined: { season, matchday },
+    });
+  }
+  const kept = (Array.isArray(state.youth) ? state.youth : []).slice();
+  state.youth = fresh.concat(kept).slice(0, cap);
+  return state;
+}
+
+// Promote a prospect into the senior squad. Never mutates its input.
+export function promoteYouth(state, id) {
+  const youth = Array.isArray(state.youth) ? state.youth : [];
+  const player = youth.find((p) => p && p.id === id);
+  if (!player) return { error: 'youth' };
+  const squad = (state.squads && state.squads[state.clubId]) || [];
+  if (squad.length >= SQUAD_MAX) return { error: 'squad_full' };
+  const player2 = { ...player, captain: false };
+  delete player2.joined;
+  return {
+    state: {
+      ...state,
+      squads: { ...state.squads, [state.clubId]: squad.concat(player2) },
+      youth: youth.filter((p) => p !== player),
+      roles: { ...(state.roles || {}), [id]: defaultRole(player.pos) },
+    },
+  };
+}
 
 // One sponsor a season, paid at the rollover when its target was met. The fee
 // follows the division, about a quarter of a season's gate at its starting
@@ -296,7 +470,8 @@ export function moneyFields(state) {
   const tier = clubTier(state);
   const season = (state && state.season) || 1;
   const credits = Number.isInteger(state.credits) && state.credits >= 0 ? state.credits : 0;
-  const fans = Number.isInteger(state.fans) && state.fans >= 0 ? state.fans : FAN_SEED[tier];
+  const givenFans = Number.isInteger(state.fans) && state.fans >= 0 ? state.fans : FAN_SEED[tier];
+  const fans = Math.min(givenFans, FAN_CAP[tier] || FAN_CAP[3]);
   const sponsor = validSponsor(state.sponsor) ? state.sponsor : sponsorFor(state.seed, season, tier);
   const lastSponsor = validSponsor(state.lastSponsor) ? state.lastSponsor : null;
   const f = state.finance;
@@ -305,17 +480,27 @@ export function moneyFields(state) {
     && Number.isInteger(f.gate) && f.gate >= 0
     && Number.isInteger(f.upkeep) && f.upkeep >= 0
     && Number.isInteger(f.homeGames) && f.homeGames >= 0;
+  const zeroTotal = (k) => (Number.isInteger(f[k]) && f[k] >= 0 ? f[k] : 0);
   const finance = financeOk
-    ? { season: f.season, gate: f.gate, upkeep: f.upkeep, homeGames: f.homeGames }
-    : { season, gate: 0, upkeep: 0, homeGames: 0 };
+    ? {
+      season: f.season,
+      gate: f.gate,
+      upkeep: f.upkeep,
+      homeGames: f.homeGames,
+      maintenance: zeroTotal('maintenance'),
+      wages: zeroTotal('wages'),
+      staffWages: zeroTotal('staffWages'),
+    }
+    : { season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 };
   return { credits, fans, sponsor, lastSponsor, finance };
 }
 
-export function fanChange(fans, goalsFor, goalsAgainst) {
+export function fanChange(fans, goalsFor, goalsAgainst, cap) {
   const rate = goalsFor > goalsAgainst ? FAN_CHANGE.win
     : goalsFor < goalsAgainst ? FAN_CHANGE.loss
       : FAN_CHANGE.draw;
-  return Math.max(0, Math.round(fans * (1 + rate)));
+  const next = Math.max(0, Math.round(fans * (1 + rate)));
+  return Number.isInteger(cap) ? Math.min(cap, next) : next;
 }
 
 // The club's facilities, each from level 1 to level 5. Upgrading one changes
@@ -551,8 +736,9 @@ function attrRange(rep, division = 1) {
   return { lo: centre - 11, hi: centre + 13 };
 }
 
-function makePlayer(rng, pos, rep, n, division) {
-  const { lo, hi } = attrRange(rep, division);
+// Five attribute rolls in a fixed order, then the same position adjustments.
+// The draw order is part of a seed: changing it changes every squad.
+function rollAttrs(rng, pos, lo, hi) {
   const roll = () => Math.round(lo + rng() * (hi - lo));
   const g = POS_GROUP[pos];
   const attrs = {
@@ -561,6 +747,12 @@ function makePlayer(rng, pos, rep, n, division) {
   if (g === 'GK') { attrs.gk = Math.min(92, attrs.gk + 9); attrs.sho = Math.max(20, attrs.sho - 18); }
   if (g === 'DF') { attrs.def = Math.min(92, attrs.def + 6); attrs.sho = Math.max(20, attrs.sho - 12); }
   if (g === 'FW') { attrs.sho = Math.min(92, attrs.sho + 7); attrs.def = Math.max(20, attrs.def - 10); }
+  return attrs;
+}
+
+function makePlayer(rng, pos, rep, n, division) {
+  const { lo, hi } = attrRange(rep, division);
+  const attrs = rollAttrs(rng, pos, lo, hi);
   const overall = overallOf(attrs, pos);
   return {
     id: 'p' + n,
@@ -795,6 +987,9 @@ export function repairCareer(state) {
     ...moneyFields(state),
     // A career saved before facilities existed has every one at level 1.
     facilities: facilityLevels(state),
+    // Staff, and the academy's prospects, for a career saved before them.
+    staff: staffFields(state),
+    youth: youthFields(state),
   };
   if (typeof state.nextMatchAt === 'string' && !Number.isNaN(Date.parse(state.nextMatchAt))) {
     out.nextMatchAt = state.nextMatchAt;
@@ -1328,25 +1523,40 @@ export function playMatchday(state) {
   const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
   state.lastReport = own;
   // Only the manager's own fixture earns or pays Club credits, from the
-  // manager's side: the result, the home gate, less the ground's upkeep.
+  // manager's side: the result, the home gate, less ground upkeep,
+  // maintenance, player wages and staff wages, each paid only as far as the
+  // balance reaches.
   if (own) {
     const atHome = own.home.id === state.clubId;
     const goalsFor = atHome ? own.homeGoals : own.awayGoals;
     const goalsAgainst = atHome ? own.awayGoals : own.homeGoals;
+    const tier = clubTier(state);
+    const fanCap = FAN_CAP[tier] || FAN_CAP[3];
     const m = moneyFields(state);
     const result = creditsForResult(goalsFor, goalsAgainst);
-    const attendance = atHome ? Math.min(GROUND_CAPACITY[clubTier(state)], m.fans) : 0;
+    const seats = stadiumSeats(state);
+    const attendance = atHome ? Math.min(m.fans, seats, fanCap) : 0;
     const gate = attendance * TICKET_PRICE;
-    const before = m.credits + result + gate;
-    const upkeep = Math.min(GROUND_UPKEEP, before);
-    state.credits = before - upkeep;
-    state.fans = fanChange(m.fans, goalsFor, goalsAgainst);
+    let left = m.credits + result + gate;
+    const pay = (due) => { const paid = Math.min(due, left); left -= paid; return paid; };
+    const upkeep = pay(GROUND_UPKEEP);
+    const maintenanceDueNow = maintenanceDue(state);
+    const maintenance = pay(maintenanceDueNow);
+    const wagesDue = wageBill(state);
+    const wages = pay(wagesDue);
+    const staffDue = staffWagesDue(state);
+    const staffWages = pay(staffDue);
+    state.credits = left;
+    state.fans = fanChange(m.fans, goalsFor, goalsAgainst, fanCap);
     state.sponsor = m.sponsor;
     state.lastSponsor = m.lastSponsor;
     state.finance = {
       ...m.finance,
       gate: m.finance.gate + gate,
       upkeep: m.finance.upkeep + upkeep,
+      maintenance: m.finance.maintenance + maintenance,
+      wages: m.finance.wages + wages,
+      staffWages: m.finance.staffWages + staffWages,
       homeGames: m.finance.homeGames + (atHome ? 1 : 0),
     };
     own.finance = {
@@ -1355,12 +1565,22 @@ export function playMatchday(state) {
       attendance,
       price: TICKET_PRICE,
       gate,
+      seats,
+      fanCap,
       upkeep,
       upkeepDue: GROUND_UPKEEP,
-      net: result + gate - upkeep,
+      maintenance,
+      maintenanceDue: maintenanceDueNow,
+      wages,
+      wagesDue,
+      staffWages,
+      staffDue,
+      net: result + gate - upkeep - maintenance - wages - staffWages,
       fansBefore: m.fans,
       fansAfter: state.fans,
     };
+    // The academy takes in young players after every matchday.
+    academyIntake(state, md + 1);
   }
   state.matchday = md + 1;
   state.finished = state.matchday >= state.fixtures.length;
@@ -1581,8 +1801,10 @@ export function buildInitialState(clubId, managerName, seed) {
     fans: FAN_SEED[tier],
     sponsor: sponsorFor(seed, 1, tier),
     lastSponsor: null,
-    finance: { season: 1, gate: 0, upkeep: 0, homeGames: 0 },
+    finance: { season: 1, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 },
     facilities: facilityLevels({}),
+    staff: staffFields({}),
+    youth: [],
   };
   state.lineup = autoLineup(squads[clubId], state.tactics.formation, state.roles);
   return state;
@@ -1790,8 +2012,11 @@ export function startNextSeason(state) {
     // The money fields the finished season leaves: the sponsor fee if its
     // target was met, the fans carried over, and a fresh season's totals.
     ...seasonEndMoney(state),
-    // The facilities stay with the club into the next season.
+    // The facilities stay with the club into the next season, and so do the
+    // staff and the academy's prospects.
     facilities: facilityLevels(state),
+    staff: staffFields(state),
+    youth: youthFields(state),
   };
   // The manager's players keep the roles they were given.
   for (const p of next.squads[next.clubId]) {
@@ -1822,12 +2047,14 @@ export function seasonEndMoney(state) {
   const rank = me ? me.rank : size;
   const met = objectiveMet(rank, m.sponsor.target, size);
   const next = season + 1;
+  const nextTier = nextPlacement(state).tier;
+  const fanCap = FAN_CAP[nextTier] || FAN_CAP[3];
   return {
     credits: m.credits + (met ? m.sponsor.fee : 0),
-    fans: m.fans,
-    sponsor: sponsorFor(state.seed, next, nextPlacement(state).tier),
+    fans: Math.min(m.fans, fanCap),
+    sponsor: sponsorFor(state.seed, next, nextTier),
     lastSponsor: { ...m.sponsor, paid: met },
-    finance: { season: next, gate: 0, upkeep: 0, homeGames: 0 },
+    finance: { season: next, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0 },
   };
 }
 
@@ -1836,6 +2063,15 @@ export function seasonEndMoney(state) {
 // already filled in.
 export function buildDemoState(seed) {
   const state = buildInitialState('harbourside', 'Demo Manager', seed);
+  // A partly built club, with a coach and a physio, so the money lines and
+  // the academy have something from the first matchday on.
+  state.facilities = { ...facilityLevels(state), stadium: 4, training: 2 };
+  state.staff = staffFields({
+    staff: {
+      coach: { name: 'Theo Marsh', season: 1, matchday: 0 },
+      physio: { name: 'Pia Lund', season: 1, matchday: 0 },
+    },
+  });
   for (let i = 0; i < 17; i++) playMatchday(state);
   // The demo shows exactly one injured player and one booked player.
   const squad = state.squads.harbourside;
@@ -1851,8 +2087,6 @@ export function buildDemoState(seed) {
   // The demo bought its club, so the Wallet section has something to show.
   state.wallet = { currency: 'Dummy USDC', balance: 900 };
   state.purchase = { clubId: 'harbourside', price: 100, at: '2026-01-15T12:00:00.000Z', demo: true };
-  // A partly built club, so the Club tab shows a row it cannot yet afford.
-  state.facilities = { ...facilityLevels(state), stadium: 4, training: 2 };
   return state;
 }
 
