@@ -236,7 +236,7 @@ button.chip[aria-expanded="true"] {
 .ico.own { color: rgb(var(--fg)); }
 .min, .big, .rt, .ovr, .tbl, .stat .h { font-variant-numeric: tabular-nums; }
 
-/* ── The four club tabs ────────────────────────────────────────────────── */
+/* ── The five club tabs ────────────────────────────────────────────────── */
 
 /* The tab bar is a bar along the bottom of a phone: fixed, above the
    safe-area inset, with the panels padded to match. */
@@ -302,6 +302,31 @@ button.chip[aria-expanded="true"] {
 .taken-row { cursor: default; }
 .taken-row .nm, .taken-row .badge { opacity: .6; }
 .taken { font-weight: 600; color: rgb(var(--muted)); white-space: nowrap; }
+
+/* The Club tab: each facility's five-step level bar, and its upgrade. The
+   filled steps use the Squad list's fitness green; the step that just filled
+   flashes amber once, unless the device asks for reduced motion. */
+.fac-row { flex-wrap: wrap; }
+.fac-row .nm { min-width: 0; }
+.lvl { display: flex; gap: 3px; margin: 6px 0 2px; }
+.lvl i { width: 18px; height: 6px; border-radius: 3px; background: rgb(var(--raised)); }
+.lvl i.on { background: rgb(var(--pitch-ink)); }
+.lvl i.new { animation: lvl-fill .6s ease-out; }
+@keyframes lvl-fill {
+  from { background: rgb(var(--accent)); }
+  to { background: rgb(var(--pitch-ink)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lvl i.new { animation: none; }
+}
+.need {
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--muted));
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.btn-secondary.small { flex: none; min-height: 44px; padding: 0 12px; font-size: 14px; white-space: nowrap; }
 
 /* From a tablet up the same tabs are a sidebar on the left. */
 @media (min-width: 768px) {
