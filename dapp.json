@@ -37,7 +37,7 @@
     },
     {
       "name": "Demo club shows Club credits",
-      "path": "/?demo=1",
+      "path": "/?demo=1#finance",
       "expectText": "Club credits"
     },
     {
@@ -47,13 +47,38 @@
     },
     {
       "name": "Demo club shows its finances",
-      "path": "/?demo=1",
+      "path": "/?demo=1#finance",
       "expectText": "Ground upkeep this season"
     },
     {
       "name": "Demo club shows home crowd sales",
-      "path": "/?demo=1",
+      "path": "/?demo=1#finance",
       "expectText": "Shop this season"
+    },
+    {
+      "name": "Demo finance tab shows the matchday history",
+      "path": "/?demo=1#finance",
+      "expectText": "Matchday history",
+      "expectSelector": "#finance-history .list-row",
+      "visual": true,
+      "impact": [
+        "public/**"
+      ]
+    },
+    {
+      "name": "Demo finance tab shows income and expenses",
+      "path": "/?demo=1#finance",
+      "expectText": "Expenses this season"
+    },
+    {
+      "name": "Phone bar has More",
+      "path": "/?demo=1",
+      "expectSelector": "#tab-more[aria-haspopup]"
+    },
+    {
+      "name": "More menu lists Finance",
+      "path": "/?demo=1",
+      "expectSelector": "#more-menu [data-tab=\"finance\"]"
     },
     {
       "name": "Demo tactics tab",
@@ -85,7 +110,7 @@
     },
     {
       "name": "Demo club shows its wages",
-      "path": "/?demo=1",
+      "path": "/?demo=1#finance",
       "expectText": "Wages this season"
     },
     {

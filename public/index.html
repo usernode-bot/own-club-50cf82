@@ -206,8 +206,8 @@
       </div>
     </div>
 
-    <!-- The club screen: five tabs, a bottom bar on a phone and a sidebar
-         on a wider window. -->
+    <!-- The club screen: seven tabs, a bottom bar on a phone (four tabs and
+         More) and a sidebar on a wider window. -->
     <div class="app club-app" id="view-club" hidden>
       <nav class="tabnav" id="tabnav" aria-label="Club">
         <div class="tab-club" id="tab-club-head"><span class="badge" id="tab-badge"></span><span id="tab-name"></span></div>
@@ -223,12 +223,31 @@
         <a class="tab" href="#competition" data-tab="competition">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 20h8"/></svg><span>Competition</span>
         </a>
-        <a class="tab" href="#club" data-tab="club">
+        <a class="tab tab-overflow" href="#club" data-tab="club">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v6c0 2.2 4 4 9 4s9-1.8 9-4V9"/></svg><span>Club</span>
         </a>
-        <a class="tab" href="#transfers" data-tab="transfers">
+        <a class="tab tab-overflow" href="#finance" data-tab="finance">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 12h.01M17 12h.01"/></svg><span>Finance</span>
+        </a>
+        <a class="tab tab-overflow" href="#transfers" data-tab="transfers">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15l-3-3M20 16H5l3 3"/></svg><span>Transfers</span>
         </a>
+        <button class="tab tab-more" id="tab-more" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="more-menu">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><span>More</span>
+        </button>
+        <div class="more-menu" id="more-menu" hidden>
+          <ul class="list more-list">
+            <li><a class="more-item" href="#club" data-tab="club">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v6c0 2.2 4 4 9 4s9-1.8 9-4V9"/></svg><span>Club</span>
+            </a></li>
+            <li><a class="more-item" href="#finance" data-tab="finance">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 12h.01M17 12h.01"/></svg><span>Finance</span>
+            </a></li>
+            <li><a class="more-item" href="#transfers" data-tab="transfers">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15l-3-3M20 16H5l3 3"/></svg><span>Transfers</span>
+            </a></li>
+          </ul>
+        </div>
       </nav>
 
       <div class="club-main">
@@ -268,19 +287,6 @@
           <div class="sec">
             <div class="section-label"><span>Board objective</span><span id="objective-season"></span></div>
             <ul class="list"><li class="list-row"><span class="nm" id="objective-text"></span></li></ul>
-          </div>
-
-          <div class="sec" id="wallet-sec" hidden>
-            <div class="section-label"><span>Wallet</span><span>Staging mock</span></div>
-            <ul class="list">
-              <li class="list-row"><span class="nm"><span class="bal" id="club-wallet"></span><small id="club-wallet-note"></small></span></li>
-              <li class="list-row"><span class="nm"><span class="bal" id="club-credits"></span><small id="club-credits-note"></small></span></li>
-            </ul>
-          </div>
-
-          <div class="sec" id="finance-sec" hidden>
-            <div class="section-label"><span>Finances</span><span id="finance-season"></span></div>
-            <ul class="list" id="finance-list"></ul>
           </div>
 
           <div class="sec" id="home-actions">
@@ -367,6 +373,39 @@
               <p class="state-text" id="youth-error-text"></p>
               <button class="btn-secondary" id="youth-retry" type="button">Retry</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Finance: the Wallet at the top, then the season's Club credits in,
+             out and net, and the last ten matchdays. -->
+        <div class="panel" id="tab-finance" hidden>
+          <div class="sec" id="wallet-sec" hidden>
+            <div class="section-label"><span>Wallet</span><span>Staging mock</span></div>
+            <ul class="list">
+              <li class="list-row"><span class="nm"><span class="bal" id="club-wallet"></span><small id="club-wallet-note"></small></span></li>
+              <li class="list-row"><span class="nm"><span class="bal" id="club-credits"></span><small id="club-credits-note"></small></span></li>
+              <li class="list-row" id="homeroom-wallet-row" hidden><span class="nm">Homeroom wallet<small id="homeroom-wallet-addr"></small><small>Your wallet on Homeroom, shown for reference. Own Club never moves money in or out of it.</small></span></li>
+            </ul>
+          </div>
+
+          <div class="sec" id="finance-sec">
+            <div class="section-label"><span>Finances</span><span id="finance-season"></span></div>
+            <ul class="list" id="finance-summary"></ul>
+          </div>
+
+          <div class="sec" id="income-sec">
+            <div class="section-label"><span>Income</span><span id="income-season"></span></div>
+            <ul class="list" id="income-list"></ul>
+          </div>
+
+          <div class="sec" id="expense-sec">
+            <div class="section-label"><span>Expenses</span><span id="expense-season"></span></div>
+            <ul class="list" id="expense-list"></ul>
+          </div>
+
+          <div class="sec" id="history-sec">
+            <div class="section-label"><span>Matchday history</span><span>Last 10</span></div>
+            <ul class="list" id="finance-history"></ul>
           </div>
         </div>
 

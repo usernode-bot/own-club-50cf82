@@ -382,6 +382,16 @@ function validName(name) {
   return typeof name === 'string' && name.trim().length >= 1 && name.trim().length <= 40;
 }
 
+// The Homeroom wallet linked to a signed-in person, read from the verified
+// token on every load. The Finance tab shows the address for reference only:
+// Own Club never stores it and never moves money with it.
+function homeroomWalletFor(user) {
+  const address = user && typeof user.usernode_pubkey === 'string' && user.usernode_pubkey
+    ? user.usernode_pubkey
+    : null;
+  return { address };
+}
+
 app.get('/api/career', async (req, res) => {
   const demo = wantsDemo(req);
   try {
@@ -420,7 +430,7 @@ app.get('/api/career', async (req, res) => {
       // Every kick-off that has passed is played now, with the saved lineup
       // and tactics, and the result is stored before the page sees it.
       const out = await catchUpAndSave(req.user.id, demo, { state, version: rows[0].version }, req.now);
-      return res.json({ career: out.state, version: out.version, demo, shop: SHOP, autoPlayed: out.autoPlayed });
+      return res.json({ career: out.state, version: out.version, demo, shop: SHOP, autoPlayed: out.autoPlayed, homeroomWallet: homeroomWalletFor(req.user) });
     }
     if (demo) {
       const e = await engine();
@@ -436,7 +446,7 @@ app.get('/api/career', async (req, res) => {
         'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = true',
         [req.user.id]
       );
-      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP, autoPlayed: out.autoPlayed });
+      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP, autoPlayed: out.autoPlayed, homeroomWallet: homeroomWalletFor(req.user) });
     }
     // No career yet is an ordinary answer: the page shows New career, with the
     // wallet this person already has (a first-time manager gets the starting
@@ -456,6 +466,7 @@ app.get('/api/career', async (req, res) => {
         balance: e.openingBalance(stored && stored.usdc, STARTING_BALANCE),
         kept: !!stored,
       },
+      homeroomWallet: homeroomWalletFor(req.user),
     });
   } catch (err) {
     const requestId = crypto.randomUUID().slice(0, 8);
