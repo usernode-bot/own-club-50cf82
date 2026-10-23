@@ -7,6 +7,7 @@ import {
   playerWage, wageBill, systemSaleValue, leaveError, signError, signCost,
   removePlayer, addPlayer, sellToLeague, releasePlayer, listPlayer, buyPlayer,
   returnListing, moneyFields, facilityLevels, POS_GROUP,
+  PEAK_NAMES, peakStyleFor, growthOutlook, buildSquad, academyIntake,
 } from '../public/engine.js';
 
 const CLUB = GROUPS[8].clubIds[5];
@@ -134,26 +135,50 @@ test('listing checks the price, and withdrawing needs room', () => {
   assert.equal(returnListing({ ...out.state, squads: { [CLUB]: fullSquad } }, listing).error, 'full');
 });
 
-test('ageing is deterministic, declines from 30 and retires at 39', () => {
-  const state = career(11);
-  const players = state.squads[CLUB].map((p) => ({ ...p, age: 28 }));
-  const old = { ...state, squads: { ...state.squads, [CLUB]: players } };
-  const a = ageingFor(old);
-  const b = ageingFor(old);
+const STYLES = ['early', 'mid', 'late'];
+
+function styledCareer(seed, age) {
+  const state = career(seed);
+  const players = state.squads[CLUB].map((p, i) => ({ ...p, age, peak: STYLES[i % 3] }));
+  return { ...state, squads: { ...state.squads, [CLUB]: players } };
+}
+
+test('ageing is deterministic, follows the peak style and retires at 39', () => {
+  const state = styledCareer(11, 28);
+  const a = ageingFor(state);
+  const b = ageingFor(state);
   assert.deepEqual(a, b);
+  // 28 to 29: early players decline, mid players hold, late players improve.
   for (const p of a.players) {
+    const before = state.squads[CLUB].find((q) => q.id === p.id);
     assert.equal(p.age, 29);
-    assert.deepEqual(p.attrs, players.find((q) => q.id === p.id).attrs);
+    assert.equal(p.peak, before.peak);
+    for (const k of Object.keys(before.attrs)) {
+      if (before.peak === 'early') {
+        const drop = before.attrs[k] - p.attrs[k];
+        assert.ok(drop >= 1 && drop <= 3, 'early declined ' + k);
+        assert.ok(p.attrs[k] >= 20);
+      } else if (before.peak === 'mid') {
+        assert.equal(p.attrs[k], before.attrs[k], 'mid held ' + k);
+      } else {
+        const gain = p.attrs[k] - before.attrs[k];
+        assert.ok(gain >= 1 && gain <= 3, 'late improved ' + k);
+        assert.equal(p.attrs[k], Math.min(92, before.attrs[k] + gain));
+      }
+    }
   }
 
-  const older = { ...state, squads: { ...state.squads, [CLUB]: players.map((p) => ({ ...p, age: 31 })) } };
-  const declined = ageingFor(older).players;
-  for (const p of declined) {
+  // 31 to 32: early and mid players decline, late players hold.
+  const older = styledCareer(11, 31);
+  for (const p of ageingFor(older).players) {
     const before = older.squads[CLUB].find((q) => q.id === p.id);
     for (const k of Object.keys(before.attrs)) {
-      assert.ok(p.attrs[k] < before.attrs[k], 'declined ' + k);
-      assert.ok(before.attrs[k] - p.attrs[k] >= 1 && before.attrs[k] - p.attrs[k] <= 3);
-      assert.ok(p.attrs[k] >= 20);
+      if (before.peak === 'late') {
+        assert.equal(p.attrs[k], before.attrs[k], 'late held ' + k);
+      } else {
+        const drop = before.attrs[k] - p.attrs[k];
+        assert.ok(drop >= 1 && drop <= 3, before.peak + ' declined ' + k);
+      }
     }
   }
 
@@ -163,6 +188,129 @@ test('ageing is deterministic, declines from 30 and retires at 39', () => {
     const certain = { ...young, squads: { [CLUB]: young.squads[CLUB].map((p) => ({ ...p, age: 38 })) } };
     assert.equal(ageingFor(certain).retiring.length, certain.squads[CLUB].length, 'everyone retires at 39');
   }
+});
+
+test('young players grow every summer up to their peak, never above 92', () => {
+  const state = styledCareer(7, 18);
+  const aged = ageingFor(state);
+  for (const p of aged.players) {
+    const before = state.squads[CLUB].find((q) => q.id === p.id);
+    for (const k of Object.keys(before.attrs)) {
+      const gain = p.attrs[k] - before.attrs[k];
+      assert.ok(gain >= 1 && gain <= 3, 'grew ' + k);
+      assert.ok(p.attrs[k] <= 92);
+    }
+    assert.ok(p.overall >= before.overall, 'overall did not fall');
+  }
+  // An attribute already at 92 stays there while growing.
+  const maxed = styledCareer(7, 18);
+  maxed.squads[CLUB] = maxed.squads[CLUB].map((p) => ({ ...p, attrs: { ...p.attrs, pac: 92 } }));
+  for (const p of ageingFor(maxed).players) assert.equal(p.attrs.pac, 92);
+});
+
+test('every player has a stable peak style and all three occur', () => {
+  const seen = new Set();
+  for (let seed = 1; seed <= 5; seed++) {
+    for (const p of career(seed).squads[CLUB]) {
+      assert.ok(PEAK_NAMES.includes(p.peak));
+      assert.equal(p.peak, peakStyleFor(seed, p.id));
+      assert.equal(p.peak, peakStyleFor(seed, p.id));
+      seen.add(p.peak);
+    }
+  }
+  assert.deepEqual([...seen].sort(), ['early', 'late', 'mid']);
+
+  const state = career(3);
+  academyIntake(state, 1);
+  for (const p of state.youth) {
+    assert.ok(PEAK_NAMES.includes(p.peak));
+    assert.equal(p.peak, peakStyleFor(state.seed, p.id));
+  }
+  const g = academyGraduate(9, 2, 0, 'CM', 3, 1);
+  assert.ok(PEAK_NAMES.includes(g.peak));
+  assert.equal(g.peak, peakStyleFor(9, 'y2-0'));
+  assert.equal(g.peak, academyGraduate(9, 2, 0, 'CM', 3, 1).peak);
+});
+
+test('the peak field leaves generated squads exactly as they were', () => {
+  // The names, ages and attributes buildSquad gave seed 3 before the field.
+  const expected = [
+    ['p500', 'Dario Sand', 23, { pac: 50, pas: 63, sho: 38, def: 59, gk: 63 }],
+    ['p501', 'Lee Ode', 22, { pac: 47, pas: 55, sho: 40, def: 56, gk: 54 }],
+    ['p502', 'Felix Tate', 23, { pac: 59, pas: 51, sho: 38, def: 57, gk: 46 }],
+    ['p503', 'Ansel Ash', 32, { pac: 64, pas: 59, sho: 53, def: 69, gk: 50 }],
+    ['p504', 'Sam Orr', 21, { pac: 57, pas: 57, sho: 41, def: 62, gk: 43 }],
+    ['p505', 'Cyrus Zell', 30, { pac: 43, pas: 65, sho: 48, def: 66, gk: 44 }],
+    ['p506', 'Ismail Ellis', 22, { pac: 55, pas: 55, sho: 36, def: 68, gk: 46 }],
+    ['p507', 'Gil Yeo', 30, { pac: 54, pas: 51, sho: 42, def: 57, gk: 62 }],
+    ['p508', 'Marco Hobb', 21, { pac: 42, pas: 45, sho: 55, def: 42, gk: 65 }],
+    ['p509', 'Rory Pryce', 18, { pac: 59, pas: 63, sho: 44, def: 44, gk: 53 }],
+    ['p510', 'Rory Bowen', 19, { pac: 62, pas: 42, sho: 60, def: 49, gk: 45 }],
+    ['p511', 'Dunn Ruiz', 32, { pac: 56, pas: 47, sho: 44, def: 46, gk: 56 }],
+    ['p512', 'Hal Nunn', 23, { pac: 59, pas: 48, sho: 57, def: 51, gk: 65 }],
+    ['p513', 'Kian Marsh', 21, { pac: 42, pas: 52, sho: 44, def: 46, gk: 50 }],
+    ['p514', 'Milo Lunn', 29, { pac: 65, pas: 52, sho: 66, def: 49, gk: 65 }],
+    ['p515', 'Jude Yeo', 28, { pac: 55, pas: 49, sho: 66, def: 49, gk: 48 }],
+    ['p516', 'Luca Tate', 27, { pac: 49, pas: 56, sho: 62, def: 50, gk: 62 }],
+    ['p517', 'Umar Lund', 26, { pac: 65, pas: 55, sho: 60, def: 49, gk: 64 }],
+  ];
+  const squad = buildSquad(3, 5, 2, 3);
+  assert.equal(squad.length, expected.length);
+  squad.forEach((p, i) => {
+    const [id, name, age, attrs] = expected[i];
+    assert.equal(p.id, id);
+    assert.equal(p.name, name);
+    assert.equal(p.age, age);
+    assert.deepEqual(p.attrs, attrs);
+  });
+});
+
+test('older careers gain a peak style at their next rollover', () => {
+  const state = career(4);
+  while (!state.finished) playMatchday(state);
+  state.squads[CLUB] = state.squads[CLUB].map((p) => {
+    const copy = { ...p, age: 20 };
+    delete copy.peak;
+    return copy;
+  });
+  const next = startNextSeason(state);
+  const squad = next.squads[CLUB];
+  assert.equal(squad.length, state.squads[CLUB].length);
+  for (const p of squad) {
+    assert.ok(PEAK_NAMES.includes(p.peak));
+    assert.equal(p.peak, peakStyleFor(state.seed, p.id));
+  }
+});
+
+test('the rollover and the transfer market keep a stored peak style', () => {
+  const state = career(4);
+  while (!state.finished) playMatchday(state);
+  state.squads[CLUB] = state.squads[CLUB].map((p) => ({ ...p, age: 20, peak: 'late' }));
+  const next = startNextSeason(state);
+  assert.ok(next.squads[CLUB].every((p) => p.peak === 'late'));
+
+  const market = { ...career(6), credits: 100000 };
+  const p = market.squads[CLUB].find((q) => POS_GROUP[q.pos] !== 'GK');
+  const snapshot = listPlayer(market, p.id, 2000).snapshot;
+  assert.equal(snapshot.peak, p.peak);
+  const bought = buyPlayer(market, { id: 7, player: snapshot, price: 2000 });
+  assert.equal(bought.state.squads[CLUB].find((q) => q.id === 't7').peak, p.peak);
+});
+
+test('the outlook names the peak age and the coming summer', () => {
+  const state = { seed: 3 };
+  const player = (peak, age) => ({ id: 'p1', peak, age });
+  assert.equal(growthOutlook(state, player('mid', 26)).next, 'improving');
+  assert.equal(growthOutlook(state, player('mid', 28)).next, 'steady');
+  assert.equal(growthOutlook(state, player('mid', 29)).next, 'declining');
+  assert.equal(growthOutlook(state, player('early', 22)).next, 'improving');
+  assert.equal(growthOutlook(state, player('late', 31)).next, 'steady');
+  assert.equal(growthOutlook(state, player('early', 30)).peakAge, 23);
+  assert.equal(growthOutlook(state, player('mid', 30)).peakAge, 27);
+  assert.equal(growthOutlook(state, player('late', 30)).peakAge, 30);
+  // A stored style that is not one of the three is resolved from the seed.
+  const unset = growthOutlook(state, { id: 'p9', peak: 'nonsense', age: 20 });
+  assert.equal(unset.style, peakStyleFor(3, 'p9'));
 });
 
 test('the rollover keeps the squad size and its goalkeepers, and signs academy graduates', () => {

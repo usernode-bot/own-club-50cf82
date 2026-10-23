@@ -17,6 +17,7 @@ import {
   MATCHDAY_SALES, matchdaySales,
   wageBill, playerWage, stadiumSeats, homeCrowd, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
+  growthOutlook,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -24,6 +25,15 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ordinal = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
 const displayName = (club) => (club.name || '').replace(/ (FC|Athletic|Town|United|Rovers|City|Wanderers)$/, '');
+const capitalise = (s) => String(s || '').charAt(0).toUpperCase() + String(s || '').slice(1);
+// The Scout reveals every player's peak style and how they change next season.
+function scouted() {
+  return !!(career && staffFields(career).scout);
+}
+function growthLine(p) {
+  const o = growthOutlook(career, p);
+  return capitalise(o.style) + ' peak, ' + o.next;
+}
 
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1';
@@ -517,12 +527,15 @@ function renderClub() {
     if (sa !== sb) return sa - sb;
     return b.overall - a.overall;
   });
+  const showGrowth = scouted();
   $('squad-list').innerHTML = ordered.map((p) => {
     const low = p.fitness < 60;
     const wage = playerWage(p, clubTier(career));
-    return `<li class="list-row row-btn" data-player-id="${esc(p.id)}" tabindex="0" role="button" aria-label="${esc(p.name)}, ${esc(p.pos)}, ${esc(playerStatus(p, starters))}">
+    const growth = showGrowth ? growthLine(p) : '';
+    const label = [esc(p.name), esc(p.pos), esc(playerStatus(p, starters))].concat(growth ? [esc(growth)] : []).join(', ');
+    return `<li class="list-row row-btn" data-player-id="${esc(p.id)}" tabindex="0" role="button" aria-label="${label}">
       <span class="pos">${esc(p.pos)}</span>
-      <span class="nm">${esc(p.name)}<small>${esc(playerStatus(p, starters))}, wage ${num(wage)}</small></span>
+      <span class="nm">${esc(p.name)}<small>${esc(playerStatus(p, starters))}, wage ${num(wage)}</small>${growth ? `<small>${esc(growth)}</small>` : ''}</span>
       <span class="fit"><i style="width:${Math.max(4, p.fitness)}%${low ? ';background:rgb(var(--card-y))' : ''}"></i></span>
       <span class="ovr">${p.overall}</span>
     </li>`;
@@ -1265,6 +1278,17 @@ function openSheet(id) {
   const attrs = [['Pace', 'pac'], ['Passing', 'pas'], ['Shooting', 'sho'], ['Defending', 'def'], ['Goalkeeping', 'gk']];
   $('sheet-attrs').innerHTML = attrs.map(([label, key]) => `
     <div class="attr"><span>${label}</span><span class="attr-track"><i style="width:${p.attrs[key]}%"></i></span><b>${p.attrs[key]}</b></div>`).join('');
+
+  if (scouted()) {
+    const o = growthOutlook(career, p);
+    $('sheet-growth').innerHTML = `<li class="list-row">
+      <span class="nm">${capitalise(o.style)} peak, around ${o.peakAge}<small>${capitalise(o.next)} next season</small></span>
+    </li>`;
+  } else {
+    $('sheet-growth').innerHTML = `<li class="list-row">
+      <span class="nm muted">Not scouted<small>Hire a Scout on the Club tab to see this player's peak and how they will change next season.</small></span>
+    </li>`;
+  }
 
   const group = POS_GROUP[p.pos];
   const list = ROLES[group] || ROLES.MF;

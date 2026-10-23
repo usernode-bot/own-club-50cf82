@@ -204,6 +204,7 @@ button.chip[aria-expanded="true"] {
 .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .sheet-head h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 700; }
 .sheet-sub { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+.sheet-body .nm.muted { color: rgb(var(--muted)); }
 .icon-btn {
   display: inline-flex;
   align-items: center;

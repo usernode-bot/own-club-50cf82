@@ -190,6 +190,24 @@ replaces each retiree with a graduate. `PUT /api/career` keeps the stored squad
 (and, on a rollover, the aged one) whatever the page sends, and rebuilds an
 unusable lineup with `autoLineup`.
 
+Players grow to a peak and then decline. Every player has one of three peak
+styles (`PEAK_STYLES` and `PEAK_NAMES` in `engine.js`): early peaks at 23 and
+declines from 26, mid at 27 and from 30, late at 30 and from 33. `ageingFor`
+adds a year each summer, raises every attribute 1 to 3 points while the new age
+is at or below the peak (never above 92), holds it for the two summers before
+the decline age, then drops it 1 to 3 points a summer as before (never below
+20). Retirement is unchanged: possible from 34, certain at 39. A player's
+style comes from `peakStyleFor(seed, id)` from the career's seed, not the
+squad's rng, so generated squads and fixtures stay exactly as they were; it is
+stored as `peak` on the player. `buildSquad`, `academyIntake` and
+`academyGraduate` set it, `playerForNewSeason` and `listPlayer`'s snapshot keep
+it, and `ageingFor` writes it back so a career saved before the field gets it on
+its next rollover. `playerPeak` resolves a missing or invalid `peak` from the
+seed. Growth happens whether or not a Scout is hired; the Scout only reveals it,
+through `growthOutlook(state, p)` (`{ style, peakAge, next }` where `next` is
+improving, steady or declining for the coming summer), on the squad rows and in
+the player sheet's Growth section.
+
 The finances are Club credits only; the wallet and Dummy USDC are never
 touched. A career has fans (`state.fans`, seeded by tier at 15,000 / 6,000 /
 2,500 and carried across seasons), which move after each of the club's matches
