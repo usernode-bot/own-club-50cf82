@@ -243,6 +243,10 @@ export function saleValue(state, values) {
 // the training ground will spend them too.
 export const CREDIT_REWARDS = { win: 50, draw: 25, loss: 10 };
 
+// How many matchdays of Club credits in and out the Finance tab keeps: this
+// season's most recent ones, newest first.
+export const FINANCE_HISTORY_MAX = 10;
+
 export function creditsForResult(goalsFor, goalsAgainst) {
   if (goalsFor > goalsAgainst) return CREDIT_REWARDS.win;
   if (goalsFor < goalsAgainst) return CREDIT_REWARDS.loss;
@@ -502,6 +506,47 @@ function validSponsor(s) {
     && typeof s.paid === 'boolean';
 }
 
+// This season's matchday history: the Club credits in and out of the club's
+// own fixtures, newest first and capped. Anything malformed, or written by
+// another season, is dropped so a forged save cannot show it.
+function financeHistoryFields(state, season) {
+  const given = state && Array.isArray(state.financeHistory) ? state.financeHistory : [];
+  const okInt = (v) => Number.isInteger(v) && v >= 0;
+  return given.filter((h) => {
+    if (!h || typeof h !== 'object' || Array.isArray(h)) return false;
+    if (h.season !== season) return false;
+    if (!Number.isInteger(h.matchday) || h.matchday < 1) return false;
+    if (h.venue !== 'Home' && h.venue !== 'Away') return false;
+    if (typeof h.opponentId !== 'string' || !CLUB_BY_ID[h.opponentId]) return false;
+    if (!h.income || typeof h.income !== 'object' || Array.isArray(h.income)) return false;
+    if (!h.expenses || typeof h.expenses !== 'object' || Array.isArray(h.expenses)) return false;
+    if (!['result', 'gate', 'shop', 'food', 'hotel'].every((k) => okInt(h.income[k]))) return false;
+    if (!['upkeep', 'maintenance', 'wages', 'staffWages'].every((k) => okInt(h.expenses[k]))) return false;
+    if (!Number.isInteger(h.net)) return false;
+    return okInt(h.balanceAfter);
+  }).slice(0, FINANCE_HISTORY_MAX).map((h) => ({
+    season: h.season,
+    matchday: h.matchday,
+    venue: h.venue,
+    opponentId: h.opponentId,
+    income: {
+      result: h.income.result,
+      gate: h.income.gate,
+      shop: h.income.shop,
+      food: h.income.food,
+      hotel: h.income.hotel,
+    },
+    expenses: {
+      upkeep: h.expenses.upkeep,
+      maintenance: h.expenses.maintenance,
+      wages: h.expenses.wages,
+      staffWages: h.expenses.staffWages,
+    },
+    net: h.net,
+    balanceAfter: h.balanceAfter,
+  }));
+}
+
 // The career's money fields, filling only what is missing or unusable, so a
 // career saved before fans and sponsors existed still plays. Kept in one place
 // because the server and the page both read and settle them.
@@ -534,7 +579,49 @@ export function moneyFields(state) {
       hotel: zeroTotal('hotel'),
     }
     : { season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 };
-  return { credits, fans, sponsor, lastSponsor, finance };
+  return { credits, fans, sponsor, lastSponsor, finance, financeHistory: financeHistoryFields(state, season) };
+}
+
+// Where the club's Club credits stand this season, as the Finance tab shows
+// it: what came in from results, gates and the home crowd's spending, what
+// went out on upkeep, maintenance and wages, and the net. Facility upgrades,
+// staff fees, transfers and the sponsor's fee are left out, so the net can
+// differ from the balance.
+export function seasonMoney(state) {
+  const m = moneyFields(state);
+  const me = state.clubId;
+  let results = 0;
+  let won = 0;
+  let drawn = 0;
+  let lost = 0;
+  for (const r of Array.isArray(state.results) ? state.results : []) {
+    if (!r || !r.home || !r.away) continue;
+    const home = r.home.id === me;
+    const away = r.away.id === me;
+    if (!home && !away) continue;
+    const goalsFor = home ? r.homeGoals : r.awayGoals;
+    const goalsAgainst = home ? r.awayGoals : r.homeGoals;
+    results += creditsForResult(goalsFor, goalsAgainst);
+    if (goalsFor > goalsAgainst) won++;
+    else if (goalsFor < goalsAgainst) lost++;
+    else drawn++;
+  }
+  const income = {
+    results,
+    gate: m.finance.gate,
+    shop: m.finance.shop,
+    food: m.finance.food,
+    hotel: m.finance.hotel,
+  };
+  income.total = income.results + income.gate + income.shop + income.food + income.hotel;
+  const expenses = {
+    upkeep: m.finance.upkeep,
+    maintenance: m.finance.maintenance,
+    wages: m.finance.wages,
+    staffWages: m.finance.staffWages,
+  };
+  expenses.total = expenses.upkeep + expenses.maintenance + expenses.wages + expenses.staffWages;
+  return { income, expenses, net: income.total - expenses.total, record: { won, drawn, lost } };
 }
 
 export function fanChange(fans, goalsFor, goalsAgainst, cap) {
@@ -1864,6 +1951,18 @@ export function playMatchday(state) {
       fansBefore: m.fans,
       fansAfter: state.fans,
     };
+    // The Finance tab's matchday history: this matchday's Club credits in and
+    // out, newest first, up to the last ten of the season.
+    state.financeHistory = [{
+      season: state.season || 1,
+      matchday: md + 1,
+      venue: atHome ? 'Home' : 'Away',
+      opponentId: atHome ? own.away.id : own.home.id,
+      income: { result, gate, shop: sales.shop, food: sales.food, hotel: sales.hotel },
+      expenses: { upkeep, maintenance, wages, staffWages },
+      net: own.finance.net,
+      balanceAfter: state.credits,
+    }, ...m.financeHistory].slice(0, FINANCE_HISTORY_MAX);
     // The academy takes in young players after every matchday.
     academyIntake(state, md + 1);
   }
@@ -2088,6 +2187,7 @@ export function buildInitialState(clubId, managerName, seed) {
     sponsor: sponsorFor(seed, 1, tier),
     lastSponsor: null,
     finance: { season: 1, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 },
+    financeHistory: [],
     facilities: facilityLevels({}),
     staff: staffFields({}),
     youth: [],
@@ -2352,6 +2452,7 @@ export function seasonEndMoney(state) {
     sponsor: sponsorFor(state.seed, next, nextTier),
     lastSponsor: { ...m.sponsor, paid: met },
     finance: { season: next, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 },
+    financeHistory: [],
   };
 }
 

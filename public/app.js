@@ -11,7 +11,7 @@ import {
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
   repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
-  moneyFields, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
+  moneyFields, seasonMoney, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
   STAFF_ROLES, staffFields, staffWagesDue, MAINTENANCE, maintenanceDue,
   MATCHDAY_SALES, matchdaySales,
@@ -50,8 +50,13 @@ let refreshFailed = false;
 // The sale just made, so the New career screen can say where the money came
 // from. Cleared once a new club is bought.
 let lastSale = null;
+// The person's linked Homeroom wallet, sent with each load for a signed-in
+// person. Undefined for a guest looking at the demo; never stored or sent back.
+let homeroomWallet = undefined;
 
-const TABS = ['home', 'squad', 'tactics', 'competition', 'club', 'transfers'];
+const TABS = ['home', 'squad', 'tactics', 'competition', 'club', 'finance', 'transfers'];
+// On a phone the bar keeps the first four tabs and folds these into More.
+const OVERFLOW_TABS = ['club', 'finance', 'transfers'];
 function hashTab() {
   const h = (location.hash || '').replace(/^#/, '');
   return TABS.includes(h) ? h : 'home';
@@ -63,11 +68,28 @@ function showTab(next) {
     if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
+  const more = $('tab-more');
+  if (OVERFLOW_TABS.includes(tab)) more.setAttribute('data-current', '');
+  else more.removeAttribute('data-current');
+  closeMore();
   if (tab === 'tactics' && career) drawPitch();
   if (tab === 'transfers' && career) {
     renderMarket();
     loadMarket();
   }
+}
+
+// The phone bar's More button and its menu. It opens on a tap, closes on a
+// choice, a tap outside or Escape, and the tab it opens is marked too.
+function openMore() {
+  $('more-menu').hidden = false;
+  $('tab-more').setAttribute('aria-expanded', 'true');
+}
+function closeMore() {
+  const menu = $('more-menu');
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  $('tab-more').setAttribute('aria-expanded', 'false');
 }
 
 async function refreshShop() {
@@ -170,6 +192,9 @@ async function load() {
   }
 
   if (answer && answer.data && answer.data.shop) shop = answer.data.shop;
+  // The linked Homeroom wallet, sent for a signed-in person and absent for a
+  // guest looking at the demo.
+  if (answer && answer.data) homeroomWallet = answer.data.homeroomWallet;
   autoPlayed = answer && answer.data && Number(answer.data.autoPlayed) > 0 ? Number(answer.data.autoPlayed) : 0;
 
   if (!cause && answer) {
@@ -581,74 +606,7 @@ function renderClub() {
     </li>`;
   }).join('');
 
-  if (career.wallet) {
-    $('wallet-sec').hidden = false;
-    $('club-wallet').textContent = usdc(career.wallet.balance);
-    const bought = career.purchase ? CLUB_BY_ID[career.purchase.clubId] : null;
-    $('club-wallet-note').textContent = bought
-      ? 'You bought ' + bought.name + ' for ' + usdc(career.purchase.price) + '. No real payment was taken.'
-      : 'No real payment was taken.';
-    $('club-credits').textContent = credits(career.credits || 0);
-    $('club-credits-note').textContent = 'Earned from results ('
-      + CREDIT_REWARDS.win + ' a win, ' + CREDIT_REWARDS.draw + ' a draw, '
-      + CREDIT_REWARDS.loss + ' a loss), home gates and the shop, food stand and hotel, less upkeep, maintenance and wages.';
-  } else {
-    $('wallet-sec').hidden = true;
-  }
-
-  // Finances: where the club's credits come from and go. The figures arrive
-  // with the career; moneyFields fills any a saved career predates.
-  const money = moneyFields(career);
-  const tier = clubTier(career);
-  const capacity = FAN_CAP[tier] || FAN_CAP[3];
-  const seats = stadiumSeats(career);
-  const crowd = homeCrowd(career, money.fans, capacity);
-  const seated = crowd.attendance;
-  const upkeepDue = GROUND_UPKEEP;
-  const maintenanceNow = maintenanceDue(career);
-  const wagesNow = wageBill(career);
-  const staffNow = staffWagesDue(career);
-  const squadSize = career.squads[career.clubId].length;
-  const staffCount = STAFF_ROLES.filter((s) => staffFields(career)[s.key]).length;
-  const size = divisionClubIds(career).length;
-  const sponsor = money.sponsor;
-  const sponsorMet = objectiveMet(me.rank, sponsor.target, size);
-  const fanRate = (r) => Math.round(r * 100);
-  const sponsorNote = sponsor.target + ': ' + (sponsorMet ? 'on track' : 'off track')
-    + ', ' + ordinal(me.rank) + ' of ' + size + '. Paid when you start next season.'
-    + (money.lastSponsor
-      ? ' Last season ' + money.lastSponsor.name + (money.lastSponsor.paid
-        ? ' paid ' + num(money.lastSponsor.fee) + '.'
-        : ' missed its target.')
-      : '');
-  $('finance-sec').hidden = false;
-  $('finance-season').textContent = 'Season ' + (career.season || 1);
-  // What the home crowd spends at each earning facility, at today's crowd and
-  // its level; the season totals come from the saved career.
-  const levels = facilityLevels(career);
-  const salesNow = matchdaySales(career, seated);
-  const salesRow = (key, name) => `<li class="list-row"><span class="nm">${name} this season<small>${num(salesNow[key])} Club credits from a home crowd of ${num(seated)} at level ${levels[key]}</small></span><span class="price">${num(money.finance[key])}</span></li>`;
-  const lastFin = career.lastReport && career.lastReport.finance;
-  const netRow = lastFin
-    ? `<li class="list-row net"><span class="nm">Net last matchday<small>Matchday ${career.lastReport.matchday}, at ${lastFin.venue === 'Home' ? 'home' : 'away'}.${Number.isInteger(lastFin.balanceAfter) ? ' Your balance is ' + num(lastFin.balanceAfter) + ' Club credits and never goes below 0.' : ''}</small></span><span class="price">${signed(lastFin.net)}</span></li>`
-    : '';
-  $('finance-list').innerHTML = `
-    <li class="list-row"><span class="nm">Fans<small>Division ${tier} holds at most ${num(capacity)} fans. Wins add ${fanRate(FAN_CHANGE.win)}%, draws ${fanRate(FAN_CHANGE.draw)}%, losses take ${fanRate(-FAN_CHANGE.loss)}%.</small></span><span class="price">${num(money.fans)}</span></li>
-    <li class="list-row"><span class="nm">Home gate<small>${num(seated)} of ${num(seats)} seats at ${TICKET_PRICE} Club credits${crowd.extra > 0
-      ? ', with ' + num(crowd.extra) + ' extra fans from toilets, parking and the VIP room'
-      : ''}. Away matches earn no gate.</small></span><span class="price">${num(seated * TICKET_PRICE)}</span></li>
-    <li class="list-row"><span class="nm">Gate this season<small>${money.finance.homeGames
-      ? money.finance.homeGames + (money.finance.homeGames === 1 ? ' home match' : ' home matches')
-      : 'No home match yet this season'}</small></span><span class="price">${num(money.finance.gate)}</span></li>
-    ${salesRow('shop', 'Shop')}
-    ${salesRow('food', 'Food stand')}
-    ${salesRow('hotel', 'Hotel')}
-    <li class="list-row"><span class="nm">Ground upkeep this season<small>${upkeepDue} Club credits every matchday, home or away</small></span><span class="price">${money.finance.upkeep ? '−' + num(money.finance.upkeep) : '0'}</span></li>
-    <li class="list-row"><span class="nm">Maintenance this season<small>${num(maintenanceNow)} Club credits every matchday for facilities above level 1</small></span><span class="price">${money.finance.maintenance ? '−' + num(money.finance.maintenance) : '0'}</span></li>
-    <li class="list-row"><span class="nm">Player wages this season<small>${num(wagesNow)} Club credits every matchday for ${squadSize} players</small></span><span class="price">${money.finance.wages ? '−' + num(money.finance.wages) : '0'}</span></li>
-    <li class="list-row"><span class="nm">Staff wages this season<small>${num(staffNow)} Club credits every matchday for ${staffCount} staff</small></span><span class="price">${money.finance.staffWages ? '−' + num(money.finance.staffWages) : '0'}</span></li>
-    <li class="list-row"><span class="nm">Sponsor: ${esc(sponsor.name)}<small>${esc(sponsorNote)}</small></span><span class="price">${num(sponsor.fee)}</span></li>
-    ${netRow}`;
+  renderFinance();
 
   // Selling the club: the price comes from the division it is in today, and
   // the money stays in the manager's wallet for their next club.
@@ -671,6 +629,114 @@ function renderClub() {
   renderStaff();
   renderAcademy();
   if (tab === 'tactics') drawPitch();
+}
+
+// ── Finance ──────────────────────────────────────────────────────────────
+// The Finance tab: the Wallet at the top, then the season's Club credits in,
+// out and net, where each came from and went, and the last ten matchdays.
+// Home shows none of it.
+function renderFinance() {
+  const money = moneyFields(career);
+  const season = seasonMoney(career);
+  const table = leagueTable(career);
+  const size = divisionClubIds(career).length;
+  const me = table.find((r) => r.id === career.clubId) || { rank: size };
+  const tier = clubTier(career);
+  const capacity = FAN_CAP[tier] || FAN_CAP[3];
+  const seats = stadiumSeats(career);
+  const crowd = homeCrowd(career, money.fans, capacity);
+  const seated = crowd.attendance;
+  const maintenanceNow = maintenanceDue(career);
+  const wagesNow = wageBill(career);
+  const staffNow = staffWagesDue(career);
+  const squadSize = career.squads[career.clubId].length;
+  const staffCount = STAFF_ROLES.filter((s) => staffFields(career)[s.key]).length;
+  const sponsor = money.sponsor;
+  const sponsorMet = objectiveMet(me.rank, sponsor.target, size);
+  const fanRate = (r) => Math.round(r * 100);
+  const sponsorNote = sponsor.target + ': ' + (sponsorMet ? 'on track' : 'off track')
+    + ', ' + ordinal(me.rank) + ' of ' + size + '. Paid when you start next season.'
+    + (money.lastSponsor
+      ? ' Last season ' + money.lastSponsor.name + (money.lastSponsor.paid
+        ? ' paid ' + num(money.lastSponsor.fee) + '.'
+        : ' missed its target.')
+      : '');
+  const seasonLabel = 'Season ' + (career.season || 1);
+  $('finance-season').textContent = seasonLabel;
+  $('income-season').textContent = seasonLabel;
+  $('expense-season').textContent = seasonLabel;
+
+  // Wallet: Dummy USDC and Club credits, then the Homeroom wallet linked to
+  // the person, shown for reference only. A guest looking at the demo has no
+  // Homeroom wallet, so the row is left out.
+  if (career.wallet) {
+    $('wallet-sec').hidden = false;
+    $('club-wallet').textContent = usdc(career.wallet.balance);
+    const bought = career.purchase ? CLUB_BY_ID[career.purchase.clubId] : null;
+    $('club-wallet-note').textContent = bought
+      ? 'You bought ' + bought.name + ' for ' + usdc(career.purchase.price) + '. No real payment was taken.'
+      : 'No real payment was taken.';
+    $('club-credits').textContent = credits(career.credits || 0);
+    $('club-credits-note').textContent = creditsNote();
+    const walletRow = $('homeroom-wallet-row');
+    if (homeroomWallet !== undefined) {
+      walletRow.hidden = false;
+      const address = homeroomWallet && homeroomWallet.address;
+      $('homeroom-wallet-addr').textContent = address || 'No Homeroom wallet linked to your account';
+      $('homeroom-wallet-addr').classList.toggle('addr', !!address);
+    } else {
+      walletRow.hidden = true;
+    }
+  } else {
+    $('wallet-sec').hidden = true;
+  }
+
+  // The summary: what came in, what went out and the net, in Club credits.
+  $('finance-summary').innerHTML = `
+    <li class="list-row"><span class="nm">Income this season<small>Results, gates, shop, food stand and hotel</small></span><span class="price">${signed(season.income.total)}</span></li>
+    <li class="list-row"><span class="nm">Expenses this season<small>Ground upkeep, maintenance and wages</small></span><span class="price">${season.expenses.total ? '−' + num(season.expenses.total) : '0'}</span></li>
+    <li class="list-row net"><span class="nm">Net this season<small>Upgrades, staff fees, transfers and the sponsor are not counted here. Your balance is ${num(career.credits || 0)} Club credits and never goes below 0.</small></span><span class="price">${signed(season.net)}</span></li>`;
+
+  // What the home crowd spends at each earning facility, at today's crowd and
+  // its level; the season totals come from the saved career.
+  const levels = facilityLevels(career);
+  const salesNow = matchdaySales(career, seated);
+  const salesRow = (key, name) => `<li class="list-row"><span class="nm">${name} this season<small>${num(salesNow[key])} Club credits from a home crowd of ${num(seated)} at level ${levels[key]}</small></span><span class="price">+${num(money.finance[key])}</span></li>`;
+  const record = season.record;
+  const resultsNote = record.won + (record.won === 1 ? ' win' : ' wins')
+    + ', ' + record.drawn + (record.drawn === 1 ? ' draw' : ' draws')
+    + ', ' + record.lost + (record.lost === 1 ? ' loss' : ' losses');
+  $('income-list').innerHTML = `
+    <li class="list-row"><span class="nm">Results this season<small>${resultsNote}</small></span><span class="price">+${num(season.income.results)}</span></li>
+    <li class="list-row"><span class="nm">Fans<small>Division ${tier} holds at most ${num(capacity)} fans. Wins add ${fanRate(FAN_CHANGE.win)}%, draws ${fanRate(FAN_CHANGE.draw)}%, losses take ${fanRate(-FAN_CHANGE.loss)}%.</small></span><span class="price">${num(money.fans)}</span></li>
+    <li class="list-row"><span class="nm">Home gate<small>${num(seated)} of ${num(seats)} seats at ${TICKET_PRICE} Club credits${crowd.extra > 0
+      ? ', with ' + num(crowd.extra) + ' extra fans from toilets, parking and the VIP room'
+      : ''}. Away matches earn no gate.</small></span><span class="price">${num(seated * TICKET_PRICE)}</span></li>
+    <li class="list-row"><span class="nm">Gate this season<small>${money.finance.homeGames
+      ? money.finance.homeGames + (money.finance.homeGames === 1 ? ' home match' : ' home matches')
+      : 'No home match yet this season'}</small></span><span class="price">+${num(money.finance.gate)}</span></li>
+    ${salesRow('shop', 'Shop')}
+    ${salesRow('food', 'Food stand')}
+    ${salesRow('hotel', 'Hotel')}
+    <li class="list-row"><span class="nm">Sponsor: ${esc(sponsor.name)}<small>${esc(sponsorNote)}</small></span><span class="price">${num(sponsor.fee)}</span></li>`;
+
+  $('expense-list').innerHTML = `
+    <li class="list-row"><span class="nm">Ground upkeep this season<small>${GROUND_UPKEEP} Club credits every matchday, home or away</small></span><span class="price">${money.finance.upkeep ? '−' + num(money.finance.upkeep) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Maintenance this season<small>${num(maintenanceNow)} Club credits every matchday for facilities above level 1</small></span><span class="price">${money.finance.maintenance ? '−' + num(money.finance.maintenance) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Player wages this season<small>${num(wagesNow)} Club credits every matchday for ${squadSize} players</small></span><span class="price">${money.finance.wages ? '−' + num(money.finance.wages) : '0'}</span></li>
+    <li class="list-row"><span class="nm">Staff wages this season<small>${num(staffNow)} Club credits every matchday for ${staffCount} staff</small></span><span class="price">${money.finance.staffWages ? '−' + num(money.finance.staffWages) : '0'}</span></li>`;
+
+  // The last ten matchdays of this season, newest first, from the career.
+  const history = Array.isArray(career.financeHistory) ? career.financeHistory : [];
+  $('finance-history').innerHTML = history.length
+    ? history.map((h) => {
+      const opp = CLUB_BY_ID[h.opponentId];
+      const name = opp ? displayName(opp) : 'Unknown club';
+      const income = h.income.result + h.income.gate + h.income.shop + h.income.food + h.income.hotel;
+      const expenses = h.expenses.upkeep + h.expenses.maintenance + h.expenses.wages + h.expenses.staffWages;
+      return `<li class="list-row"><span class="nm">Matchday ${h.matchday}, ${h.venue === 'Home' ? 'home v' : 'away at'} ${esc(name)}<small>Income ${num(income)}, expenses ${num(expenses)}. Balance ${num(h.balanceAfter)} Club credits.</small></span><span class="price">${signed(h.net)}</span></li>`;
+    }).join('')
+    : '<li class="list-row"><span class="nm"><small>No matchday played yet this season. Each matchday\'s Club credits in and out appear here.</small></span></li>';
 }
 
 // ── Club: the facilities ─────────────────────────────────────────────────
@@ -1982,6 +2048,28 @@ $('last-list').addEventListener('click', openFromEvent);
 $('last-list').addEventListener('keydown', openFromEvent);
 $('fixtures-list').addEventListener('click', openFromEvent);
 $('fixtures-list').addEventListener('keydown', openFromEvent);
+// The phone bar's More button: opens the menu above the bar, and closes it on
+// a choice, a tap outside or Escape.
+$('tab-more').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if ($('more-menu').hidden) openMore();
+  else closeMore();
+});
+$('more-menu').addEventListener('click', (e) => {
+  if (e.target.closest('a[data-tab]')) closeMore();
+});
+document.addEventListener('click', (e) => {
+  if ($('more-menu').hidden) return;
+  if (e.target.closest('#more-menu') || e.target.closest('#tab-more')) return;
+  closeMore();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('more-menu').hidden) {
+    closeMore();
+    $('tab-more').focus();
+  }
+});
+
 window.addEventListener('hashchange', () => {
   if (!career) return;
   if (screen === 'report') { screen = 'club'; render(); return; }
@@ -2003,6 +2091,7 @@ async function refresh() {
         autoPlayed = Number(data.autoPlayed) || 0;
         refreshFailed = false;
         if (data.shop) shop = data.shop;
+        homeroomWallet = data.homeroomWallet;
         render();
         return;
       }

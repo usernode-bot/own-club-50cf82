@@ -10,6 +10,7 @@ import {
   FAN_SEED, GROUND_CAPACITY, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   SPONSOR_FEES, SPONSOR_TARGETS, MATCHDAY_SALES, matchdaySales,
   CROWD_FACILITIES, CROWD_BONUS, crowdBonus, homeCrowd, maintenanceDue, MAINTENANCE,
+  seasonMoney, FINANCE_HISTORY_MAX, buildDemoState,
 } from '../public/engine.js';
 
 const CLUB = GROUPS[8].clubIds[5]; // a Division 3 club
@@ -279,6 +280,7 @@ test('a sponsor pays once at the rollover when its target was met', () => {
     sponsor: next.sponsor,
     lastSponsor: next.lastSponsor,
     finance: next.finance,
+    financeHistory: [],
   });
   // The new season is not finished, so it cannot pay a second fee.
   assert.equal(startNextSeason(next), next);
@@ -327,6 +329,7 @@ test('moneyFields fills what a saved career is missing, and leaves a filled one 
     sponsor: state.sponsor,
     lastSponsor: state.lastSponsor,
     finance: state.finance,
+    financeHistory: [],
   });
   assert.equal(repairCareer(state).fans, state.fans);
 
@@ -340,4 +343,100 @@ test('moneyFields fills what a saved career is missing, and leaves a filled one 
   assert.equal(kept.shop, 0);
   assert.equal(kept.food, 0);
   assert.equal(kept.hotel, 0);
+});
+
+// ── The Finance tab's history and season totals ─────────────────────────
+
+test('a matchday writes one history entry for the club\'s own fixture', () => {
+  const state = buildInitialState(CLUB, 'Test manager', 41);
+  assert.deepEqual(state.financeHistory, []);
+  playMatchday(state);
+  const entry = state.financeHistory[0];
+  const f = state.lastReport.finance;
+  const own = state.lastReport;
+  const atHome = own.home.id === CLUB;
+  assert.equal(state.financeHistory.length, 1);
+  assert.equal(entry.season, state.season);
+  assert.equal(entry.matchday, 1);
+  assert.equal(entry.venue, atHome ? 'Home' : 'Away');
+  assert.equal(entry.opponentId, atHome ? own.away.id : own.home.id);
+  const income = entry.income.result + entry.income.gate + entry.income.shop
+    + entry.income.food + entry.income.hotel;
+  const expenses = entry.expenses.upkeep + entry.expenses.maintenance
+    + entry.expenses.wages + entry.expenses.staffWages;
+  assert.equal(entry.net, income - expenses);
+  assert.equal(entry.net, f.net);
+  assert.equal(entry.balanceAfter, state.credits);
+});
+
+test('the matchday history is capped at ten and newest first', () => {
+  const state = buildInitialState(CLUB, 'Test manager', 43);
+  for (let i = 0; i < 14; i++) playMatchday(state);
+  assert.equal(state.financeHistory.length, FINANCE_HISTORY_MAX);
+  assert.deepEqual(state.financeHistory.map((h) => h.matchday), [14, 13, 12, 11, 10, 9, 8, 7, 6, 5]);
+});
+
+test('the matchday history starts again with each season', () => {
+  const state = finishedCareer(CLUB, 45);
+  assert.ok(state.financeHistory.length > 0);
+  assert.deepEqual(seasonEndMoney(state).financeHistory, []);
+  const next = startNextSeason(state);
+  assert.deepEqual(next.financeHistory, []);
+});
+
+test('moneyFields and repairCareer fill and clean the matchday history', () => {
+  const state = buildInitialState(CLUB, 'Test manager', 47);
+  delete state.financeHistory;
+  assert.deepEqual(moneyFields(state).financeHistory, []);
+
+  const played = buildInitialState(CLUB, 'Test manager', 49);
+  playMatchday(played);
+  const good = played.financeHistory[0];
+  const older = { ...played, financeHistory: [
+    { ...good, season: good.season + 1 },
+    { ...good, income: { ...good.income, gate: 'x' } },
+    { ...good, matchday: 0 },
+    { ...good, net: 1.5 },
+    good,
+  ] };
+  const kept = moneyFields(older).financeHistory;
+  assert.equal(kept.length, 1);
+  assert.deepEqual(kept[0], good);
+  assert.equal(repairCareer(older).financeHistory.length, 1);
+
+  const many = { ...played, financeHistory: Array.from({ length: 14 }, (_, i) => ({ ...good, matchday: i + 1 })) };
+  assert.equal(moneyFields(many).financeHistory.length, FINANCE_HISTORY_MAX);
+  assert.equal(repairCareer(many).financeHistory.length, FINANCE_HISTORY_MAX);
+});
+
+test('seasonMoney totals this season\'s Club credits in, out and net', () => {
+  const state = buildInitialState(CLUB, 'Test manager', 51);
+  state.credits = 5000;
+  for (let i = 0; i < 6; i++) playMatchday(state);
+  const money = seasonMoney(state);
+  let results = 0;
+  for (const r of state.results) {
+    const home = r.home.id === CLUB;
+    const away = r.away.id === CLUB;
+    if (!home && !away) continue;
+    results += creditsForResult(home ? r.homeGoals : r.awayGoals, home ? r.awayGoals : r.homeGoals);
+  }
+  assert.equal(money.income.results, results);
+  assert.equal(money.income.gate, moneyFields(state).finance.gate);
+  assert.equal(money.income.total, money.income.results + money.income.gate
+    + money.income.shop + money.income.food + money.income.hotel);
+  assert.equal(money.expenses.total, money.expenses.upkeep + money.expenses.maintenance
+    + money.expenses.wages + money.expenses.staffWages);
+  assert.equal(money.net, money.income.total - money.expenses.total);
+
+  const me = leagueTable(state).find((r) => r.id === CLUB);
+  assert.deepEqual(money.record, { won: me.won, drawn: me.drawn, lost: me.lost });
+  assert.equal(money.record.won + money.record.drawn + money.record.lost, 6);
+});
+
+test('the demo season has ten matchdays of history', () => {
+  const state = buildDemoState(1);
+  assert.equal(state.financeHistory.length, FINANCE_HISTORY_MAX);
+  assert.ok(state.financeHistory.every((h) => h.season === 1));
+  assert.equal(state.financeHistory[0].matchday, 17);
 });

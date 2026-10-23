@@ -3,9 +3,10 @@
 A football management game for the browser. You name your manager, get a mock
 wallet of 1,000 Dummy USDC and buy one of the 72 Division 3 clubs for 100, then
 set your eleven on a pitch diagram, choose the formation, mentality and pressing,
-and follow your club through its group's 34 matchdays. Six tabs split the club
-screen: Home, Squad, Tactics, Competition, Club and Transfers, in a bar along the
-bottom on a phone and a sidebar on a laptop. Matches play by themselves at 12 am, 6 am, 12 pm
+and follow your club through its group's 34 matchdays. Seven tabs split the club
+screen: Home, Squad, Tactics, Competition, Club, Finance and Transfers, in a bar
+along the bottom on a phone (the first four plus a More menu) and a sidebar on a
+laptop. Matches play by themselves at 12 am, 6 am, 12 pm
 and 6 pm on the manager's own clock, with the lineup and tactics last saved, so a
 season takes about nine days. Squads tire, pick up cards and injuries, and the
 group table builds up as the season goes.
@@ -30,12 +31,20 @@ players.
 
 Every club also has Club credits, a second in-game currency that belongs to the
 career rather than to the person. Its balance shows under your Dummy USDC in the
-Wallet section on Home. A match earns 50 credits for a win, 25 for a draw and 10
-for a loss, however it was played: at its kick-off while you were away or while
-you were watching. The engine adds them when it plays the manager's own fixture,
-the server keeps the stored balance whatever the page sends, they carry into the
-next season, and they end with the career when the club is sold. They are spent
-in the Club tab, on the club's facilities.
+Wallet at the top of the Finance tab. A match earns 50 credits for a win, 25 for
+a draw and 10 for a loss, however it was played: at its kick-off while you were
+away or while you were watching. The engine adds them when it plays the
+manager's own fixture, the server keeps the stored balance whatever the page
+sends, they carry into the next season, and they end with the career when the
+club is sold. They are spent in the Club tab, on the club's facilities.
+
+The Finance tab is where the club's money stands. The Wallet shows Dummy USDC,
+Club credits and the address of the Homeroom wallet linked to your account (for
+reference only: the game never moves money in or out of it). Below it, the
+season's income, expenses and net in Club credits, then each income line, each
+expense line, and the last ten matchdays with what came in, what went out and
+the balance afterwards. The history starts again each season, and a career
+saved before it existed starts from its next matchday.
 
 The Club tab lists six facilities, Stadium, Training ground, Academy, Shop, Food
 stand and Hotel. Each starts at level 1, goes up to level 5, and says what it has
@@ -62,7 +71,7 @@ listings off the market with it.
 
 Every player is paid a wage on each of the club's matchdays, home or away:
 (overall minus 35) times 1.5, rounded, at least 5 Club credits, and half that
-under 21. Home's Finances shows the wage bill and what has been paid this
+under 21. The Finance tab shows the wage bill and what has been paid this
 season. Wages are taken after ground upkeep and never take the balance below 0.
 At Start next season every player gets a year older; from 30 each attribute
 loses 1 to 3 points, from 34 a player may retire and at 39 always does. The

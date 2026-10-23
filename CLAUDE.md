@@ -170,9 +170,25 @@ the extra fans when there are any. Each level above 1 also adds its share of
 `MAINTENANCE` on every matchday, like every other facility. The shop, food stand
 and hotel also earn on a home matchday (`MATCHDAY_SALES` and `matchdaySales`:
 Club credits for every 10 fans in the ground, 4/6/10/15/22 at the shop,
-3/5/8/12/18 at the food stand and 1/2/4/7/12 at the hotel, by level). Home shows the
-balance as the second row of the Wallet section, and that section's tag reads
+3/5/8/12/18 at the food stand and 1/2/4/7/12 at the hotel, by level). The Finance
+tab shows the balance as the second row of the Wallet section, and that section's tag reads
 "Staging mock" rather than "Dummy USDC (staging mock)".
+
+The Finance tab holds the Wallet and the season's Club credits, and Home no
+longer shows either. The Wallet is Dummy USDC, Club credits and a read-only
+Homeroom wallet row: `GET /api/career` reads the verified token's
+`usernode_pubkey` into a top-level `homeroomWallet` (`{ address }`) for a
+signed-in person only, never stores it and never accepts one from the page.
+`seasonMoney` in `engine.js` totals the season for the summary and the income
+and expense lists (result credits, gate, shop, food and hotel against upkeep,
+maintenance and wages; upgrades, staff fees, transfers and the sponsor are left
+out of the net). `state.financeHistory` is the last `FINANCE_HISTORY_MAX` (10)
+matchdays of this season, newest first, each `{ season, matchday, venue,
+opponentId, income, expenses, net, balanceAfter }`; `playMatchday` writes one
+entry for the club's own fixture, `moneyFields` drops malformed or
+older-season entries and caps the list, `seasonEndMoney` empties it, and
+`startNextSeason` and `repairCareer` carry it through their spreads. The server
+keeps the stored list whatever the page sends.
 
 Players move between clubs through the public `transfer_listings` table
 (`id`, `seller_user_id`, `seller_club_id`, a `player` snapshot, `asking_price`,
@@ -271,16 +287,26 @@ change follows it, and updates it when a request changes the look on purpose.
   line, ending in the plain secondary button (Buy, Withdraw) or a muted
   "N needed" / "Squad full" in the same place.
 - The Wallet section is one list of the same rows, Dummy USDC then Club
-  credits: the balance in `.bal`, the price in `.price` (bold, tabular
-  numbers); the group chips reuse the division
-  chip row, four wide.
-- **Navigation:** six tabs, Home, Squad, Tactics, Competition, Club and
-  Transfers, each with a line icon in the same stroke as the report's icons (a
-  house, two players, a tactics board, a cup, a stadium and two opposite
-  arrows). On phones the six labels are 10 px so all six fit at 360 px. A fixed bottom bar on phones
+  credits then the read-only Homeroom wallet: the balance in `.bal`, the price
+  in `.price` (bold, tabular numbers); the group chips reuse the division
+  chip row, four wide. The Finance tab's summary and its income, expense and
+  history sections are that same list of rows, each name over a small grey
+  line with a bold tabular figure at the end; the net row uses the raised
+  background.
+- **Navigation:** seven tabs, Home, Squad, Tactics, Competition, Club, Finance
+  and Transfers, each with a line icon in the same stroke as the report's icons
+  (a house, two players, a tactics board, a cup, a stadium, a banknote with a
+  circle in it, and two opposite arrows). On phones the bottom bar shows Home,
+  Squad, Tactics and Competition plus a More button (three dots) whose menu
+  holds Club, Finance and Transfers; More is pitch green while one of those is
+  open. The five labels are 10 px so they fit at 360 px. The More menu is a
+  surface panel with a line border above the bar at the right, one 48 px row
+  per tab with its icon, and the current row pitch green on the raised
+  background. A fixed bottom bar on phones
   (56 px items,
   safe-area padding) becomes a 240 px sticky left sidebar from `md` up, with
-  the club's badge and name. The bar and sidebar use surface with a line
+  the club's badge and name; the sidebar lists all seven tabs and has no More
+  button. The bar and sidebar use surface with a line
   border; the current tab is pitch green, on a raised background in the
   sidebar, never amber. The header with the club, matchday and position sits
   above every tab.

@@ -240,9 +240,10 @@ button.chip[aria-expanded="true"] {
 .ico.own { color: rgb(var(--fg)); }
 .min, .big, .rt, .ovr, .tbl, .stat .h { font-variant-numeric: tabular-nums; }
 
-/* ── The six club tabs ────────────────────────────────────────────────── */
-/* The bar carries six labels; below a tablet they drop to 10px so all six
-   fit at 360px. */
+/* ── The seven club tabs ──────────────────────────────────────────────── */
+/* The bar carries four labels and More; below a tablet the labels drop to
+   10px so all five fit at 360px. Club, Finance and Transfers fold into the
+   More menu. */
 
 /* The tab bar is a bar along the bottom of a phone: fixed, above the
    safe-area inset, with the panels padded to match. */
@@ -275,9 +276,57 @@ button.chip[aria-expanded="true"] {
 .tab svg { display: block; }
 @media (max-width: 767px) {
   .tab { min-width: 0; white-space: nowrap; font-size: 10px; line-height: 14px; }
+  /* The three tabs the phone bar folds into More. */
+  .tabnav .tab-overflow { display: none; }
 }
 .tab[aria-current="page"] { color: rgb(var(--pitch-ink)); }
 .tab:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: -2px; }
+
+/* More is a button in the bar, not a link, so it takes the bar's own look. */
+.tab-more {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.tab-more[data-current] { color: rgb(var(--pitch-ink)); }
+
+/* The menu opens above the bar, at the right, in the surface colour. */
+.more-menu {
+  position: fixed;
+  right: 8px;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  width: 220px;
+  z-index: 21;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 12px;
+  overflow: hidden;
+}
+.more-menu[hidden] { display: none; }
+.more-list { border: 0; border-radius: 0; background: transparent; }
+.more-list li { border-top: 1px solid rgb(var(--line)); }
+.more-list li:first-child { border-top: 0; }
+.more-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 16px;
+  color: rgb(var(--fg));
+  font-weight: 600;
+  text-decoration: none;
+}
+.more-item svg { display: block; flex: none; }
+.more-item[aria-current="page"] { color: rgb(var(--pitch-ink)); background: rgb(var(--raised)); }
+.more-item:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: -2px; }
+
+/* A wallet address can be long: it wraps rather than overflowing at 360px. */
+.addr { word-break: break-all; font-variant-numeric: tabular-nums; }
 .tab-club { display: none; }
 .club-app { width: 100%; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
 
@@ -384,6 +433,8 @@ button.chip[aria-expanded="true"] {
   }
   .club-app .club-main { flex: 1; min-width: 0; max-width: 42rem; margin-inline: auto; }
   .club-app .app { width: 100%; }
+  /* The sidebar lists all seven tabs, so More and its menu are gone. */
+  .tab-more, .more-menu { display: none !important; }
 }
 
 /* The player sheet's Transfer section: the inline price form and confirms. */
