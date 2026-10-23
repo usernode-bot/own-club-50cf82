@@ -430,10 +430,12 @@ export function academyIntake(state, matchday) {
       name = pick(rng, FIRST_NAMES) + ' ' + pick(rng, LAST_NAMES);
     } while (used.has(name));
     used.add(name);
+    const id = 'y' + season + '-' + matchday + '-' + k;
     fresh.push({
-      id: 'y' + season + '-' + matchday + '-' + k,
+      id: id,
       name,
       pos,
+      peak: peakStyleFor(state.seed, id),
       age: 16 + Math.floor(rng() * 2),
       attrs,
       overall: overallOf(attrs, pos),
@@ -788,7 +790,8 @@ export function listPlayer(state, id, price) {
   const err = leaveError(state, id);
   if (err) return { error: err };
   const player = ownSquad(state).find((p) => p.id === id);
-  return { state: removePlayer(state, id), snapshot: { ...player } };
+  // The buyer sees the peak style the seller saw, even under a new market id.
+  return { state: removePlayer(state, id), snapshot: { ...player, peak: playerPeak(state, player) } };
 }
 
 // Sign a listed player: the price leaves the credits and the player joins.
@@ -806,18 +809,59 @@ export function returnListing(state, listing) {
   return { state: addPlayer(state, listing.player, 't' + listing.id) };
 }
 
-// The summer: everyone a year older, decline from 30, retirement possible
-// from 34 and certain at 39. Fixed by the career's seed, so the season card
-// can name the retirees before the rollover.
+// Each player peaks at one of three ages. Until the peak every attribute
+// rises a little each summer, for two summers it holds, and from the decline
+// age it slips again.
+export const PEAK_STYLES = {
+  early: { peak: 23, decline: 26 },
+  mid: { peak: 27, decline: 30 },
+  late: { peak: 30, decline: 33 },
+};
+export const PEAK_NAMES = ['early', 'mid', 'late'];
+
+// A player's peak style from the career's seed, so a stored player without one
+// still reads the same every time it is looked at.
+export function peakStyleFor(seed, id) {
+  return PEAK_NAMES[hash(seed, 'peak', id) % 3];
+}
+
+export function playerPeak(state, p) {
+  const stored = p && typeof p.peak === 'string' && Object.prototype.hasOwnProperty.call(PEAK_STYLES, p.peak)
+    ? p.peak : null;
+  return stored || peakStyleFor(state && state.seed, p && p.id);
+}
+
+// The peak style, the age it comes at, and how the coming summer changes the
+// player: 'improving', 'steady' or 'declining'.
+export function growthOutlook(state, p) {
+  const style = playerPeak(state, p);
+  const { peak, decline } = PEAK_STYLES[style];
+  const nextAge = (Number.isInteger(p && p.age) ? p.age : 20) + 1;
+  const next = nextAge <= peak ? 'improving' : nextAge >= decline ? 'declining' : 'steady';
+  return { style, peakAge: peak, next };
+}
+
+// The summer: everyone a year older, attributes rising to their peak and
+// slipping afterwards, retirement possible from 34 and certain at 39. Fixed
+// by the career's seed, so the season card can name the retirees before the
+// rollover.
 export function ageingFor(state) {
   const season = (state && state.season) || 1;
   const retiring = [];
   const players = ownSquad(state).map((p) => {
+    const peak = playerPeak(state, p);
+    const style = PEAK_STYLES[peak];
     const newAge = (Number.isInteger(p.age) ? p.age : 20) + 1;
     const attrs = { ...p.attrs };
     const overall = Number.isFinite(p.overall) ? p.overall : overallOf(attrs, p.pos);
-    const out = { ...p, age: newAge, attrs, overall };
-    if (newAge >= 30) {
+    const out = { ...p, age: newAge, attrs, overall, peak };
+    if (newAge <= style.peak) {
+      for (const k of Object.keys(attrs)) {
+        const gain = 1 + (hash(state.seed, 'grow', season, p.id, k) % 3);
+        attrs[k] = Math.min(92, attrs[k] + gain);
+      }
+      out.overall = overallOf(attrs, p.pos);
+    } else if (newAge >= style.decline) {
       for (const k of Object.keys(attrs)) {
         const drop = 1 + (hash(state.seed, 'age', season, p.id, k) % 3);
         attrs[k] = Math.max(20, attrs[k] - drop);
@@ -848,6 +892,7 @@ export function academyGraduate(seed, season, index, pos, academyLevel, tier) {
     id: 'y' + season + '-' + index,
     name,
     age: 17,
+    peak: peakStyleFor(seed, 'y' + season + '-' + index),
     fitness: 100,
     morale: 70,
     overall: overallOf(p.attrs, pos),
@@ -1053,6 +1098,9 @@ export function buildSquad(seed, clubIndex, rep, division = 1) {
     } while (used.has(name));
     used.add(name);
     p.name = name;
+    // From the hash, not the squad's rng: one more draw would change every
+    // generated squad, name and fixture for a seed.
+    p.peak = peakStyleFor(seed, p.id);
     return p;
   });
   // The best outfield player in the middle of the park wears the armband.
@@ -2162,6 +2210,7 @@ function playerForNewSeason(p) {
     name: p.name,
     pos: p.pos,
     age: p.age,
+    peak: p.peak,
     attrs: p.attrs,
     overall: p.overall,
     fitness: 100,
