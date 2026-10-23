@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CLUBS, CLUB_BY_ID, COASTAL_IDS, GROUPS, GROUP_LETTERS, TIER_COUNT, CLUB_COUNT,
-  DIVISION_SIZE, MATCHDAYS, clubToGroup, groupName, SHOP_CLUB_IDS, purchaseError,
+  DIVISION_SIZE, MATCHDAYS, clubToGroup, groupName, purchaseError,
   divisionClubIds, placeName, seasonSeed, seasonOutcome, nextPlacement, startNextSeason,
   buildInitialState, buildFixtures, buildSquad, buildDemoState,
   leagueTable, playMatchday, objectiveMet, clubSummary, defaultRole, autoLineup,
@@ -101,16 +101,16 @@ test('the Coastal League is three tiers and 162 clubs in nine groups', () => {
   for (const c of CLUBS) assert.ok(GROUPS[clubToGroup[c.id]].clubIds.includes(c.id));
 });
 
-test('the shop is every Division 3 club, and the purchase is checked', () => {
-  assert.equal(SHOP_CLUB_IDS.length, 72);
-  for (const id of SHOP_CLUB_IDS) assert.equal(GROUPS[clubToGroup[id]].tier, TIER_COUNT);
-  assert.equal(SHOP_CLUB_IDS[0], GROUPS[5].clubIds[0]);
-
-  assert.equal(purchaseError('harbourside', 1000, 100), 'club');
+test('the shop is every club in the pyramid, and the purchase is checked', () => {
+  const first = GROUPS[0].clubIds[0];
+  const d3 = GROUPS[5].clubIds[0];
+  assert.equal(first, 'harbourside');
+  assert.equal(purchaseError(first, 1000, 300), null);
+  assert.equal(purchaseError(d3, 1000, 100), null);
+  assert.equal(purchaseError('harbourside', 299, 300), 'balance');
   assert.equal(purchaseError('nowhere', 1000, 100), 'club');
-  assert.equal(purchaseError(SHOP_CLUB_IDS[0], 50, 100), 'balance');
-  assert.equal(purchaseError(SHOP_CLUB_IDS[0], 1000, 100), null);
-  assert.equal(purchaseError(SHOP_CLUB_IDS[0], 100, 100), null);
+  assert.equal(purchaseError(d3, 50, 100), 'balance');
+  assert.equal(purchaseError(d3, 100, 100), null);
 });
 
 test('a group plays a double round robin', () => {
@@ -423,6 +423,6 @@ test('the wallet a first-time manager is given, and the one an earlier career ke
   // A balance kept from an earlier career is the one the shop spends.
   assert.equal(openingBalance(0, 1000), 0);
   assert.equal(openingBalance(900, 1000), 900);
-  assert.equal(purchaseError(SHOP_CLUB_IDS[0], openingBalance(null, 1000), 100), null);
-  assert.equal(purchaseError(SHOP_CLUB_IDS[0], openingBalance(0, 1000), 100), 'balance');
+  assert.equal(purchaseError(GROUPS[5].clubIds[0], openingBalance(null, 1000), 100), null);
+  assert.equal(purchaseError(GROUPS[5].clubIds[0], openingBalance(0, 1000), 100), 'balance');
 });

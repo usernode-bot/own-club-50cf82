@@ -35,9 +35,10 @@ let screen = 'loading';
 // What the shop says a club costs and how much a new wallet holds. The server
 // sends these with every load; the defaults only stand in until it does.
 let shop = { price: 100, startingBalance: 1000, currency: 'Dummy USDC' };
-const SHOP_GROUPS = GROUPS.filter((g) => g.tier === TIER_COUNT);
+const SHOP_GROUPS = GROUPS;
+let pickedDivision = TIER_COUNT;
 let pickedGroup = 'A';
-let pickedClub = SHOP_GROUPS[0].clubIds[0];
+let pickedClub = GROUPS.filter((g) => g.tier === TIER_COUNT)[0].clubIds[0];
 let menuKind = null;
 let sheetPlayerId = null;
 let saveFailed = false;
@@ -243,9 +244,28 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="
 
 function renderNew() {
   $('manager-name').value = $('manager-name').value || '';
+  const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
+  const prices = shop.prices || { 1: 300, 2: 200, 3: 100 };
+  const price = prices[pickedDivision] || shop.price;
+  const inDivision = SHOP_GROUPS.filter((g) => g.tier === pickedDivision);
+  // Division 1 is one group of 18; Divisions 2 and 3 have four groups.
+  const groups = inDivision.map((g) => ({ group: g.group, clubIds: g.clubIds, free: g.clubIds.filter((id) => !taken.has(id)) }));
+  const freeTotal = groups.reduce((n, g) => n + g.free.length, 0);
+  const freeAll = SHOP_GROUPS.reduce((n, g) => n + g.clubIds.filter((id) => !taken.has(id)).length, 0);
+
+  for (const btn of $('division-row').querySelectorAll('[data-division]')) {
+    btn.setAttribute('aria-pressed', String(Number(btn.dataset.division) === pickedDivision));
+  }
+  const group = groups.find((g) => g.group === pickedGroup) || groups[0];
+  $('division-price').textContent = pickedDivision === 1
+    ? usdc(price) + ' a club, ' + freeTotal + ' of 18 free'
+    : usdc(price) + ' a club';
+  $('group-section').hidden = pickedDivision === 1;
+  $('group-note').textContent = freeTotal === 0 ? '' : (group ? group.free.length : 0) + ' of 18 free in Group ' + pickedGroup;
   for (const btn of $('group-row').querySelectorAll('[data-group]')) {
     btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
   }
+
   $('wallet-balance').textContent = usdc(shop.balance == null ? shop.startingBalance : shop.balance);
   const sold = lastSale ? CLUB_BY_ID[lastSale.clubId] : null;
   $('wallet-note').textContent = sold
@@ -254,30 +274,24 @@ function renderNew() {
     : shop.kept
       ? 'Your wallet, kept from your earlier clubs. No real payment is taken.'
       : 'Every new manager gets this to buy a club. No real payment is taken.';
-  const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
-  const groups = SHOP_GROUPS.map((g) => ({ group: g.group, clubIds: g.clubIds, free: g.clubIds.filter((id) => !taken.has(id)) }));
-  const freeTotal = groups.reduce((n, g) => n + g.free.length, 0);
+
   const list = $('club-list');
   const buy = $('start-career');
   const errBox = $('career-error');
-  if (!freeTotal) {
-    list.innerHTML = '<li class="list-row"><span class="nm">No Division 3 club is free right now. A club comes free when its manager sells it.</span></li>';
-    $('group-row').hidden = true;
+  if (!freeAll) {
+    list.innerHTML = '<li class="list-row"><span class="nm">No club is free right now. A club comes free when its manager sells it.</span></li>';
     buy.disabled = true;
     buy.textContent = 'No club is free right now';
     pickedClub = null;
     return;
   }
-  $('group-row').hidden = false;
-  const group = groups.find((g) => g.group === pickedGroup) || groups[0];
   if (!group.free.includes(pickedClub)) pickedClub = group.free[0] || null;
   if (!group.free.length) {
-    list.innerHTML = '<li class="list-row"><span class="nm">Every club in Group ' + esc(group.group) + ' has a manager. Choose another group.</span></li>';
+    list.innerHTML = '<li class="list-row"><span class="nm">Every club in ' + esc(group.group ? 'Group ' + group.group : 'Division 1') + ' has a manager. Choose another group.</span></li>';
     buy.disabled = true;
     buy.textContent = 'Choose another group';
     return;
   }
-  buy.disabled = false;
   list.innerHTML = group.clubIds.map((id) => CLUB_BY_ID[id]).map((c) => {
     const isTaken = taken.has(c.id);
     if (isTaken) {
@@ -292,13 +306,20 @@ function renderNew() {
     return `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
       <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, ${esc(c.objective)}</small></span>
-      <span class="price">${usdc(shop.price)}</span>
+      <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, run by a bot</small></span>
+      <span class="price">${usdc(price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`;
   }).join('');
   const picked = CLUB_BY_ID[pickedClub];
-  buy.textContent = picked ? 'Buy ' + picked.name + ' for ' + usdc(shop.price) : 'Buy a club';
+  const balance = shop.balance == null ? shop.startingBalance : shop.balance;
+  if (picked && balance < price) {
+    buy.disabled = true;
+    buy.textContent = 'Your wallet does not cover ' + usdc(price);
+  } else {
+    buy.disabled = false;
+    buy.textContent = picked ? 'Buy ' + picked.name + ' for ' + usdc(price) : 'Buy a club';
+  }
   if (errBox.hidden) errBox.hidden = true;
 }
 
@@ -663,8 +684,7 @@ function renderClub() {
   } else {
     $('confirm-text').textContent = 'Sell ' + club.name + forPrice
       + '? This career and its results end, and the ' + usdc(price)
-      + ' goes into your wallet for your next club.'
-      + (clubTier(career) === 3 ? ' ' + club.name + ' goes back in the shop.' : '');
+      + ' goes into your wallet for your next club. ' + club.name + ' goes back in the shop.';
   }
   $('save-error').hidden = !saveFailed;
   renderFacilities();
@@ -1890,8 +1910,9 @@ async function doStartOver() {
     }
     career = null;
     version = null;
+    pickedDivision = TIER_COUNT;
     pickedGroup = 'A';
-    pickedClub = SHOP_GROUPS[0].clubIds[0];
+    pickedClub = GROUPS.filter((g) => g.tier === TIER_COUNT)[0].clubIds[0];
     $('manager-name').value = '';
     closeSheet();
     closeMenu();
@@ -1913,11 +1934,21 @@ $('confirm-over-no').addEventListener('click', () => { $('confirm-over').hidden 
 $('confirm-over-yes').addEventListener('click', doStartOver);
 
 // ── Wiring ───────────────────────────────────────────────────────────────
+$('division-row').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-division]');
+  if (!btn) return;
+  pickedDivision = Number(btn.dataset.division);
+  const group = SHOP_GROUPS.find((g) => g.tier === pickedDivision);
+  const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
+  pickedGroup = group.group || 'A';
+  pickedClub = group.clubIds.find((id) => !taken.has(id)) || null;
+  renderNew();
+});
 $('group-row').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-group]');
   if (!btn) return;
   pickedGroup = btn.dataset.group;
-  const group = SHOP_GROUPS.find((g) => g.group === pickedGroup);
+  const group = SHOP_GROUPS.find((g) => g.tier === pickedDivision && g.group === pickedGroup);
   const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
   if (group && (!group.clubIds.includes(pickedClub) || taken.has(pickedClub))) {
     pickedClub = group.clubIds.find((id) => !taken.has(id)) || null;

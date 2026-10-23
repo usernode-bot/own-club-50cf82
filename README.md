@@ -1,7 +1,8 @@
 # Own Club
 
 A football management game for the browser. You name your manager, get a mock
-wallet of 1,000 Dummy USDC and buy one of the 72 Division 3 clubs for 100, then
+wallet of 1,000 Dummy USDC and buy any of the 162 clubs: 100 in Division 3,
+200 in Division 2 and 300 in Division 1. Then you
 set your eleven on a pitch diagram, choose the formation, mentality and pressing,
 and follow your club through its group's 34 matchdays. Six tabs split the club
 screen: Home, Squad, Tactics, Competition, Club and Transfers, in a bar along the
@@ -10,11 +11,11 @@ and 6 pm on the manager's own clock, with the lineup and tactics last saved, so 
 season takes about nine days. Squads tire, pick up cards and injuries, and the
 group table builds up as the season goes.
 
-A Division 3 club has one manager, so a taken club shows as Taken in the shop.
+A club has one manager, so a taken club shows as Taken in the shop.
 A club comes free when its manager sells it.
 
 Starting a new career means selling your club. The sale pays Dummy USDC into a
-wallet you keep: 100 in Division 3, 300 in Division 2 and 900 in Division 1, so
+wallet you keep: 100 in Division 3, 200 in Division 2 and 300 in Division 1, so
 a club taken up the league is worth more than you paid for it. The money stays
 in your wallet after you buy your next club, and a first-time manager still
 starts with 1,000 USDC.
