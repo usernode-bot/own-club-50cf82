@@ -96,7 +96,8 @@ tables you've marked private), etc.
 ## About Own Club
 
 A football management game. A new career starts with your manager name, a mock
-wallet of 1,000 Dummy USDC and a shop of the 72 Division 3 clubs at 100 each;
+wallet of 1,000 Dummy USDC and a shop of all 162 clubs, 100 in Division 3,
+200 in Division 2 and 300 in Division 1;
 then you set the eleven on a pitch diagram, choose formation, mentality,
 pressing and each player's role, and play each of your group's 34 matchdays
 and read the report. A Club tab lists the nine club facilities (stadium,
@@ -137,7 +138,7 @@ Selling is how a career ends. `DELETE /api/career` pays the club's sale value
 into the person's wallet (`wallets`, one row per person) in the same
 transaction that frees the club and deletes the career, and the New career
 screen shows the kept balance. The sale value comes from the division the club
-is in when it is sold: `SALE_VALUE` in `server.js` pays 900/300/100 for
+is in when it is sold: `SALE_VALUE` in `server.js` pays 300/200/100 for
 Divisions 1/2/3.
 
 Club credits are the club's own in-game currency, a per-career field
@@ -357,7 +358,7 @@ Re-theme by changing the token values there, keeping every text pair at
 
 - Dummy USDC is a mock: no payment, wallet or crypto integration. The club
   price, the starting balance and the sale values live only in `server.js`
-  (`CLUB_PRICE`, `STARTING_BALANCE`, `SALE_VALUE`). The server owns the
+  (`TIER_PRICE`, `STARTING_BALANCE`, `SALE_VALUE`). The server owns the
   `wallets` table (staging:private) and changes a balance only on a purchase
   (debit, inside `POST`'s transaction) or a sale (credit, inside `DELETE`'s).
   The browser never sends an amount, `PUT /api/career` never changes money, and
@@ -365,6 +366,6 @@ Re-theme by changing the token values there, keeping every text pair at
   first-time manager's row is seeded with `STARTING_BALANCE`; careers saved
   before the table grandfather their `state.wallet.balance` on boot.
 - The pyramid is capped at three tiers and 162 clubs (the early-stage maximum):
-  no Division 4. The shop lists Division 3 clubs only, and a manager owns one
-  club at a time. Selling a club, owning more than one and real USDC come
+  no Division 4. The shop lists every division's clubs at its tier price
+  (`TIER_PRICE`), and a manager owns one club at a time. Selling a club, owning more than one and real USDC come
   later; the purchase is stored so selling can be added.

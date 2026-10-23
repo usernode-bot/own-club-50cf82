@@ -198,13 +198,10 @@ export const clubToGroup = Object.fromEntries(
   GROUPS.flatMap((g, i) => g.clubIds.map((id) => [id, i]))
 );
 
-// What a new manager can buy: every Division 3 club. The price and the
-// balance are held by the server, which is where the money lives.
-export const SHOP_CLUB_IDS = GROUPS.filter((g) => g.tier === TIER_COUNT).flatMap((g) => g.clubIds);
-
+// Every club in the pyramid is for sale; the server holds the price by tier.
 // Why a purchase is refused, or null when it can go ahead.
 export function purchaseError(clubId, balance, price) {
-  if (!SHOP_CLUB_IDS.includes(clubId)) return 'club';
+  if (!CLUB_BY_ID[clubId]) return 'club';
   if (!(typeof balance === 'number' && balance >= price)) return 'balance';
   return null;
 }
@@ -2073,13 +2070,32 @@ export function saveCheck(stored, incoming) {
   return 'stale';
 }
 
-// The Division 3 groups, each with the clubs nobody owns yet.
+// Every group in the pyramid, each with the clubs nobody owns yet.
 export function freeShopClubs(taken) {
   const set = new Set(Array.isArray(taken) ? taken : []);
-  return GROUPS.filter((g) => g.tier === TIER_COUNT).map((g) => ({
+  return GROUPS.map((g) => ({
+    tier: g.tier,
     group: g.group,
+    name: g.name,
     clubIds: g.clubIds.slice(),
     free: g.clubIds.filter((id) => !set.has(id)),
+  }));
+}
+
+// The New career screen's shop: all nine groups, each club with its live
+// squad average and whether another manager runs it.
+export function shopGroups(taken) {
+  const set = new Set(Array.isArray(taken) ? taken : []);
+  return GROUPS.map((g, index) => ({
+    index,
+    tier: g.tier,
+    group: g.group,
+    name: g.name,
+    clubs: g.clubIds.map((id) => ({
+      id,
+      avg: clubSummary(1, CLUB_BY_ID[id], g.tier).avg,
+      taken: set.has(id),
+    })),
   }));
 }
 

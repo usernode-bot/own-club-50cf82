@@ -201,12 +201,14 @@ function demoCareer(e, now) {
 // place a balance changes (a purchase debits it, a sale credits it); the
 // browser never sends an amount.
 const CURRENCY = 'Dummy USDC';
-const CLUB_PRICE = 100;
+// What a club costs, by the division it is in on the day it is bought.
+const TIER_PRICE = { 1: 300, 2: 200, 3: 100 };
 const STARTING_BALANCE = 1000;
 // What selling pays, by the division the club is in on the day it is sold.
-const SALE_VALUE = { 1: 900, 2: 300, 3: 100 };
+const SALE_VALUE = { 1: 300, 2: 200, 3: 100 };
 const SHOP = {
-  price: CLUB_PRICE,
+  prices: TIER_PRICE,
+  price: TIER_PRICE[3],
   startingBalance: STARTING_BALANCE,
   currency: CURRENCY,
   saleValues: SALE_VALUE,
@@ -393,7 +395,15 @@ app.get('/api/career', async (req, res) => {
           career: out.state, version: 1, demo: true, shop: SHOP, autoPlayed: out.autoPlayed,
         });
       }
-      return res.json({ career: null, version: 0, demo: false, shop: { ...SHOP, taken: await takenClubs() } });
+      const eg = await engine();
+      const taken = await takenClubs();
+      return res.json({ career: null, version: 0, demo: false, shop: {
+        ...SHOP,
+        taken,
+        groups: eg.shopGroups(taken),
+        balance: STARTING_BALANCE,
+        kept: false,
+      } });
     }
     const { rows } = await queryWithRetry(
       pool,
@@ -434,13 +444,15 @@ app.get('/api/career', async (req, res) => {
     const e = await engine();
     const wallet = await queryWithRetry(pool, 'SELECT usdc FROM wallets WHERE user_id = $1', [req.user.id]);
     const stored = wallet.rows[0];
+    const taken = await takenClubs();
     return res.json({
       career: null,
       version: 0,
       demo: false,
       shop: {
         ...SHOP,
-        taken: await takenClubs(),
+        taken,
+        groups: e.shopGroups(taken),
         balance: e.openingBalance(stored && stored.usdc, STARTING_BALANCE),
         kept: !!stored,
       },
@@ -474,11 +486,17 @@ app.post('/api/career', async (req, res) => {
   try {
     const e = await engine();
     // The shop and the price are the server's: a forged club or balance in the
-    // request body never gets through. The balance is checked inside the
-    // transaction, against the wallet that is being debited.
-    const refusal = e.purchaseError(clubId, CLUB_PRICE, CLUB_PRICE);
-    if (refusal === 'club') {
-      return res.status(400).json({ error: 'club', message: 'That club is not in the shop. Choose a Division 3 club.' });
+    // request body never gets through. The price follows the division the
+    // club is in today. The balance is checked inside the transaction,
+    // against the wallet that is being debited.
+    const groupIndex = e.clubToGroup[clubId];
+    if (groupIndex === undefined) {
+      return res.status(400).json({ error: 'club', message: 'That club is not in the shop.' });
+    }
+    const tier = e.GROUPS[groupIndex].tier;
+    const price = TIER_PRICE[tier];
+    if (e.purchaseError(clubId, price, price) === 'club') {
+      return res.status(400).json({ error: 'club', message: 'That club is not in the shop.' });
     }
     const zone = e.validTimeZone(req.body && req.body.timeZone) ? req.body.timeZone : 'UTC';
     const seed = crypto.randomInt(1, 2147483647);
@@ -486,7 +504,7 @@ app.post('/api/career', async (req, res) => {
     state.managerName = managerName.trim();
     state.timeZone = demo ? 'Europe/London' : zone;
     state.nextMatchAt = e.slotAfter(req.now, state.timeZone).toISOString();
-    state.purchase = { clubId, price: CLUB_PRICE, at: req.now.toISOString() };
+    state.purchase = { clubId, price, tier, at: req.now.toISOString() };
 
     if (demo) {
       const demoState = demoCareer(e, req.now);
@@ -539,13 +557,13 @@ app.post('/api/career', async (req, res) => {
       );
       const wallet = await client.query('SELECT usdc FROM wallets WHERE user_id = $1 FOR UPDATE', [req.user.id]);
       const storedBalance = wallet.rows.length ? wallet.rows[0].usdc : STARTING_BALANCE;
-      if (e.purchaseError(clubId, storedBalance, CLUB_PRICE) === 'balance') {
+      if (e.purchaseError(clubId, storedBalance, price) === 'balance') {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'balance', message: 'Your Dummy USDC does not cover this club.' });
       }
       const debit = await client.query(
         'UPDATE wallets SET usdc = usdc - $2, updated_at = now() WHERE user_id = $1 RETURNING usdc',
-        [req.user.id, CLUB_PRICE]
+        [req.user.id, price]
       );
       // The career's wallet is a display copy of the row, written here only.
       state.wallet = { currency: CURRENCY, balance: debit.rows[0].usdc };

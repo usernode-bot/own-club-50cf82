@@ -2,11 +2,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  freeShopClubs, saveCheck, SHOP_CLUB_IDS, clubTier, saleValue, openingBalance,
+  freeShopClubs, shopGroups, purchaseError, saveCheck, clubTier, saleValue, openingBalance, GROUPS,
 } from '../public/engine.js';
 
 // The server's sale values, as server.js holds them.
-const SALE_VALUE = { 1: 900, 2: 300, 3: 100 };
+const SALE_VALUE = { 1: 300, 2: 200, 3: 100 };
 
 // A version 3 career in the division it says it is in.
 function v3State(division) {
@@ -19,18 +19,31 @@ function v3State(division) {
   };
 }
 
-test('freeShopClubs drops taken clubs from each group', () => {
+test('freeShopClubs drops taken clubs from every group in the pyramid', () => {
   const groups = freeShopClubs([]);
-  assert.equal(groups.length, 4);
+  assert.equal(groups.length, 9);
   assert.equal(groups[0].clubIds.length, 18);
-  assert.equal(groups.reduce((n, g) => n + g.free.length, 0), SHOP_CLUB_IDS.length);
-  const taken = [groups[0].clubIds[0], groups[0].clubIds[1], groups[2].clubIds[0]];
+  assert.equal(groups.reduce((n, g) => n + g.free.length, 0), 162);
+  const taken = [groups[0].clubIds[0], groups[0].clubIds[1], groups[8].clubIds[0]];
   const after = freeShopClubs(taken);
   assert.equal(after[0].free.length, 16);
-  assert.equal(after[2].free.length, 17);
+  assert.equal(after[8].free.length, 17);
   assert.equal(after[0].clubIds.length, 18);
-  const report = after.map((g) => g.group);
-  assert.deepEqual(report, ['A', 'B', 'C', 'D']);
+  const shop = shopGroups(taken);
+  assert.equal(shop.length, 9);
+  assert.equal(shop[0].tier, 1);
+  assert.equal(shop[8].tier, 3);
+  assert.equal(shop[0].clubs[0].taken, true);
+  assert.equal(shop[8].clubs[1].taken, false);
+});
+
+test('purchaseError accepts a free club in any division and refuses a short wallet', () => {
+  const d1 = GROUPS.find((g) => g.tier === 1).clubIds[0];
+  const d2 = GROUPS.find((g) => g.tier === 2).clubIds[0];
+  assert.equal(purchaseError(d1, 300, 300), null);
+  assert.equal(purchaseError(d1, 299, 300), 'balance');
+  assert.equal(purchaseError(d2, 200, 200), null);
+  assert.equal(purchaseError('not-a-club', 1000, 100), 'club');
 });
 
 test('a group with every club taken is reported empty', () => {
@@ -54,20 +67,20 @@ test('a sale pays by the tier the club is in when it is sold', () => {
   assert.equal(clubTier(v3State(2)), 2);
   assert.equal(clubTier(v3State(1)), 1);
   assert.equal(saleValue(v3State(3), SALE_VALUE), 100);
-  assert.equal(saleValue(v3State(2), SALE_VALUE), 300);
-  assert.equal(saleValue(v3State(1), SALE_VALUE), 900);
+  assert.equal(saleValue(v3State(2), SALE_VALUE), 200);
+  assert.equal(saleValue(v3State(1), SALE_VALUE), 300);
 });
 
 test('a career from before the pyramid pays by the division it maps to', () => {
   // The eight-division league: 1 stays, 2 stays, every other division is
   // Division 3 in the pyramid.
   assert.equal(clubTier({ version: 2, division: 2 }), 2);
-  assert.equal(saleValue({ version: 2, division: 2 }, SALE_VALUE), 300);
+  assert.equal(saleValue({ version: 2, division: 2 }, SALE_VALUE), 200);
   assert.equal(clubTier({ version: 2, division: 5 }), 3);
   assert.equal(saleValue({ version: 2, division: 5 }, SALE_VALUE), 100);
   // The old ten-club season became Division 1.
   assert.equal(clubTier({ version: 1 }), 1);
-  assert.equal(saleValue({ version: 1 }, SALE_VALUE), 900);
+  assert.equal(saleValue({ version: 1 }, SALE_VALUE), 300);
   // A version 3 career with no group, and a tier with no value, pay nothing
   // rather than guessing.
   assert.equal(clubTier({ version: 3, division: 2 }), 1);
@@ -88,7 +101,7 @@ test('a sold Division 3 club is free in the shop again', () => {
 
 test('a sale credits the wallet the person keeps across careers', () => {
   // Bought for 100 out of 1,000, promoted, then sold for 300.
-  assert.equal(openingBalance(900, 1000) + saleValue(v3State(2), SALE_VALUE), 1200);
+  assert.equal(openingBalance(900, 1000) + saleValue(v3State(2), SALE_VALUE), 1100);
   // A career from before the wallet: the starting balance plus the sale.
   assert.equal(openingBalance(null, 1000) + saleValue(v3State(3), SALE_VALUE), 1100);
   // The store's own balance is the one used when there is one.

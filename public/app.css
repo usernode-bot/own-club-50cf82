@@ -37,8 +37,9 @@ button.chip[aria-expanded="true"] {
   border-color: rgb(var(--accent));
 }
 
-/* The Division 3 groups on New career, as one row of equal buttons. */
+/* The division and group chips on New career, as equal buttons. */
 .divrow { display: flex; gap: 6px; }
+#group-section { margin-top: 12px; }
 .divrow .chip {
   flex: 1;
   min-width: 0;

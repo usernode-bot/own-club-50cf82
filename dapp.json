@@ -20,6 +20,12 @@
       "expectText": "Dummy USDC (staging mock)"
     },
     {
+      "name": "New career lists every division at its tier price",
+      "path": "/",
+      "expectText": "Division 1",
+      "expectSelector": "#division-row [data-division=\"1\"]"
+    },
+    {
       "name": "Demo club screen",
       "path": "/?demo=1",
       "expectText": "Kick-off",
