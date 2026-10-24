@@ -297,6 +297,7 @@ async function load() {
           return;
         }
         render();
+        return;
       } catch (err) {
         console.error('career render failed', err);
         career = null;
