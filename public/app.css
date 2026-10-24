@@ -362,6 +362,15 @@ button.chip[aria-expanded="true"] {
 .vital-track i, .attr-track i { display: block; height: 100%; background: rgb(var(--pitch-ink)); }
 .sheet-field { display: flex; flex-direction: column; gap: 4px; }
 .sheet-field .section-label { margin: 0; }
+.sheet-pair { display: flex; gap: 8px; }
+.sheet-pair .sheet-field { flex: 1; min-width: 0; }
+/* An injured bench player: greyed, with the injury cross in front of his
+   name, and his Bring on left switched off. */
+.row-out .pos, .row-out .nm { color: rgb(var(--muted)); opacity: .7; }
+.row-out .ico { display: inline-flex; vertical-align: -4px; margin-right: 4px; color: rgb(var(--card-r)); }
+.row-out .ico svg { display: block; }
+/* The next opponent's form chips stay on one line at the end of the row. */
+#opponent-list .form { flex: none; }
 .sheet-body .list-row { padding: 8px 12px; }
 .sheet-body .btn-secondary.small { min-height: 44px; padding: 0 12px; font-size: 14px; }
 

@@ -264,6 +264,23 @@ through `growthOutlook(state, p)` (`{ style, peakAge, next }` where `next` is
 improving, steady or declining for the coming summer), on the squad rows and in
 the player sheet's Growth section.
 
+The Tactics tab is a team sheet. Each shirt's tag carries fitness then morale as
+two thin bars (green from 75, yellow 50 to 74, red below 50), a striker away
+from his own place carries a yellow warning triangle (`outOfPosition` in
+`engine.js`: the same place, or central midfield moved between DM, CM and AM,
+is fine), and an injured player is greyed with the injury cross and refused.
+Tapping a shirt opens the player sheet, whose Role select now sits beside a
+Duty select (`DUTIES`: Defend, Support, Attack; each role starts on a sensible
+one through `defaultDuty`). Duties live in `state.duties` (player id to duty,
+the manager's squad only) and do not change match results yet; `dutyFields`,
+`dutyOf`, `buildInitialState`, `repairCareer` and `startNextSeason` fill and
+carry them, and `removePlayer` drops a sold player's entry. An Auto pick button
+under the chips fills the eleven through `autoLineup`, which already leaves
+injured players out, puts a fit goalkeeper in goal and only ever orders ids
+already in the squad. Above the pitch, `opponentPreview` builds the Next
+opponent row: the club, its table place, its last five results and the
+formation it plays, hidden once the season is over.
+
 The finances are Club credits only; the wallet and Dummy USDC are never
 touched. A career has fans (`state.fans`, seeded by tier at 15,000 / 6,000 /
 2,500 and carried across seasons), which move after each of the club's matches
@@ -427,6 +444,15 @@ change follows it, and updates it when a request changes the look on purpose.
   screen) and one line naming the Club credits the result earned, with
   "Finance tab" as a pitch-green link. Play, Pause and Skip to full time are
   the plain secondary button; reduced motion shows the whole match at once.
+- **Team sheet:** the Next opponent row uses the Competition table's row with
+  the club badge, the place and last formation on the small grey line and the
+  W/D/L chips at the end, in its own section with the label on the left and
+  "Matchday N, home/away" on the right. The pitch keeps its white shirts, amber
+  goalkeeper and dark name tags, and the fitness and morale bars sit inside the
+  tag; the warning triangle is card yellow with a dark "!", and an injured
+  shirt's red disc carries a white cross. Auto pick is the plain secondary
+  button, never amber. Role and Duty are the same select side by side, half
+  width each, and an injured bench row is greyed with the injury cross.
 - **Facility levels:** the Club tab's five-step bar reuses the Squad list's
   fitness green (`pitch-ink`) for filled steps on the raised background, the
   step that just filled flashing amber once (off under reduced motion); the

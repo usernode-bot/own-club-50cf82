@@ -10,6 +10,7 @@ import {
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
+  DUTIES, dutyOf, outOfPosition, opponentPreview,
   repairCareer, groupSetupError, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
   moneyFields, seasonMoney, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
@@ -619,6 +620,12 @@ function badgeHtml(club) {
   return '<span class="badge" style="--ka:var(--kit-' + club.kit + ');--kb:var(--kit-' + club.kit + 's)">' + esc(club.short) + '</span>';
 }
 
+// The injury cross the match report and the squad use, for a player who
+// cannot play.
+function injuryIcon() {
+  return '<span class="ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6v5h5v6h-5v5H9v-5H4V9h5z"/></svg></span>';
+}
+
 // The club's three-letter code: decorative, the name carries the meaning.
 function codePill(club) {
   return '<span class="code-pill" aria-hidden="true">' + esc(club.code) + '</span>';
@@ -829,6 +836,25 @@ function renderClub() {
 
   const chips = (clubId) => formOf(career, clubId).map((r) => `<i class="${r.toLowerCase()}">${r}</i>`).join('');
   $('club-form').innerHTML = chips(career.clubId);
+
+  // The next opponent, above the pitch: who, where, how they have been
+  // playing and the formation they use. Hidden once the season is over.
+  const preview = opponentPreview(career);
+  const opponentSec = $('opponent-sec');
+  if (!preview) {
+    opponentSec.hidden = true;
+  } else {
+    opponentSec.hidden = false;
+    $('opponent-md').textContent = 'Matchday ' + preview.matchday + ', ' + preview.venue.toLowerCase();
+    const line = preview.played > 0
+      ? ordinal(preview.rank) + ' of ' + preview.size + ', last played a ' + preview.formation
+      : 'No matches yet, plays a ' + preview.formation;
+    $('opponent-list').innerHTML = `<li class="list-row">
+      ${badgeHtml(CLUB_BY_ID[preview.clubId])}
+      <span class="nm">${esc(preview.name)}<small>${esc(line)}</small></span>
+      <span class="form">${chips(preview.clubId)}</span>
+    </li>`;
+  }
 
   // Promotion and relegation places, coloured down the left edge of the row,
   // with a legend that names only the places this division uses.
@@ -1458,17 +1484,15 @@ function drawPitch() {
   ctx.restore();
 
   const r = Math.max(14, 16 * scale);
-  const style = getComputedStyle(document.documentElement);
-  const accent = 'rgb(' + style.getPropertyValue('--accent').trim() + ')';
-  const onAccent = 'rgb(' + style.getPropertyValue('--on-accent').trim() + ')';
+  const colours = tokenColours();
 
   const tokens = tokenLayout();
-  const aria = tokens.map((t) => t.player.pos + ' ' + t.player.name).join(', ');
+  const aria = tokens.map(tokenAria).join('; ');
   canvas.setAttribute('aria-label', 'Your ' + career.tactics.formation + ' lineup: ' + aria);
 
-  tokens.forEach((t, idx) => {
+  tokens.forEach((t) => {
     if (drag && drag.moved && drag.i === t.i) return;
-    drawToken(t.player, t.slot.x * w, t.slot.y * h, r, accent, onAccent, t.i === 0);
+    drawToken(t.player, t.slot.x * w, t.slot.y * h, r, colours, t.i === 0, t.slot.pos);
   });
 
   if (drag) {
@@ -1479,37 +1503,73 @@ function drawPitch() {
       if (target >= 0 && target !== i) {
         const tt = tokens.find((x) => x.i === target);
         ctx.save();
-        ctx.strokeStyle = accent;
+        ctx.strokeStyle = colours.accent;
         ctx.lineWidth = 4;
         ctx.beginPath();
         ctx.arc(tt.slot.x * w, tt.slot.y * h, r + 5, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
-      drawToken(t.player, drag.x, drag.y, r * 1.05, accent, onAccent, i === 0);
+      drawToken(t.player, drag.x, drag.y, r * 1.05, colours, i === 0, t.slot.pos);
     }
   }
 }
 
-function drawToken(player, x, y, r, accent, onAccent, isGk) {
+// The colours the pitch's tokens use, read from the kit's tokens so both looks
+// work. The tags always sit on the dark name pill, so the bars keep their own
+// bright green in both looks.
+function tokenColours() {
+  const s = getComputedStyle(document.documentElement);
+  const rgb = (name) => 'rgb(' + s.getPropertyValue(name).trim() + ')';
+  return {
+    accent: rgb('--accent'),
+    onAccent: rgb('--on-accent'),
+    good: rgb('--bar-good'),
+    warn: rgb('--card-y'),
+    bad: rgb('--card-r'),
+  };
+}
+
+// How a shirt reads to a screen reader: its place, role, duty, whether it is
+// out of position or injured, and its fitness and morale.
+function tokenAria(t) {
+  const p = t.player;
+  const name = p.name.split(' ').slice(1).join(' ') || p.name;
+  const bits = [p.pos + ' ' + name, career.roles[p.id] || defaultRole(p.pos), dutyOf(career, p.id)];
+  if (p.injury > 0) bits.push('injured');
+  else if (outOfPosition(p.pos, t.slot.pos)) bits.push('out of position at ' + t.slot.pos);
+  bits.push('fitness ' + p.fitness + '%', 'morale ' + p.morale + '%');
+  return bits.join(', ');
+}
+
+function barColour(value, colours) {
+  if (value >= 75) return colours.good;
+  if (value >= 50) return colours.warn;
+  return colours.bad;
+}
+
+function drawToken(player, x, y, r, colours, isGk, slotPos) {
   if (!player) return;
   const { w, h } = pitchSize();
   const scale = r / 16;
+  const injured = player.injury > 0;
   ctx.save();
+  if (injured) ctx.globalAlpha = 0.45;
 
   // The circle carries the position, so a long name never spills off it.
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = isGk ? accent : '#ffffff';
+  ctx.fillStyle = isGk ? colours.accent : '#ffffff';
   ctx.fill();
-  ctx.fillStyle = isGk ? onAccent : '#16241c';
+  ctx.fillStyle = isGk ? colours.onAccent : '#16241c';
   ctx.font = '700 ' + Math.max(9, 10 * scale) + 'px ui-rounded, system-ui, -apple-system, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(player.pos, x, y + 0.5);
 
-  // The name is a white label on a dark pill, under the token (above it when
-  // the token sits on the bottom edge of the pitch).
+  // The name is a white label on a dark tag, under the token (above it when
+  // the token sits on the bottom edge of the pitch). Under the name are two
+  // thin bars: fitness, then morale.
   const name = player.name.split(' ').slice(1).join(' ') || player.name;
   const fs = Math.min(13, Math.max(10, 12 * scale));
   ctx.font = '600 ' + fs + 'px ui-rounded, system-ui, -apple-system, sans-serif';
@@ -1520,25 +1580,84 @@ function drawToken(player, x, y, r, accent, onAccent, isGk) {
     label += '…';
   }
   const textW = ctx.measureText(label).width;
-  const pillW = textW + 10 * scale;
-  const pillH = fs + 7 * scale;
-  let pillY = y + r + 2 * scale;
-  if (pillY + pillH > h - 1) pillY = h - 1 - pillH;
-  const pillX = Math.min(Math.max(x - pillW / 2, 2), w - pillW - 2);
-  const rad = pillH / 2;
+  const tagW = textW + 10 * scale;
+  const nameH = fs + 6 * scale;
+  const barH = Math.max(2, 3 * scale);
+  const barGap = Math.max(1, 1.5 * scale);
+  const bottomPad = 1 * scale;
+  const tagH = nameH + barGap + barH + barGap + barH + bottomPad;
+  let tagY = y + r + 2 * scale;
+  if (tagY + tagH > h - 1) tagY = h - 1 - tagH;
+  const tagX = Math.min(Math.max(x - tagW / 2, 2), w - tagW - 2);
+  const rad = Math.min(8 * scale, tagH / 2);
   ctx.beginPath();
-  ctx.moveTo(pillX + rad, pillY);
-  ctx.lineTo(pillX + pillW - rad, pillY);
-  ctx.arc(pillX + pillW - rad, pillY + rad, rad, -Math.PI / 2, Math.PI / 2);
-  ctx.lineTo(pillX + rad, pillY + pillH);
-  ctx.arc(pillX + rad, pillY + rad, rad, Math.PI / 2, -Math.PI / 2);
+  ctx.moveTo(tagX + rad, tagY);
+  ctx.lineTo(tagX + tagW - rad, tagY);
+  ctx.arc(tagX + tagW - rad, tagY + rad, rad, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(tagX + rad, tagY + tagH);
+  ctx.arc(tagX + rad, tagY + rad, rad, Math.PI / 2, -Math.PI / 2);
   ctx.closePath();
   ctx.fillStyle = 'rgba(9, 20, 13, 0.82)';
   ctx.fill();
   ctx.fillStyle = '#ffffff';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, pillX + pillW / 2, pillY + pillH / 2 + 0.5);
+  ctx.fillText(label, tagX + tagW / 2, tagY + nameH / 2 + 0.5);
+
+  // The two bars sit inside the tag, inset from its edges.
+  const barX = tagX + 6 * scale;
+  const barW = tagW - 12 * scale;
+  const bar1Y = tagY + nameH + barGap;
+  const bar2Y = bar1Y + barH + barGap;
+  for (const [barY, value] of [[bar1Y, player.fitness], [bar2Y, player.morale]]) {
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(barX, barY, barW, barH);
+    const fill = Math.max(0, Math.min(100, Number(value) || 0)) / 100;
+    if (fill > 0) {
+      ctx.fillStyle = barColour(Number(value) || 0, colours);
+      ctx.fillRect(barX, barY, barW * fill, barH);
+    }
+  }
   ctx.restore();
+
+  // A player out of position carries a yellow warning triangle at the shirt's
+  // top right; an injured one a red disc with a white cross instead.
+  const bx = x + r * 0.72;
+  const by = y - r * 0.72;
+  if (injured) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(bx, by, r * 0.38, 0, Math.PI * 2);
+    ctx.fillStyle = colours.bad;
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.5, 2 * scale);
+    ctx.beginPath();
+    ctx.moveTo(bx - r * 0.16, by);
+    ctx.lineTo(bx + r * 0.16, by);
+    ctx.moveTo(bx, by - r * 0.16);
+    ctx.lineTo(bx, by + r * 0.16);
+    ctx.stroke();
+    ctx.restore();
+  } else if (slotPos && outOfPosition(player.pos, slotPos)) {
+    const s = r * 0.7;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(bx, by - s / 2);
+    ctx.lineTo(bx + s / 2, by + s / 2);
+    ctx.lineTo(bx - s / 2, by + s / 2);
+    ctx.closePath();
+    ctx.fillStyle = colours.warn;
+    ctx.fill();
+    ctx.strokeStyle = '#16241c';
+    ctx.lineWidth = Math.max(1, 1 * scale);
+    ctx.stroke();
+    ctx.fillStyle = '#16241c';
+    ctx.font = '700 ' + Math.max(8, 9 * scale) + 'px ui-rounded, system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', bx, by + s * 0.18);
+    ctx.restore();
+  }
 }
 
 function hitToken(x, y) {
@@ -1651,6 +1770,16 @@ function chooseOption(value) {
 for (const kind in MENUS) {
   $(MENUS[kind].chip).addEventListener('click', () => openMenu(kind));
 }
+
+// Auto pick fills the eleven with the best player for each place, weighing
+// how well he fits it, his fitness, his morale and his role. It saves at
+// once, like moving a shirt.
+$('auto-pick').addEventListener('click', () => {
+  if (!career) return;
+  career.lineup = autoLineup(career.squads[career.clubId], career.tactics.formation, career.roles);
+  renderClub();
+  save();
+});
 $('menu-list').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-value]');
   if (btn) chooseOption(btn.dataset.value);
@@ -1699,13 +1828,15 @@ function openSheet(id) {
   const list = ROLES[group] || ROLES.MF;
   const current = career.roles[id] || defaultRole(p.pos);
   $('sheet-role').innerHTML = list.map((r) => `<option value="${esc(r)}"${r === current ? ' selected' : ''}>${esc(r)}</option>`).join('');
+  const currentDuty = dutyOf(career, id);
+  $('sheet-duty').innerHTML = DUTIES.map((d) => `<option value="${esc(d)}"${d === currentDuty ? ' selected' : ''}>${esc(d)}</option>`).join('');
 
   const bench = career.squads[career.clubId].filter((q) => !starters.has(q.id));
   if (isStarter) {
     $('sheet-bench').innerHTML = bench.map((q) => `
-      <li class="list-row">
+      <li class="list-row${q.injury > 0 ? ' row-out' : ''}">
         <span class="pos">${esc(q.pos)}</span>
-        <span class="nm">${esc(q.name)}<small>${q.injury > 0 ? 'Injured for ' + q.injury + ' matches' : 'Fitness ' + q.fitness + '%, ' + q.overall + ' overall'}</small></span>
+        <span class="nm">${q.injury > 0 ? injuryIcon() : ''}${esc(q.name)}<small>${q.injury > 0 ? 'Injured for ' + q.injury + ' matches' : 'Fitness ' + q.fitness + '%, ' + q.overall + ' overall'}</small></span>
         <button class="btn-secondary small" type="button" data-swap-in="${esc(q.id)}"${q.injury > 0 ? ' disabled' : ''}>Bring on</button>
       </li>`).join('') || '<li class="list-row"><span class="nm">No bench players</span></li>';
   } else {
@@ -1741,6 +1872,12 @@ document.addEventListener('keydown', (e) => {
 $('sheet-role').addEventListener('change', (e) => {
   if (!career || !sheetPlayerId) return;
   career.roles[sheetPlayerId] = e.target.value;
+  save();
+});
+$('sheet-duty').addEventListener('change', (e) => {
+  if (!career || !sheetPlayerId) return;
+  if (!career.duties || typeof career.duties !== 'object') career.duties = {};
+  career.duties[sheetPlayerId] = e.target.value;
   save();
 });
 $('sheet-bench').addEventListener('click', (e) => {

@@ -46,6 +46,7 @@
     --card-y: 234 179 8;      /* a yellow card */
     --card-r: 200 35 35;      /* a red card */
     --card-r-ink: 200 35 35;  /* a form chip's L */
+    --bar-good: 74 222 128;   /* a shirt's fitness and morale bar, healthy */
     --star: 180 83 9;         /* a reputation star, dark enough on white */
 
     /* ── Club kit colours ─────────────────────────────────────────────────
@@ -107,6 +108,9 @@
     --card-y: 250 204 21;
     --card-r: 239 68 68;
     --card-r-ink: 185 28 28;
+    /* The shirt bars always sit on the dark name tag, so this reads the same
+       in both looks. */
+    --bar-good: 74 222 128;
     --star: 245 158 11;
     /* The kit colours read the same in the dark look: they are dark, rich
        fields for white monograms in both, and the badge's dark-look edge

@@ -338,11 +338,16 @@
 
         <!-- Tactics -->
         <div class="panel" id="tab-tactics" hidden>
+          <div class="sec" id="opponent-sec" hidden>
+            <div class="section-label"><span>Next opponent</span><span id="opponent-md"></span></div>
+            <ul class="list" id="opponent-list"></ul>
+          </div>
           <div class="sec">
             <div class="section-label"><span>Your lineup</span><span>Drag a player to swap</span></div>
             <div class="pitch" id="pitch-wrap" data-formation="" data-starters="">
               <canvas id="pitch-canvas" role="img" aria-label="Your lineup"></canvas>
             </div>
+            <p class="league-note">Tap a shirt for its role and duty. The bars under each name are fitness, then morale. A yellow triangle marks a player out of position.</p>
             <div class="formrow">
               <button class="chip" id="chip-formation" type="button" aria-expanded="false">Formation<b id="val-formation"></b></button>
               <button class="chip" id="chip-mentality" type="button" aria-expanded="false">Mentality<b id="val-mentality"></b></button>
@@ -351,6 +356,7 @@
             <div class="menu" id="menu" hidden>
               <ul class="list" id="menu-list"></ul>
             </div>
+            <button class="btn-secondary wide" id="auto-pick" type="button">Auto pick</button>
           </div>
         </div>
 
@@ -578,9 +584,15 @@
         <div class="sheet-attrs" id="sheet-attrs"></div>
         <div class="section-label">Growth</div>
         <ul class="list" id="sheet-growth"></ul>
-        <div class="sheet-field">
-          <label class="section-label" for="sheet-role">Role</label>
-          <select class="field" id="sheet-role"></select>
+        <div class="sheet-pair">
+          <div class="sheet-field">
+            <label class="section-label" for="sheet-role">Role</label>
+            <select class="field" id="sheet-role"></select>
+          </div>
+          <div class="sheet-field">
+            <label class="section-label" for="sheet-duty">Duty</label>
+            <select class="field" id="sheet-duty"></select>
+          </div>
         </div>
         <div class="section-label">Bench</div>
         <ul class="list" id="sheet-bench"></ul>

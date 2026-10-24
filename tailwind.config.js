@@ -60,6 +60,7 @@ module.exports = {
         'pitch-ink': token('pitch-ink'), // green text that stays readable on a surface
         'card-y': token('card-y'), // a yellow card
         'card-r': token('card-r'), // a red card
+        'bar-good': token('bar-good'), // a shirt's fitness and morale bar, healthy
       },
       // The type scale: four sizes, and nothing in between.
       fontSize: {
