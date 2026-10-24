@@ -40,6 +40,10 @@ button.chip[aria-expanded="true"] {
 /* The division and group chips on New career, as equal buttons. */
 .divrow { display: flex; gap: 6px; }
 #group-section { margin-top: 12px; }
+/* Division 2's four groups in one row, Division 3's twelve in two rows of
+   six, so each chip stays at least 44 px wide on a 360 px phone. */
+#group-row { display: grid; grid-template-columns: repeat(4, 1fr); }
+#group-row[data-cols="6"] { grid-template-columns: repeat(6, 1fr); }
 .divrow .chip {
   flex: 1;
   min-width: 0;
@@ -567,4 +571,123 @@ button.chip[aria-expanded="true"] {
 .sheet-form { display: block; }
 .sheet-label { display: block; font-size: 14px; line-height: 20px; font-weight: 500; color: rgb(var(--muted)); margin-bottom: 8px; }
 .sheet-form .field { width: 100%; margin-bottom: 4px; }
-#market-loading[hidden], #market-empty[hidden], #market-error[hidden], #listing-sec[hidden] { display: none; }
+
+/* ── The transfer market ──────────────────────────────────────────────── */
+/* A listing row keeps its name on the left and its star and action as one
+   unbroken group at the end, which drops below the name on a phone. */
+.mkt-row { flex-wrap: wrap; }
+.mkt-row .nm { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.mkt-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+/* A long name and a big price never break the action row: it never shrinks. */
+.mkt-acts > * { flex: none; }
+
+/* Sort by: the kit's own select field, with its label beside it. */
+.mkt-sort { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mkt-sort .lbl { flex: none; font-size: 14px; line-height: 20px; font-weight: 500; color: rgb(var(--muted)); white-space: nowrap; }
+.mkt-sort .field { flex: 1 1 auto; min-width: 0; }
+
+/* The filter chips: three selects and the Shortlist toggle. They wrap on a
+   phone and sit in one row from a tablet up. */
+.fchips { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (min-width: 768px) { .fchips { flex-wrap: nowrap; } }
+select.fchip {
+  flex: none;
+  min-height: 44px;
+  width: auto;
+  padding: 0 8px;
+  appearance: none;
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  background-color: rgb(var(--surface));
+  color: rgb(var(--fg));
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.fchip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  background: rgb(var(--surface));
+  color: rgb(var(--fg));
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fchip[data-on="true"],
+.fchip[aria-pressed="true"] { border-color: rgb(var(--accent)); background-color: rgb(var(--raised)); }
+.fchip:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
+.fchips[hidden], .mkt-sort[hidden], .fstatus[hidden] { display: none; }
+
+/* How many filters are on, and Clear all. */
+.fstatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 4px;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--muted));
+}
+
+/* The shortlist star: 44 px, the line star, filled in the reputation colour
+   when it is on. Never amber. */
+.star-btn {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  background: rgb(var(--surface));
+  color: rgb(var(--muted));
+  cursor: pointer;
+}
+.star-btn svg { display: block; }
+.star-btn[aria-pressed="true"] { color: rgb(var(--star)); }
+.star-btn:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
+
+/* The price hint: the word in bold, then its reason, on the small grey line. */
+.hint b { font-weight: 600; color: rgb(var(--fg)); }
+.hint b.bargain { color: rgb(var(--pitch-ink)); }
+
+/* Your own listing, before Withdraw. */
+.you-tag {
+  flex: none;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(var(--raised));
+  color: rgb(var(--fg));
+}
+
+/* A refused Buy: greyed on the raised background with muted text, kept
+   readable rather than faded. */
+.btn-secondary.small.blocked:disabled {
+  opacity: 1;
+  background: rgb(var(--raised));
+  color: rgb(var(--muted));
+}
+
+#market-loading[hidden], #market-empty[hidden], #market-error[hidden], #listing-sec[hidden],
+#market-nomatch[hidden], #market-controls[hidden], #market-empty-clear[hidden] { display: none; }

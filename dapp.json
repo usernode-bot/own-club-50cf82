@@ -115,6 +115,18 @@
       "expectSelector": "#market-list .list-row"
     },
     {
+      "name": "Demo transfers tab sorts and filters the market",
+      "path": "/?demo=1#transfers",
+      "expectText": "Sort by",
+      "expectSelector": "#market-controls:not([hidden]) #market-sort"
+    },
+    {
+      "name": "Demo transfer listings carry a value hint and a shortlist star",
+      "path": "/?demo=1#transfers",
+      "expectText": "Staging Demo Keeper",
+      "expectSelector": "#market-list .hint"
+    },
+    {
       "name": "Demo club shows its wages",
       "path": "/?demo=1#finance",
       "expectText": "Wages this season"
