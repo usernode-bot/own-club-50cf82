@@ -6,11 +6,11 @@
 import {
   CLUBS, CLUB_BY_ID, LEAGUE_NAME, FORMATIONS, FORMATION_NAMES,
   MENTALITY_NAMES, PRESSING_NAMES, ROLES, POS_GROUP,
-  GROUPS, TIER_COUNT, clubToGroup, groupName,
+  GROUPS, GROUP_LETTERS, TIER_COUNT, clubToGroup, groupName,
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
-  repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
+  repairCareer, groupSetupError, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
   moneyFields, seasonMoney, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
   STAFF_ROLES, staffFields, staffWagesDue, MAINTENANCE, maintenanceDue,
@@ -58,6 +58,12 @@ let autoPlayed = 0;
 let tab = 'home';
 let reportFrom = 'home';
 let refreshFailed = false;
+// The club's league group is being rebuilt by the server: the setting-up
+// screen shows until the repair comes back, or it gives up after two seconds
+// to an error with a Retry.
+let groupSettingUp = false;
+// The last repair attempt failed, so Retry runs the repair again, not a load.
+let groupRetry = false;
 // The sale just made, so the New career screen can say where the money came
 // from. Cleared once a new club is bought.
 let lastSale = null;
@@ -86,8 +92,10 @@ function showTab(next) {
   if (OVERFLOW_TABS.includes(tab)) more.setAttribute('data-current', '');
   else more.removeAttribute('data-current');
   closeMore();
-  if (tab === 'tactics' && career) drawPitch();
-  if (tab === 'transfers' && career) {
+  // While the group is being rebuilt the saved career is not playable yet, so
+  // the pitch and the market wait for the repair.
+  if (tab === 'tactics' && career && !groupSettingUp) drawPitch();
+  if (tab === 'transfers' && career && !groupSettingUp) {
     renderMarket();
     loadMarket();
   }
@@ -149,6 +157,10 @@ async function api(method, body, path) {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    // Never read a saved answer from the browser's cache: a group repair,
+    // a save on another device or a just-played matchday must all be seen
+    // the moment they land.
+    cache: 'no-store',
   });
   let data = null;
   try { data = await res.json(); } catch (_) {}
@@ -230,6 +242,16 @@ async function load() {
   }
 
   if (!cause) {
+    // A career whose league group is broken is rebuilt by the server before
+    // anything else: the page never repairs it itself, because a save spreads
+    // whatever the page holds.
+    const stored = answer.data.career;
+    if (answer.data.groupBroken || groupSetupError(stored)) {
+      career = stored;
+      version = answer.data.version;
+      await repairGroup();
+      return;
+    }
     const repaired = repairCareer(answer.data.career);
     if (!repaired) {
       cause = LOAD_CAUSE.shown;
@@ -252,10 +274,132 @@ async function load() {
   }
 
   loadError = cause;
+  // The error view is shared with the repair failure, which names its own
+  // trouble here.
+  $('error-title').textContent = 'Your career did not load';
   $('error-text').textContent = 'Your career could not be read from the server. Your last saved matchday is kept.';
   setLoadCause(cause);
   screen = 'error';
   render();
+}
+
+// ── Setting up the group ─────────────────────────────────────────────────
+// A career whose league group lost its shape (a short club list, a truncated
+// fixture list) is rebuilt by the server, keeping every result already played.
+// The page only asks for the repair and shows what is happening; it never
+// repairs the career itself, because a save spreads whatever the page holds.
+
+async function repairGroup() {
+  groupSettingUp = true;
+  groupRetry = false;
+  screen = 'club';
+  tab = 'home';
+  render();
+
+  // Give the repair a short cap, so a stuck request ends in an error with a
+  // Retry rather than a screen that waits for ever.
+  let settled = false;
+  const cap = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    giveUp('Setting up your group took too long. Press Retry to try again.');
+  }, 2000);
+
+  function giveUp(cause) {
+    clearTimeout(cap);
+    groupSettingUp = false;
+    groupRetry = true;
+    loadError = cause;
+    $('error-title').textContent = 'Your group could not be set up';
+    $('error-text').textContent = 'Your league could not be set up from its saved results. Nothing you have played has been lost.';
+    setLoadCause(cause);
+    screen = 'error';
+    render();
+  }
+
+  try {
+    const { status, data } = await api('POST', null, '/api/career/group-repair');
+    if (settled) return;
+    settled = true;
+    clearTimeout(cap);
+    if (status === 200 && data && data.career) {
+      const repaired = repairCareer(data.career);
+      if (repaired && !groupSetupError(repaired)) {
+        career = repaired;
+        version = data.version;
+        autoPlayed = Number(data.autoPlayed) > 0 ? Number(data.autoPlayed) : 0;
+        owners = data.owners && typeof data.owners === 'object' ? data.owners : {};
+        groupSettingUp = false;
+        screen = 'club';
+        tab = hashTab();
+        try {
+          render();
+          // A career saved before the zone was stored gets one now, once.
+          if (!career.timeZone) { ensureZone(); save(); }
+          return;
+        } catch (err) {
+          console.error('career render failed', err);
+          career = null;
+          giveUp(LOAD_CAUSE.shown);
+          return;
+        }
+      }
+      giveUp(LOAD_CAUSE.server(data, status));
+      return;
+    }
+    if (status === 401) giveUp(LOAD_CAUSE.signin);
+    else if (data && typeof data.message === 'string' && data.message) giveUp(data.message);
+    else if (status > 0) giveUp(LOAD_CAUSE.server(data, status));
+    else giveUp(LOAD_CAUSE.network);
+  } catch (_) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(cap);
+    giveUp(LOAD_CAUSE.network);
+  }
+}
+
+// The group letter beside the club's name, in the header above every tab.
+// Division 1 has one group, so it shows none.
+function fillGroupPill() {
+  const el = $('club-group');
+  if (!el) return;
+  const show = career && career.version >= 3 && career.division > 1
+    && GROUP_LETTERS.includes(career.group);
+  el.textContent = show ? 'Group ' + career.group : '';
+  el.hidden = !show;
+}
+
+// The setting-up screen: the header says what is happening, the Home card and
+// the Competition table hold loading rows in their own shape, and everything
+// that reads the broken fixtures waits.
+function renderSettingUp() {
+  const club = CLUB_BY_ID[career.clubId];
+  $('club-md').textContent = 'Setting up your group';
+  $('club-name').textContent = club ? club.name : '';
+  $('club-pos').textContent = placeName(career);
+  fillGroupPill();
+  const badge = $('tab-badge');
+  if (badge && club) badge.outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
+  const tabName = $('tab-name');
+  if (tabName) tabName.textContent = club ? club.name : '';
+
+  $('setup-card').hidden = false;
+  $('next-card').hidden = true;
+  $('season-card').hidden = true;
+  $('last-sec').hidden = true;
+  $('home-actions').hidden = true;
+  const rows = [];
+  for (let i = 0; i < 6; i++) {
+    rows.push(`<li class="list-row"><span class="n"><span class="skeleton sk-pos"></span></span>
+      <span class="t"><span class="skeleton sk-line"></span><small><span class="skeleton sk-sm"></span></small></span>
+      <span class="g"><span class="skeleton sk-cell"></span></span>
+      <span class="p"><span class="skeleton sk-cell"></span></span></li>`);
+  }
+  $('table-list').innerHTML = rows.join('');
+  $('club-form').innerHTML = '';
+  $('league-note').hidden = true;
+  $('setup-note').hidden = false;
 }
 
 // ── New career ───────────────────────────────────────────────────────────
@@ -361,16 +505,18 @@ function renderNew() {
     if (isTaken) {
       return `
     <li class="list-row club-row taken-row" aria-disabled="true">
-      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${esc(takenLine(c.id))}</small></span>
+      ${badgeHtml(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${esc(takenLine(c.id))}</small></span>
+      ${codePill(c)}
       <span class="taken">Taken</span>
       <span class="tick" aria-hidden="true"></span>
     </li>`;
     }
     return `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
-      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, run by a bot</small></span>
+      ${badgeHtml(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]} · ${esc(c.city)} · ${esc(groupName(GROUPS[clubToGroup[c.id]].tier))}</small></span>
+      ${codePill(c)}
       <span class="price">${usdc(price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`;
@@ -446,7 +592,12 @@ async function startCareer() {
 
 // ── Club screen ──────────────────────────────────────────────────────────
 function badgeHtml(club) {
-  return '<span class="badge" style="background:' + club.color + '">' + esc(club.short) + '</span>';
+  return '<span class="badge" style="--ka:var(--kit-' + club.kit + ');--kb:var(--kit-' + club.kit + 's)">' + esc(club.short) + '</span>';
+}
+
+// The club's three-letter code: decorative, the name carries the meaning.
+function codePill(club) {
+  return '<span class="code-pill" aria-hidden="true">' + esc(club.code) + '</span>';
 }
 
 function playerStatus(p, starters) {
@@ -509,6 +660,7 @@ function fixtureDate(date, zone) {
 }
 
 function renderClub() {
+  if (groupSettingUp) return renderSettingUp();
   const table = leagueTable(career);
   const me = table.find((r) => r.id === career.clubId);
   const club = CLUB_BY_ID[career.clubId];
@@ -525,9 +677,17 @@ function renderClub() {
     $('club-md').textContent = career.finished ? 'Season complete' : 'Matchday ' + (career.matchday + 1) + ' of ' + total;
   }
   $('club-name').textContent = club.name;
+  fillGroupPill();
   $('club-pos').textContent = ordinal(me.rank) + ' in ' + place;
+  $('club-code').textContent = club.code;
+  $('club-code').hidden = false;
+  $('setup-card').hidden = true;
+  $('setup-note').hidden = true;
+  $('home-actions').hidden = false;
   $('tab-badge').outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
   $('tab-name').textContent = club.name;
+  $('tab-code').textContent = club.code;
+  $('tab-code').hidden = false;
 
   if (next && !career.finished) {
     $('next-card').hidden = false;
@@ -636,7 +796,8 @@ function renderClub() {
   $('table-list').innerHTML = table.map((r) => `
     <li class="list-row${r.id === career.clubId ? ' me' : ''}">
       <span class="n">${r.rank}</span>
-      <span class="t">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}<small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
+      ${codePill(CLUB_BY_ID[r.id])}
+      <span class="t"><span class="row-title">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}</span><small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
       <span class="g">${r.gd > 0 ? '+' : ''}${r.gd}</span>
       <span class="p">${r.points}</span>
     </li>`).join('');
@@ -2165,15 +2326,26 @@ window.addEventListener('hashchange', () => {
   if (screen === 'report') { screen = 'club'; render(); return; }
   if (screen === 'club') showTab(hashTab());
 });
-$('retry-btn').addEventListener('click', load);
+$('retry-btn').addEventListener('click', () => {
+  if (groupRetry) repairGroup();
+  else load();
+});
 
 // The wait line opens by itself when a match time passes, or when the manager
 // comes back to the app.
 async function refresh() {
-  if (!career) return;
+  if (!career || groupSettingUp) return;
   try {
     const { status, data } = await api('GET');
     if (status === 200 && data && data.career) {
+      // The same check a load makes: a group that lost its shape is repaired
+      // by the server, not patched here.
+      if (data.groupBroken || groupSetupError(data.career)) {
+        career = data.career;
+        version = data.version;
+        await repairGroup();
+        return;
+      }
       const repaired = repairCareer(data.career);
       if (repaired) {
         career = repaired;

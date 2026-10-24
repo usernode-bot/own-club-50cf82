@@ -11,16 +11,16 @@
 // quality of the squad it is dealt. The pyramid itself is built below, after
 // the formations, because a generated club is dealt one of them.
 const COASTAL_CLUBS = [
-  { id: 'harbourside', name: 'Harbourside FC', short: 'HF', color: 'rgb(var(--pitch))', rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay' },
-  { id: 'redvale', name: 'Redvale Athletic', short: 'RA', color: '#7a3b8f', rep: 5, formation: '4-2-3-1', objective: 'Win the league', ground: 'Redvale Park' },
-  { id: 'kingsmoor', name: 'Kingsmoor United', short: 'KU', color: '#1e4fa3', rep: 5, formation: '4-3-3', objective: 'Win the league', ground: 'Kingsmoor Road' },
-  { id: 'northmoor', name: 'Northmoor Town', short: 'NT', color: '#146b5a', rep: 4, formation: '4-4-2', objective: 'Finish in the top half', ground: 'Moor Lane' },
-  { id: 'baymouth', name: 'Baymouth Rovers', short: 'BR', color: '#a03d1c', rep: 3, formation: '4-4-2', objective: 'Finish in the top half', ground: 'The Harbour End' },
-  { id: 'saltmarsh', name: 'Saltmarsh City', short: 'SM', color: '#4a3a8a', rep: 3, formation: '3-5-2', objective: 'Finish in the top half', ground: 'Marsh Field' },
-  { id: 'cliffton', name: 'Cliffton Wanderers', short: 'CW', color: '#2f4858', rep: 3, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Cliff Top' },
-  { id: 'marrow', name: 'Marrow Bay', short: 'MB', color: '#7c2d5d', rep: 2, formation: '4-3-3', objective: 'Avoid finishing bottom', ground: 'Bay Side' },
-  { id: 'gullport', name: 'Gullport United', short: 'GU', color: '#3f5a1d', rep: 2, formation: '4-4-2', objective: 'Avoid finishing bottom', ground: 'The Nest' },
-  { id: 'kestrel', name: 'Kestrel Park', short: 'KP', color: '#8a4a1f', rep: 1, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Kestrel Lane' },
+  { id: 'harbourside', name: 'Harbourside FC', short: 'HF', city: 'Harbourside', kit: 16, rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay' },
+  { id: 'redvale', name: 'Redvale Athletic', short: 'RA', city: 'Redvale', kit: 12, rep: 5, formation: '4-2-3-1', objective: 'Win the league', ground: 'Redvale Park' },
+  { id: 'kingsmoor', name: 'Kingsmoor United', short: 'KU', city: 'Kingsmoor', kit: 7, rep: 5, formation: '4-3-3', objective: 'Win the league', ground: 'Kingsmoor Road' },
+  { id: 'northmoor', name: 'Northmoor Town', short: 'NT', city: 'Northmoor', kit: 15, rep: 4, formation: '4-4-2', objective: 'Finish in the top half', ground: 'Moor Lane' },
+  { id: 'baymouth', name: 'Baymouth Rovers', short: 'BR', city: 'Baymouth', kit: 10, rep: 3, formation: '4-4-2', objective: 'Finish in the top half', ground: 'The Harbour End' },
+  { id: 'saltmarsh', name: 'Saltmarsh City', short: 'SM', city: 'Saltmarsh', kit: 3, rep: 3, formation: '3-5-2', objective: 'Finish in the top half', ground: 'Marsh Field' },
+  { id: 'cliffton', name: 'Cliffton Wanderers', short: 'CW', city: 'Cliffton', kit: 11, rep: 3, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Cliff Top' },
+  { id: 'marrow', name: 'Marrow Bay', short: 'MB', city: 'Marrow', kit: 8, rep: 2, formation: '4-3-3', objective: 'Avoid finishing bottom', ground: 'Bay Side' },
+  { id: 'gullport', name: 'Gullport United', short: 'GU', city: 'Gullport', kit: 9, rep: 2, formation: '4-4-2', objective: 'Avoid finishing bottom', ground: 'The Nest' },
+  { id: 'kestrel', name: 'Kestrel Park', short: 'KP', city: 'Kestrel', kit: 4, rep: 1, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Kestrel Lane' },
 ];
 
 // ── Formations, mentalities, pressing, roles ─────────────────────────────
@@ -108,12 +108,99 @@ const PLACE_POOL = [
   'Uppermill', 'Wrenfield', 'Yewdale', 'Barrowden',
 ];
 const CLUB_SUFFIXES = ['FC', 'Athletic', 'Town', 'United', 'Rovers', 'City', 'Wanderers'];
-const GROUND_WORDS = ['Road', 'Lane', 'Park', 'Field', 'End', 'Green', 'Way', 'Quay'];
-// Dark enough for the white initials on the badge in both looks.
-const BADGE_COLORS = [
-  '#5a4632', '#7a2f3a', '#2f5d62', '#4b3f72', '#6b4a1f', '#2d5340', '#7a5a1e', '#274b78',
-  '#5c2d4a', '#3a4a2a', '#6f3a24', '#334d5c', '#6a2f5a', '#3f4770', '#59421c', '#2b5a4f',
+// The naming grammar every club follows: an invented city stem plus one
+// generic suffix. These twelve are the league's full suffix palette; the
+// shipped clubs use the seven in CLUB_SUFFIXES and keep the names they were
+// saved with — a club's id is its name's slug, so renaming one would move
+// every career, listing and owner row that points at it. If the set is ever
+// regenerated, use the full palette and grow app.js's displayName regex to
+// match.
+export const CLUB_NAME_SUFFIXES = ['Athletic', 'United', 'City', 'Town', 'Sporting', 'Rovers', 'Wanderers', 'Albion', 'Union', 'FC', 'SC', 'AC'];
+const GROUND_WORDS = ['Road', 'Lane', 'Park', 'Field', 'End', 'Green', 'Way', 'Quay', 'Ground', 'Arena'];
+
+// Real football stays out of the game. A club whose normalised name matches
+// the club list is never generated, and the tests hold every name, stadium
+// and code against them. A few stems happen to be small real towns; the
+// invented suffixes keep those clubs fictional.
+export const REAL_CLUB_DENYLIST = [
+  // Premier League and EFL, in their common forms.
+  'Arsenal', 'Arsenal FC', 'Aston Villa', 'AFC Bournemouth', 'Bournemouth', 'Brentford FC', 'Brentford',
+  'Brighton and Hove Albion', 'Burnley FC', 'Burnley', 'Chelsea FC', 'Chelsea', 'Crystal Palace FC',
+  'Everton FC', 'Everton', 'Fulham FC', 'Leeds United', 'Liverpool FC', 'Liverpool', 'Manchester City',
+  'Manchester United', 'Newcastle United', 'Nottingham Forest', 'Sheffield United', 'Sunderland AFC',
+  'Sunderland', 'Tottenham Hotspur', 'West Ham United', 'Wolverhampton Wanderers', 'Wolves',
+  'Leicester City', 'Ipswich Town', 'Southampton FC', 'Luton Town', 'Hull City', 'Middlesbrough FC',
+  'Middlesbrough', 'Norwich City', 'Swansea City', 'Watford FC', 'West Bromwich Albion', 'Stoke City',
+  'Derby County', 'Preston North End', 'Blackburn Rovers', 'Bristol City', 'Millwall FC', 'Millwall',
+  'Queens Park Rangers', 'QPR', 'Coventry City', 'Sheffield Wednesday', 'Charlton Athletic',
+  'Bolton Wanderers', 'Wigan Athletic', 'Reading FC', 'Huddersfield Town', 'Blackpool FC', 'Port Vale',
+  'Rotherham United', 'Oxford United', 'Doncaster Rovers', 'Barnsley FC', 'Wrexham AFC', 'Stockport County',
+  'Leyton Orient', 'Stevenage FC', 'Lincoln City', 'Wycombe Wanderers', 'Peterborough United',
+  'Gillingham FC', 'Crewe Alexandra', 'Shrewsbury Town', 'Fleetwood Town', 'Accrington Stanley',
+  'Swindon Town', 'Grimsby Town', 'Carlisle United', 'Barrow AFC', 'Tranmere Rovers', 'Oldham Athletic',
+  'Hartlepool United', 'York City', 'Halifax Town', 'Aldershot Town', 'Boston United',
+  // Scottish and Welsh football's famous names.
+  'Celtic FC', 'Celtic', 'Rangers FC', 'Rangers', 'Aberdeen FC', 'Heart of Midlothian', 'Hibernian FC',
+  'Dundee United', 'Motherwell FC', 'Kilmarnock FC', 'St Mirren', 'Dundee FC', 'Cardiff City',
+  'Newport County', 'Albion Rovers',
+  // The major European clubs.
+  'Real Madrid', 'FC Barcelona', 'Barcelona', 'Atletico Madrid', 'Athletic Bilbao', 'Real Sociedad',
+  'Real Betis', 'Sevilla FC', 'Valencia CF', 'Villarreal CF', 'Bayern Munich', 'Borussia Dortmund',
+  'RB Leipzig', 'Bayer Leverkusen', 'Eintracht Frankfurt', 'Borussia Monchengladbach', 'Paris Saint-Germain',
+  'Olympique Lyonnais', 'Olympique de Marseille', 'AS Monaco', 'Juventus', 'AC Milan', 'Inter Milan',
+  'SSC Napoli', 'AS Roma', 'SS Lazio', 'ACF Fiorentina', 'Atalanta BC', 'AFC Ajax', 'PSV Eindhoven',
+  'Feyenoord', 'SL Benfica', 'FC Porto', 'Sporting CP', 'Galatasaray', 'Fenerbahce SK', 'Besiktas JK',
+  'Olympiacos FC', 'Panathinaikos FC', 'Red Star Belgrade', 'Club Brugge', 'RSC Anderlecht',
+  'FC Basel', 'Red Bull Salzburg', 'Celtic Glasgow',
 ];
+// Stadium names real football is known by; a generated ground never matches.
+export const REAL_STADIUM_DENYLIST = [
+  'Old Trafford', 'Anfield', 'Goodison Park', 'Emirates Stadium', 'Etihad Stadium', 'Stamford Bridge',
+  'Tottenham Hotspur Stadium', 'London Stadium', 'Wembley Stadium', 'Villa Park', 'St James Park',
+  'Elland Road', 'Hillsborough Stadium', 'Bramall Lane', 'King Power Stadium', 'Amex Stadium',
+  'Camp Nou', 'Santiago Bernabeu', 'Metropolitano Stadium', 'Allianz Arena', 'Signal Iduna Park',
+  'San Siro', 'Stadio Giuseppe Meazza', 'Juventus Stadium', 'Parc des Princes', 'Estadio da Luz',
+  'Estadio do Dragao', 'Celtic Park', 'Ibrox Stadium', 'Estadio Azteca', 'Maracana',
+];
+
+// Case, accents and spacing never hide a match: "Paris Saint-Germain" and
+// "paris  saint–germain" land on the same normalised name.
+export function normalizeClubName(name) {
+  return String(name)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// A club's three-letter code, unique across the whole pyramid: the stem's
+// first three letters, then its first three consonants, then the stem's first
+// two letters plus the suffix's initial, then letters A to Z, then a final
+// sweep that always terminates. Pure string work, no rng draw, so it cannot
+// move a single card in any stream.
+function clubCode(name, used) {
+  const [stem, suffix = ''] = name.split(' ');
+  const up = stem.toUpperCase().replace(/[^A-Z]/g, '');
+  const consonants = up.replace(/[AEIOU]/g, '');
+  const candidates = [];
+  if (up.length >= 3) candidates.push(up.slice(0, 3));
+  if (consonants.length >= 3) candidates.push(consonants.slice(0, 3));
+  if (up.length >= 2 && suffix) candidates.push(up.slice(0, 2) + suffix[0].toUpperCase());
+  if (up.length >= 2) {
+    for (let i = 0; i < 26; i++) candidates.push(up.slice(0, 2) + String.fromCharCode(65 + i));
+    for (const a of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+      for (const b of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') candidates.push(up[0] + a + b);
+    }
+  }
+  for (const c of candidates) if (!used.has(c)) return c;
+  return up.slice(0, 3);
+}
+
+// Kit colours live in the stylesheet as tokens (styles/tailwind-input.css,
+// --kit-0 to --kit-16 with a -s secondary each): a club carries its index,
+// never a colour, so re-theming stays a stylesheet edit. Index 16 is
+// Harbourside's, the pitch token itself.
 // The reputation a generated club is dealt, by its place in its division. The
 // whole pattern drops a rung in the bottom half of the pyramid.
 const GENERATED_REPS = [3, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2];
@@ -138,6 +225,30 @@ function uniqueShort(name, used) {
   return p.slice(0, 2);
 }
 
+// One stadium word per club that shares a stem: a drawn word stays unless an
+// earlier club of the same stem already took it, in which case the club takes
+// the first free word in a hash order of its own. Runs after the generation
+// draws, so no stream moves and no formation changes.
+function uniqueGrounds(clubs) {
+  const taken = new Map();
+  for (const c of clubs) {
+    const stem = c.name.split(' ')[0];
+    const word = c.ground.slice(stem.length + 1);
+    const used = taken.get(stem) || new Set();
+    if (!used.has(word)) {
+      used.add(word);
+      taken.set(stem, used);
+      continue;
+    }
+    const free = GROUND_WORDS
+      .slice()
+      .sort((a, b) => hash(PYRAMID_SEED, 'stadium', stem, a) - hash(PYRAMID_SEED, 'stadium', stem, b))
+      .find((w) => !used.has(w));
+    c.ground = stem + ' ' + free;
+    used.add(free);
+  }
+}
+
 function generateClubs() {
   const rng = mulberry32(hash(PYRAMID_SEED, 'clubs'));
   const combos = [];
@@ -148,11 +259,13 @@ function generateClubs() {
   }
   const names = new Set(COASTAL_CLUBS.map((c) => c.name));
   const shorts = new Set(COASTAL_CLUBS.map((c) => c.short));
+  const denied = new Set(REAL_CLUB_DENYLIST.map(normalizeClubName));
   const out = [];
   for (const { place, suffix } of combos) {
     if (out.length === PYRAMID_CLUBS) break;
     const name = place + ' ' + suffix;
     if (names.has(name)) continue;
+    if (denied.has(normalizeClubName(name))) continue;
     names.add(name);
     const short = uniqueShort(name, shorts);
     shorts.add(short);
@@ -167,17 +280,27 @@ function generateClubs() {
       id: slugify(name),
       name,
       short,
-      color: BADGE_COLORS[n % BADGE_COLORS.length],
+      city: place,
+      kit: n % 16,
       rep,
       formation: FORMATION_NAMES[Math.floor(rng() * FORMATION_NAMES.length)],
       objective: objectiveForRep(rep),
       ground: place + ' ' + GROUND_WORDS[Math.floor(rng() * GROUND_WORDS.length)],
     });
   }
+  uniqueGrounds(out);
   return out;
 }
 
-export const CLUBS = COASTAL_CLUBS.concat(generateClubs());
+// Codes are claimed in CLUBS order, the ten original clubs first, so a
+// generated club that would draw the same three letters falls down the ladder.
+const ALL_CLUBS = COASTAL_CLUBS.concat(generateClubs());
+const usedCodes = new Set();
+for (const c of ALL_CLUBS) {
+  c.code = clubCode(c.name, usedCodes);
+  usedCodes.add(c.code);
+}
+export const CLUBS = ALL_CLUBS;
 export const CLUB_BY_ID = Object.fromEntries(CLUBS.map((c) => [c.id, c]));
 const CLUB_INDEX = Object.fromEntries(CLUBS.map((c, i) => [c.id, i]));
 export const COASTAL_IDS = COASTAL_CLUBS.map((c) => c.id);
@@ -1350,11 +1473,261 @@ export function fixLineup(state) {
   return state.lineup;
 }
 
-// A career saved by an earlier version of the app, made ready for today's club
-// screen: only what is missing or unusable is filled in, from the career's own
-// squad. A valid career comes back equal; null means it cannot be shown. It
-// never touches the version, the divisions, the season, the seed, the results
-// or the squads.
+// ── Group setup: check and repair ────────────────────────────────────────
+// A career's league group must hold its 18 clubs and a full 34-matchday
+// fixture list. A saved career that lost part of it (a short club list, a
+// truncated fixture list) is rebuilt here, keeping every result already
+// played. A whole setup is never touched: a healthy career comes back from
+// these functions exactly as it went in.
+
+// The stored group in slot `index` has the shape today's club screen reads:
+// its tier and letter match the pyramid's slot, and it holds DIVISION_SIZE
+// unique, known club ids. Which clubs they are is the group's own business —
+// promotions move clubs between slots at a rollover.
+function groupShapeOk(g, index) {
+  const want = GROUPS[index];
+  if (!want || !g || typeof g !== 'object' || Array.isArray(g)) return false;
+  if (g.tier !== want.tier || g.group !== want.group) return false;
+  if (!Array.isArray(g.clubIds) || g.clubIds.length !== DIVISION_SIZE) return false;
+  const seen = new Set();
+  for (const id of g.clubIds) {
+    if (!CLUB_BY_ID[id] || seen.has(id)) return false;
+    seen.add(id);
+  }
+  return true;
+}
+
+// A saved squad the match engine can play with.
+function squadUsable(squad) {
+  return Array.isArray(squad) && squad.length >= SQUAD_MIN && squad.length <= 60
+    && squad.every((p) => p && typeof p === 'object'
+      && typeof p.id === 'string' && typeof p.name === 'string'
+      && POS_GROUP[p.pos] && Number.isInteger(p.overall));
+}
+
+// A saved result the league table can count.
+function resultUsable(r) {
+  return !!r && typeof r === 'object' && !Array.isArray(r)
+    && Number.isInteger(r.matchday) && r.matchday >= 1 && r.matchday <= MATCHDAYS
+    && !!CLUB_BY_ID[r.home && r.home.id] && !!CLUB_BY_ID[r.away && r.away.id]
+    && Number.isInteger(r.homeGoals) && r.homeGoals >= 0
+    && Number.isInteger(r.awayGoals) && r.awayGoals >= 0;
+}
+
+// Why a career's league setup is not whole, or null when it is. Only a
+// three-tier career is checked; careers from before it keep their own
+// behaviour. The first failure wins.
+export function groupSetupError(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return 'state';
+  if (!(state.version >= 3)) return null;
+  if (!CLUB_BY_ID[state.clubId]) return 'club';
+  if (!Array.isArray(state.groups) || state.groups.length !== GROUPS.length
+    || !state.groups.every((g, i) => groupShapeOk(g, i))) return 'groups';
+  const at = state.groupIndex;
+  if (!Number.isInteger(at) || at < 0 || at >= state.groups.length) return 'groupIndex';
+  const own = state.groups[at];
+  if (own.tier !== state.division || own.group !== state.group
+    || !own.clubIds.includes(state.clubId)) return 'groupIndex';
+  if (!Number.isInteger(state.matchday) || state.matchday < 0
+    || state.matchday > MATCHDAYS) return 'matchday';
+  const inGroup = new Set(own.clubIds);
+  const half = DIVISION_SIZE / 2;
+  if (!Array.isArray(state.fixtures) || state.fixtures.length !== MATCHDAYS) return 'fixtures';
+  for (const day of state.fixtures) {
+    if (!Array.isArray(day) || day.length !== half) return 'fixtures';
+    const seen = new Set();
+    for (const pair of day) {
+      if (!pair || typeof pair !== 'object' || Array.isArray(pair)) return 'fixtures';
+      if (!inGroup.has(pair.home) || !inGroup.has(pair.away) || pair.home === pair.away) return 'fixtures';
+      if (seen.has(pair.home) || seen.has(pair.away)) return 'fixtures';
+      seen.add(pair.home);
+      seen.add(pair.away);
+    }
+    if (seen.size !== DIVISION_SIZE) return 'fixtures';
+  }
+  if (!Array.isArray(state.results)) return 'results';
+  const perDay = new Map();
+  for (const r of state.results) {
+    if (!resultUsable(r)) return 'results';
+    if (!inGroup.has(r.home.id) || !inGroup.has(r.away.id)) return 'membership';
+    perDay.set(r.matchday, (perDay.get(r.matchday) || 0) + 1);
+  }
+  // The played matchdays and the results must agree: a career partway through
+  // a season carries a full day's results for every matchday it played, and
+  // none beyond it. A matchday claimed with no results behind it is damage
+  // the repair replays, not a day the table can show.
+  for (let d = 1; d <= MATCHDAYS; d++) {
+    const n = perDay.get(d) || 0;
+    if (d <= state.matchday ? n !== half : n !== 0) return 'results';
+  }
+  return null;
+}
+
+// Rebuild a broken group setup, keeping every result already played. A state
+// that passes groupSetupError comes back as the same object, untouched;
+// null means the damage is beyond repair. Everything is deterministic from
+// the career's own season seed, so the same saved state always rebuilds the
+// same fixtures.
+export function repairGroupSetup(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
+  if (!groupSetupError(state)) return state;
+  const seed = seasonSeed(state);
+
+  // Each matchday's pairings, read back from its own results in stored order.
+  // A day takes its first half results that do not double-book a club, so a
+  // damaged record beyond a full day's worth is simply not chosen.
+  const byDay = new Map();
+  const chosen = new Set();
+  const half = DIVISION_SIZE / 2;
+  if (Array.isArray(state.results)) {
+    for (const r of state.results) {
+      if (!resultUsable(r)) continue;
+      if (!byDay.has(r.matchday)) byDay.set(r.matchday, []);
+      const day = byDay.get(r.matchday);
+      if (day.length < half && !day.some((p) => p.home === r.home.id || p.home === r.away.id
+        || p.away === r.home.id || p.away === r.away.id)) {
+        day.push({ home: r.home.id, away: r.away.id });
+        chosen.add(r);
+      }
+    }
+  }
+  // How far the season really went: the last matchday whose results are all
+  // there. A day with a record missing replays rather than showing a played
+  // matchday with an empty half.
+  let played = 0;
+  while (played < MATCHDAYS && (byDay.get(played + 1) || []).length === half) played++;
+  // The results the rebuilt career keeps, in the order they were saved: the
+  // pairings the played days chose, and nothing from a day beyond them. What
+  // a damaged day dropped does not come back.
+  const results = Array.isArray(state.results)
+    ? state.results.filter((r) => chosen.has(r) && r.matchday <= played) : [];
+
+  // Every club the kept history names, the manager's own first: the
+  // membership the rebuilt group must hold. More than DIVISION_SIZE of them
+  // is damage nothing can absorb.
+  const kept = [state.clubId];
+  const seen = new Set([state.clubId]);
+  for (const r of results) {
+    for (const side of [r.home, r.away]) {
+      if (!seen.has(side.id)) { seen.add(side.id); kept.push(side.id); }
+    }
+  }
+  if (kept.length > DIVISION_SIZE) return null;
+
+  // Where the club plays: the stored group it sits in when that group is
+  // whole and the kept results agree with it; else any whole stored group of
+  // its division holding it; else the canonical pyramid slot, which also
+  // corrects a division or letter saved wrong.
+  const stored = Array.isArray(state.groups) ? state.groups : [];
+  const covers = (ids) => kept.every((id) => ids.includes(id));
+  const at = Number.isInteger(state.groupIndex) ? state.groupIndex : -1;
+  let gi = at >= 0 && at < GROUPS.length && groupShapeOk(stored[at], at)
+    && stored[at].clubIds.includes(state.clubId) && covers(stored[at].clubIds) ? at : -1;
+  if (gi < 0) {
+    gi = stored.findIndex((g, i) => groupShapeOk(g, i) && g.tier === state.division
+      && g.clubIds.includes(state.clubId) && covers(g.clubIds));
+  }
+  let ids;
+  if (gi >= 0) {
+    ids = stored[gi].clubIds.slice();
+  } else {
+    gi = clubToGroup[state.clubId] || 0;
+    const canonical = GROUPS[gi].clubIds;
+    if (covers(canonical)) {
+      ids = canonical.slice();
+    } else {
+      // History first, then the canonical group, then the same tier's other
+      // canonical groups, then any known club — never past 18.
+      ids = kept.slice();
+      for (const id of canonical) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (!ids.includes(id)) ids.push(id);
+      }
+      for (const g of GROUPS) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (g.tier !== GROUPS[gi].tier) continue;
+        for (const id of g.clubIds) {
+          if (ids.length >= DIVISION_SIZE) break;
+          if (!ids.includes(id)) ids.push(id);
+        }
+      }
+      for (const id of COASTAL_IDS) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (!ids.includes(id)) ids.push(id);
+      }
+    }
+  }
+
+  // The pyramid as it will be saved: this group rebuilt, every other group
+  // kept when it is whole, refilled from its canonical slot when it is not.
+  const groups = GROUPS.map((g, i) => {
+    if (i === gi) return { tier: g.tier, group: g.group, clubIds: ids };
+    if (groupShapeOk(stored[i], i)) {
+      return { tier: stored[i].tier, group: stored[i].group, clubIds: stored[i].clubIds.slice() };
+    }
+    return { tier: g.tier, group: g.group, clubIds: g.clubIds.slice() };
+  });
+
+  // Every club of the group needs a squad the engine can play with; one
+  // missing or malformed is built fresh from the season seed, exactly the
+  // squad it was always going to have. Existing squads are untouched.
+  const squadsIn = state.squads && typeof state.squads === 'object' && !Array.isArray(state.squads)
+    ? state.squads : {};
+  const squads = { ...squadsIn };
+  const tier = groups[gi].tier;
+  for (const id of ids) {
+    if (!squadUsable(squads[id])) {
+      squads[id] = buildSquad(seed, CLUB_INDEX[id], CLUB_BY_ID[id].rep, tier);
+    }
+  }
+  const rolesIn = state.roles && typeof state.roles === 'object' && !Array.isArray(state.roles)
+    ? state.roles : {};
+  const roles = { ...rolesIn };
+  for (const id of ids) {
+    for (const p of squads[id]) {
+      if (!roles[p.id]) roles[p.id] = defaultRole(p.pos);
+    }
+  }
+
+  // The season continues from a fresh schedule that skips the pairings
+  // already played.
+  let fixtures;
+  if (played === 0) {
+    fixtures = buildFixtures(seed, ids);
+  } else {
+    // Only the pairing as it was played is skipped: the reverse leg is the
+    // return fixture, still to be played.
+    const playedPairs = new Set(results.map((r) => r.home.id + '|' + r.away.id));
+    fixtures = [];
+    for (let d = 1; d <= played; d++) fixtures.push(byDay.get(d));
+    let remaining = buildFixtures(seed, ids).flat()
+      .filter((f) => !playedPairs.has(f.home + '|' + f.away));
+    while (fixtures.length < MATCHDAYS && remaining.length) {
+      const day = []; const left = [];
+      for (const f of remaining) {
+        const clash = day.some((p) => p.home === f.home || p.home === f.away
+          || p.away === f.home || p.away === f.away);
+        if (day.length < half && !clash) day.push(f);
+        else left.push(f);
+      }
+      if (!day.length) break;
+      fixtures.push(day);
+      remaining = left;
+    }
+    // A tail the pool cannot fill stands empty: it plays no matches and the
+    // season still finishes.
+    while (fixtures.length < MATCHDAYS) fixtures.push([]);
+  }
+  // A report of a day the repair dropped describes a match this career no
+  // longer counts as played, so it goes with the results it came from.
+  const report = state.lastReport;
+  const reportKept = !!report && played === state.matchday
+    && results.some((r) => r.matchday === report.matchday);
+  return { ...state, matchday: played, division: groups[gi].tier, group: groups[gi].group,
+    groups, groupIndex: gi, squads, roles, fixtures, results,
+    lastReport: reportKept ? report : null };
+}
+
 // A career's groups, brought up to today's pyramid. A career saved before
 // Division 3 grew to twelve groups keeps all nine of its own groups exactly as
 // they are, reshuffled by earlier seasons or not, and gains copies of the
@@ -1369,17 +1742,26 @@ export function pyramidGroups(state) {
   return groups;
 }
 
+// A career saved by an earlier version of the app, made ready for today's club
+// screen: only what is missing or unusable is filled in, from the career's own
+// squad. A valid career comes back equal; null means it cannot be shown. It
+// never touches the version, the divisions, the season, the seed, the results
+// or the squads — except that a broken group setup is rebuilt first, which may
+// rewrite the groups and the unplayed fixtures (see repairGroupSetup).
 export function repairCareer(state) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
   const club = CLUB_BY_ID[state.clubId];
   if (!club) return null;
-  if (!state.squads || !Array.isArray(state.squads[state.clubId])) return null;
-  if (!Array.isArray(state.fixtures) || !Array.isArray(state.results)) return null;
-  // A three-tier career must know its group, and be in it.
+  if (!Array.isArray(state.results)) return null;
+  if (state.version < 3 && !Array.isArray(state.fixtures)) return null;
+  // A three-tier career whose group setup is broken is rebuilt here; only
+  // damage beyond repair still fails. A whole setup passes through untouched.
   if (state.version >= 3) {
-    const group = Array.isArray(state.groups) ? state.groups[state.groupIndex] : null;
-    if (!group || !Array.isArray(group.clubIds) || !group.clubIds.includes(state.clubId)) return null;
+    const settled = repairGroupSetup(state);
+    if (!settled) return null;
+    state = settled;
   }
+  if (!state.squads || !Array.isArray(state.squads[state.clubId])) return null;
 
   const squad = state.squads[state.clubId];
   const roles = state.roles && typeof state.roles === 'object' && !Array.isArray(state.roles)
@@ -1887,8 +2269,8 @@ export function simulateMatch(home, away, seed) {
 
   const report = {
     matchday: null,
-    home: { id: home.club.id, name: home.club.name, short: home.club.short, color: home.club.color },
-    away: { id: away.club.id, name: away.club.name, short: away.club.short, color: away.club.color },
+    home: { id: home.club.id, name: home.club.name, short: home.club.short },
+    away: { id: away.club.id, name: away.club.name, short: away.club.short },
     homeGoals,
     awayGoals,
     moments,

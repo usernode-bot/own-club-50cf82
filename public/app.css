@@ -82,6 +82,33 @@ button.chip[aria-expanded="true"] {
 }
 .league-note[hidden] { display: none; }
 
+/* The group letter beside the club's name, in the header above every tab. */
+.group-tag {
+  display: inline-block;
+  vertical-align: 6px;
+  margin-left: 8px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: rgb(var(--surface));
+  color: rgb(var(--pitch-ink));
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.group-tag[hidden] { display: none; }
+
+/* The setting-up note, under the table while the group is rebuilt. Its bold
+   lead sits on its own line, like the section labels. */
+.setup-note b {
+  display: block;
+  color: rgb(var(--fg));
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+.setup-note[hidden] { display: none; }
+
 /* Start a new career is the plain button under Start next season. */
 .next .btn-secondary { width: 100%; margin-top: 10px; }
 
@@ -133,6 +160,56 @@ button.chip[aria-expanded="true"] {
 .row-btn { cursor: pointer; }
 .club-row .badge { flex: none; }
 .club-row.me { background: rgb(var(--raised)); }
+
+/* A club's badge in its two kit colours: the primary field carries the white
+   monogram, the lighter secondary shows as the lower wedge. --ka and --kb
+   come from the club's kit index (badgeHtml); before they are set the badge
+   rests on the raised colour. */
+.badge {
+  background: linear-gradient(
+    135deg,
+    rgb(var(--ka, 234 239 231)) 0%,
+    rgb(var(--ka, 234 239 231)) 62%,
+    rgb(var(--kb, var(--ka, 234 239 231))) 62%,
+    rgb(var(--kb, var(--ka, 234 239 231))) 100%
+  );
+}
+/* On a dark card the badge needs an edge to read against. */
+.dark .badge { box-shadow: 0 0 0 2px rgb(var(--line)); }
+
+/* A club's three-letter code: a quiet read-only chip, never a button. */
+.code-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  background: rgb(var(--surface));
+  color: rgb(var(--muted));
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* On the green header the pill inverts to the header's own white-on-green. */
+.top .code-pill {
+  background: transparent;
+  border-color: rgba(255, 255, 255, .45);
+  color: #fff;
+}
+.title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+/* A long club name ends in an ellipsis instead of pushing the row wide. */
+.row-title {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.club-row .nm, .tbl .t { min-width: 0; }
 
 /* A club's price in the shop, and the wallet's balance: figures line up. */
 .price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -194,6 +271,7 @@ button.chip[aria-expanded="true"] {
 .sk-btn { width: 100%; height: 48px; display: block; margin-top: 14px; border-radius: 8px; }
 .sk-line { width: 100px; height: 12px; }
 .sk-pos { width: 28px; height: 14px; }
+.sk-cell { width: 24px; height: 14px; }
 .sk-fit { width: 44px; height: 6px; }
 .sk-ovr { width: 22px; height: 14px; }
 #loading-squad .nm { display: flex; flex-direction: column; gap: 6px; }
