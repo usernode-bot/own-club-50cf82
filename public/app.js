@@ -17,7 +17,7 @@ import {
   MATCHDAY_SALES, matchdaySales,
   wageBill, playerWage, stadiumSeats, homeCrowd, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
-  growthOutlook, managerLine, groupsNote,
+  growthOutlook, managerLine, groupsNote, tableZone, topScorers,
 } from './engine.js';
 import { buildTimeline, matchCrowd, creditsLine } from './match-feed.js';
 import {
@@ -797,15 +797,31 @@ function renderClub() {
     $('last-sec').hidden = true;
   }
 
-  $('club-form').innerHTML = formOf(career, career.clubId).map((r) => `<i class="${r.toLowerCase()}">${r}</i>`).join('');
-  $('table-list').innerHTML = table.map((r) => `
-    <li class="list-row${r.id === career.clubId ? ' me' : ''}">
+  const chips = (clubId) => formOf(career, clubId).map((r) => `<i class="${r.toLowerCase()}">${r}</i>`).join('');
+  $('club-form').innerHTML = chips(career.clubId);
+
+  // Promotion and relegation places, coloured down the left edge of the row,
+  // with a legend that names only the places this division uses.
+  const zones = new Set(table.map((r) => tableZone(career, r.rank)).filter(Boolean));
+  $('table-legend').innerHTML = [['up', 'promotion', 'Promotion'], ['down', 'relegation', 'Relegation']]
+    .filter(([, key]) => zones.has(key))
+    .map(([cls, , word]) => `<span><i class="${cls}"></i>${word}</span>`).join('');
+  $('table-legend').hidden = zones.size === 0;
+
+  const head = table.length
+    ? `<li class="list-row head" aria-hidden="true"><span class="n"></span><span class="t">Club</span><span class="form">Form</span><span class="g">GD</span><span class="p">Pts</span></li>`
+    : '';
+  $('table-list').innerHTML = head + table.map((r) => {
+    const zone = tableZone(career, r.rank);
+    return `<li class="list-row${r.id === career.clubId ? ' me' : ''}${zone ? ' zone-' + (zone === 'promotion' ? 'up' : 'down') : ''}">
       <span class="n">${r.rank}</span>
       ${codePill(CLUB_BY_ID[r.id])}
       <span class="t"><span class="row-title">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}</span><small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
+      <span class="form">${chips(r.id)}</span>
       <span class="g">${r.gd > 0 ? '+' : ''}${r.gd}</span>
       <span class="p">${r.points}</span>
-    </li>`).join('');
+    </li>`;
+  }).join('');
 
   // Why the league has the groups it has, under the table. Division 1 is one
   // group, and a career from before the three tiers has no note.
@@ -813,33 +829,52 @@ function renderClub() {
   $('league-note').textContent = note;
   $('league-note').hidden = !note;
 
+  // The whole group's fixtures, newest first: the next matchday with its
+  // kick-off time, then each matchday already played with its scores. The
+  // manager's own match is highlighted, and the latest one opens its report.
   $('fixtures-season').textContent = career.season;
-  const remainder = Math.max(0, career.fixtures.length - career.matchday);
-  const dates = career.nextMatchAt && remainder ? upcomingSlots(career.nextMatchAt, remainder, career.timeZone) : [];
-  const mine = [];
-  career.fixtures.forEach((fixtures, md) => {
-    const f = fixtures.find((x) => x.home === career.clubId || x.away === career.clubId);
-    if (f) mine.push({ md, home: f.home, away: f.away });
-  });
-  const resultFor = (md) => career.results.find((r) => r.matchday === md + 1
-    && (r.home.id === career.clubId || r.away.id === career.clubId));
-  $('fixtures-list').innerHTML = mine.map((f) => {
-    const r = resultFor(f.md);
-    const h = CLUB_BY_ID[f.home];
-    const a = CLUB_BY_ID[f.away];
-    if (r) {
-      const latest = career.lastReport && career.lastReport.matchday === f.md + 1;
-      return `<li class="list-row${latest ? ' row-btn' : ''}"${latest ? ' data-open-report="1" tabindex="0" role="button"' : ''}>
-        <span class="nm">${esc(h.name)} ${r.homeGoals}–${r.awayGoals} ${esc(a.name)}<small>Matchday ${f.md + 1}</small></span>
-        <span class="form"><i class="${resultClass(r, career.clubId)}">${resultLetter(r, career.clubId)}</i></span>
+  const played = career.matchday;
+  const groups = [];
+  if (played < career.fixtures.length) {
+    const when = career.nextMatchAt ? upcomingSlots(career.nextMatchAt, 1, career.timeZone)[0] : null;
+    let title = 'Matchday ' + (played + 1);
+    if (when) title += ', ' + fixtureDate(when, career.timeZone);
+    groups.push({ title, rows: (career.fixtures[played] || []).map((f) => ({
+      home: CLUB_BY_ID[f.home], away: CLUB_BY_ID[f.away], result: null,
+    })) });
+  }
+  for (let md = played - 1; md >= 0; md--) {
+    const rows = career.results.filter((r) => r.matchday === md + 1).map((r) => ({
+      home: r.home, away: r.away, result: r,
+    }));
+    if (rows.length) groups.push({ title: 'Matchday ' + (md + 1), rows });
+  }
+  $('fixtures-list').innerHTML = groups.map((g) => `<li class="list-row md-head">${esc(g.title)}</li>`
+    + g.rows.map((f) => {
+      const mine = f.home.id === career.clubId || f.away.id === career.clubId;
+      if (!f.result) {
+        return `<li class="list-row${mine ? ' me' : ''}">
+          <span class="nm">${esc(displayName(f.home))} v ${esc(displayName(f.away))}${mine ? '<small>Your match</small>' : ''}</span>
+        </li>`;
+      }
+      const latest = mine && career.lastReport && career.lastReport.matchday === f.result.matchday;
+      return `<li class="list-row${latest ? ' row-btn' : ''}${mine ? ' me' : ''}"${latest ? ' data-open-report="1" tabindex="0" role="button"' : ''}>
+        <span class="nm">${esc(f.home.name)} ${f.result.homeGoals}–${f.result.awayGoals} ${esc(f.away.name)}${mine ? '<small>Your match</small>' : ''}</span>
+        ${mine ? `<span class="form"><i class="${resultClass(f.result, career.clubId)}">${resultLetter(f.result, career.clubId)}</i></span>` : ''}
         ${latest ? '<span class="chev" aria-hidden="true">›</span>' : ''}
       </li>`;
-    }
-    const when = dates[f.md - career.matchday];
-    return `<li class="list-row">
-      <span class="nm">Matchday ${f.md + 1}, ${esc(displayName(h))} v ${esc(displayName(a))}<small>${when ? esc(fixtureDate(when, career.timeZone)) : 'To be played'}</small></span>
-    </li>`;
-  }).join('');
+    }).join('')).join('');
+
+  // The group's leading scorers, from the goals already saved on each player.
+  const scorers = topScorers(career);
+  $('scorers-list').innerHTML = scorers.map((p) => `
+    <li class="list-row${p.clubId === career.clubId ? ' me' : ''}">
+      <span class="pos">${esc(p.pos)}</span>
+      <span class="nm">${esc(p.name)}<small>${esc(p.clubName)}</small></span>
+      <span class="price">${p.goals}</span>
+    </li>`).join('');
+  $('scorers-list').hidden = scorers.length === 0;
+  $('scorers-empty').hidden = scorers.length > 0;
 
   renderFinance();
 

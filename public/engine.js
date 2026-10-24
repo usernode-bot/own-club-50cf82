@@ -1920,6 +1920,26 @@ export function leagueTable(state) {
   return list;
 }
 
+// The ten players in the group who have scored most this season. Season goals
+// live on each player in `state.squads`, so nothing extra is stored. Ties go
+// to the name, and a player on no goals is left out.
+export function topScorers(state, limit = 10) {
+  const out = [];
+  if (!state) return out;
+  const squads = state.squads || {};
+  for (const id of divisionClubIds(state)) {
+    const club = CLUB_BY_ID[id];
+    if (!club) continue;
+    for (const p of squads[id] || []) {
+      const goals = Number(p && p.goals);
+      if (!(goals > 0)) continue;
+      out.push({ id: p.id, name: p.name, pos: p.pos, clubId: id, clubName: club.name, goals });
+    }
+  }
+  out.sort((a, b) => b.goals - a.goals || String(a.name).localeCompare(String(b.name)));
+  return out.slice(0, limit);
+}
+
 export function formOf(state, clubId, count = 5) {
   const played = [];
   for (const r of state.results) {
@@ -2721,6 +2741,23 @@ export function clubSummary(seed, club, division = 1) {
   const squad = buildSquad(seed, CLUB_INDEX[club.id], club.rep, division);
   const avg = squad.reduce((s, p) => s + p.overall, 0) / squad.length;
   return { avg: Math.round(avg) };
+}
+
+// The place a rank moves to at the end of the season: 'promotion',
+// 'relegation' or null. It mirrors nextPlacement's rules, so the table's
+// strips and the rollover agree. A career from before the three tiers has none.
+export function tableZone(state, rank) {
+  if (!(state && state.version >= 3 && Array.isArray(state.groups)
+    && state.groups[state.groupIndex])) return null;
+  const tier = state.division;
+  if (tier === 1) return rank >= 11 ? 'relegation' : null;
+  if (tier === 2) {
+    const size = divisionClubIds(state).length;
+    if (rank <= 2) return 'promotion';
+    if (rank > size - 6) return 'relegation';
+    return null;
+  }
+  return rank <= 2 ? 'promotion' : null;
 }
 
 // Where a finished season leaves the manager: how they finished, and the tier

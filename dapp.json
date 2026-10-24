@@ -168,6 +168,12 @@
       "path": "/?demo=1#competition",
       "expectText": "Manager Demo Manager",
       "expectSelector": "#table-list .list-row .t small"
+    },
+    {
+      "name": "Demo competition shows form, relegation places and top scorers",
+      "path": "/?demo=1#competition",
+      "expectText": "Top scorers",
+      "expectSelector": "#table-list .zone-down .form"
     }
   ]
 }

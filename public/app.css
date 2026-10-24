@@ -82,6 +82,32 @@ button.chip[aria-expanded="true"] {
 }
 .league-note[hidden] { display: none; }
 
+/* Promotion and relegation places: a thin strip down the left of the row,
+   in the fitness green and card red tokens. */
+.tbl .zone-up { box-shadow: inset 4px 0 0 rgb(var(--pitch-ink)); }
+.tbl .zone-down { box-shadow: inset 4px 0 0 rgb(var(--card-r)); }
+
+/* What the strips mean, above the table, naming only the places in use. */
+.legend { display: flex; gap: 16px; margin: 0 4px 8px; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+.legend[hidden] { display: none; }
+.legend span { display: flex; align-items: center; gap: 6px; }
+.legend i { display: block; width: 4px; height: 16px; border-radius: 2px; }
+.legend i.up { background: rgb(var(--pitch-ink)); }
+.legend i.down { background: rgb(var(--card-r)); }
+
+/* The Form column sits between the club and its goal difference, in chips
+   small enough that a club's name still fits on one line on a phone. */
+.tbl .list-row { gap: 6px; padding: 10px 12px; }
+.tbl .form { width: 79px; gap: 1px; flex-shrink: 0; }
+.tbl .form i { width: 15px; height: 16px; font-size: 10px; line-height: 16px; }
+.tbl .g, .tbl .p { width: 24px; }
+.tbl .head { min-height: 0; padding: 6px 12px; color: rgb(var(--muted)); font-size: 14px; line-height: 20px; }
+.tbl .t { min-width: 0; }
+
+/* Each matchday of the group's fixtures: a small grey line, not a card. */
+#fixtures-list .md-head { min-height: 0; padding: 8px 16px; font-size: 14px; line-height: 20px; font-weight: 500; color: rgb(var(--muted)); background: rgb(var(--ground)); }
+#fixtures-list .me, #scorers-list .me { background: rgb(var(--raised)); }
+
 /* The group letter beside the club's name, in the header above every tab. */
 .group-tag {
   display: inline-block;
