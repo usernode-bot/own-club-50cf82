@@ -21,14 +21,25 @@
       ]
     },
     {
-      "name": "New career screen",
+      "name": "Buy a club screen",
       "path": "/",
-      "expectText": "New career"
+      "expectText": "Buy a club"
     },
     {
       "name": "New career shows the club shop",
       "path": "/",
       "expectText": "Dummy USDC (staging mock)"
+    },
+    {
+      "name": "Buy a club shows the shared league",
+      "path": "/",
+      "expectText": "One shared league",
+      "expectSelector": "#shared-note:not([hidden])"
+    },
+    {
+      "name": "Buy a club says London time",
+      "path": "/",
+      "expectText": "London time"
     },
     {
       "name": "New career lists every division at its tier price",
@@ -45,6 +56,12 @@
       "impact": [
         "public/**"
       ]
+    },
+    {
+      "name": "Demo header shows the club",
+      "path": "/?demo=1",
+      "expectSelector": "#club-name",
+      "expectText": "Harbourside"
     },
     {
       "name": "Demo club shows Club credits",
@@ -120,6 +137,18 @@
       "expectSelector": "#market-list .list-row"
     },
     {
+      "name": "Demo transfers tab sorts and filters the market",
+      "path": "/?demo=1#transfers",
+      "expectText": "Sort by",
+      "expectSelector": "#market-controls:not([hidden]) #market-sort"
+    },
+    {
+      "name": "Demo transfer listings carry a value hint and a shortlist star",
+      "path": "/?demo=1#transfers",
+      "expectText": "Staging Demo Keeper",
+      "expectSelector": "#market-list .hint"
+    },
+    {
       "name": "Demo club shows its wages",
       "path": "/?demo=1#finance",
       "expectText": "Wages this season"
@@ -161,6 +190,12 @@
       "path": "/?demo=1#competition",
       "expectText": "Manager Demo Manager",
       "expectSelector": "#table-list .list-row .t small"
+    },
+    {
+      "name": "Demo competition shows form, relegation places and top scorers",
+      "path": "/?demo=1#competition",
+      "expectText": "Top scorers",
+      "expectSelector": "#table-list .zone-down .form"
     }
   ]
 }

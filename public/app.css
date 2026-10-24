@@ -40,6 +40,10 @@ button.chip[aria-expanded="true"] {
 /* The division and group chips on New career, as equal buttons. */
 .divrow { display: flex; gap: 6px; }
 #group-section { margin-top: 12px; }
+/* Division 2's four groups in one row, Division 3's twelve in two rows of
+   six, so each chip stays at least 44 px wide on a 360 px phone. */
+#group-row { display: grid; grid-template-columns: repeat(4, 1fr); }
+#group-row[data-cols="6"] { grid-template-columns: repeat(6, 1fr); }
 .divrow .chip {
   flex: 1;
   min-width: 0;
@@ -77,6 +81,59 @@ button.chip[aria-expanded="true"] {
   color: rgb(var(--muted));
 }
 .league-note[hidden] { display: none; }
+
+/* Promotion and relegation places: a thin strip down the left of the row,
+   in the fitness green and card red tokens. */
+.tbl .zone-up { box-shadow: inset 4px 0 0 rgb(var(--pitch-ink)); }
+.tbl .zone-down { box-shadow: inset 4px 0 0 rgb(var(--card-r)); }
+
+/* What the strips mean, above the table, naming only the places in use. */
+.legend { display: flex; gap: 16px; margin: 0 4px 8px; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+.legend[hidden] { display: none; }
+.legend span { display: flex; align-items: center; gap: 6px; }
+.legend i { display: block; width: 4px; height: 16px; border-radius: 2px; }
+.legend i.up { background: rgb(var(--pitch-ink)); }
+.legend i.down { background: rgb(var(--card-r)); }
+
+/* The Form column sits between the club and its goal difference, in chips
+   small enough that a club's name still fits on one line on a phone. */
+.tbl .list-row { gap: 6px; padding: 10px 12px; }
+.tbl .form { width: 79px; gap: 1px; flex-shrink: 0; }
+.tbl .form i { width: 15px; height: 16px; font-size: 10px; line-height: 16px; }
+.tbl .g, .tbl .p { width: 24px; }
+.tbl .head { min-height: 0; padding: 6px 12px; color: rgb(var(--muted)); font-size: 14px; line-height: 20px; }
+.tbl .t { min-width: 0; }
+
+/* Each matchday of the group's fixtures: a small grey line, not a card. */
+#fixtures-list .md-head { min-height: 0; padding: 8px 16px; font-size: 14px; line-height: 20px; font-weight: 500; color: rgb(var(--muted)); background: rgb(var(--ground)); }
+#fixtures-list .me, #scorers-list .me { background: rgb(var(--raised)); }
+
+/* The group letter beside the club's name, in the header above every tab. */
+.group-tag {
+  display: inline-block;
+  vertical-align: 6px;
+  margin-left: 8px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: rgb(var(--surface));
+  color: rgb(var(--pitch-ink));
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.group-tag[hidden] { display: none; }
+
+/* The setting-up note, under the table while the group is rebuilt. Its bold
+   lead sits on its own line, like the section labels. */
+.setup-note b {
+  display: block;
+  color: rgb(var(--fg));
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+.setup-note[hidden] { display: none; }
 
 /* Start a new career is the plain button under Start next season. */
 .next .btn-secondary { width: 100%; margin-top: 10px; }
@@ -129,6 +186,56 @@ button.chip[aria-expanded="true"] {
 .row-btn { cursor: pointer; }
 .club-row .badge { flex: none; }
 .club-row.me { background: rgb(var(--raised)); }
+
+/* A club's badge in its two kit colours: the primary field carries the white
+   monogram, the lighter secondary shows as the lower wedge. --ka and --kb
+   come from the club's kit index (badgeHtml); before they are set the badge
+   rests on the raised colour. */
+.badge {
+  background: linear-gradient(
+    135deg,
+    rgb(var(--ka, 234 239 231)) 0%,
+    rgb(var(--ka, 234 239 231)) 62%,
+    rgb(var(--kb, var(--ka, 234 239 231))) 62%,
+    rgb(var(--kb, var(--ka, 234 239 231))) 100%
+  );
+}
+/* On a dark card the badge needs an edge to read against. */
+.dark .badge { box-shadow: 0 0 0 2px rgb(var(--line)); }
+
+/* A club's three-letter code: a quiet read-only chip, never a button. */
+.code-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  background: rgb(var(--surface));
+  color: rgb(var(--muted));
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* On the green header the pill inverts to the header's own white-on-green. */
+.top .code-pill {
+  background: transparent;
+  border-color: rgba(255, 255, 255, .45);
+  color: #fff;
+}
+.title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+/* A long club name ends in an ellipsis instead of pushing the row wide. */
+.row-title {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.club-row .nm, .tbl .t { min-width: 0; }
 
 /* A club's price in the shop, and the wallet's balance: figures line up. */
 .price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -190,6 +297,7 @@ button.chip[aria-expanded="true"] {
 .sk-btn { width: 100%; height: 48px; display: block; margin-top: 14px; border-radius: 8px; }
 .sk-line { width: 100px; height: 12px; }
 .sk-pos { width: 28px; height: 14px; }
+.sk-cell { width: 24px; height: 14px; }
 .sk-fit { width: 44px; height: 6px; }
 .sk-ovr { width: 22px; height: 14px; }
 #loading-squad .nm { display: flex; flex-direction: column; gap: 6px; }
@@ -257,10 +365,36 @@ button.chip[aria-expanded="true"] {
 .sheet-body .list-row { padding: 8px 12px; }
 .sheet-body .btn-secondary.small { min-height: 44px; padding: 0 12px; font-size: 14px; }
 
-/* The match report's moment icons and its numbers. */
-.ico { display: flex; align-items: center; color: rgb(var(--muted)); flex: none; }
-.ico.own { color: rgb(var(--fg)); }
+/* The match feed: a minute, a word for what happened, the player, the club
+   code and one line of commentary. Rows wrap inside a 320px screen. */
+.feed-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ev { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ev small { display: block; color: rgb(var(--muted)); }
+.code {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgb(var(--raised));
+  font-size: 12px;
+  font-weight: 700;
+  color: rgb(var(--muted));
+}
+.ft-title { display: block; font-weight: 700; }
+.ft-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ft-strip div { min-width: 0; font-size: 12px; line-height: 16px; color: rgb(var(--muted)); }
+.ft-strip b { display: block; font-size: 16px; line-height: 24px; color: rgb(var(--fg)); font-variant-numeric: tabular-nums; }
+[data-finance-link] { color: rgb(var(--pitch-ink)); font-weight: 600; text-decoration: underline; }
+[data-finance-link]:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; border-radius: 2px; }
+#report-ft-row:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: -2px; }
 .min, .big, .rt, .ovr, .tbl, .stat .h { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 359px) {
+  .ft-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* The report's scoreline keeps three across a 320px screen. */
+  [data-spec-screen="2"] .score .team { width: auto; flex: 1; min-width: 0; }
+  [data-spec-screen="2"] .score .big { flex: none; font-size: 32px; }
+}
 
 /* ── The seven club tabs ──────────────────────────────────────────────── */
 /* The bar carries four labels and More; below a tablet the labels drop to
@@ -581,3 +715,123 @@ button.chip[aria-expanded="true"] {
 .watch-btn { width: 100%; min-height: 48px; }
 .watch-btn[hidden] { display: none; }
 #match-error[hidden] { display: none; }
+
+/* ── The transfer market ──────────────────────────────────────────────── */
+/* A listing row keeps its name on the left and its star and action as one
+   unbroken group at the end, which drops below the name on a phone. */
+.mkt-row { flex-wrap: wrap; }
+.mkt-row .nm { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.mkt-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+/* A long name and a big price never break the action row: it never shrinks. */
+.mkt-acts > * { flex: none; }
+
+/* Sort by: the kit's own select field, with its label beside it. */
+.mkt-sort { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mkt-sort .lbl { flex: none; font-size: 14px; line-height: 20px; font-weight: 500; color: rgb(var(--muted)); white-space: nowrap; }
+.mkt-sort .field { flex: 1 1 auto; min-width: 0; }
+
+/* The filter chips: three selects and the Shortlist toggle. They wrap on a
+   phone and sit in one row from a tablet up. */
+.fchips { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (min-width: 768px) { .fchips { flex-wrap: nowrap; } }
+select.fchip {
+  flex: none;
+  min-height: 44px;
+  width: auto;
+  padding: 0 8px;
+  appearance: none;
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  background-color: rgb(var(--surface));
+  color: rgb(var(--fg));
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.fchip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  background: rgb(var(--surface));
+  color: rgb(var(--fg));
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fchip[data-on="true"],
+.fchip[aria-pressed="true"] { border-color: rgb(var(--accent)); background-color: rgb(var(--raised)); }
+.fchip:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
+.fchips[hidden], .mkt-sort[hidden], .fstatus[hidden] { display: none; }
+
+/* How many filters are on, and Clear all. */
+.fstatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 4px;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--muted));
+}
+
+/* The shortlist star: 44 px, the line star, filled in the reputation colour
+   when it is on. Never amber. */
+.star-btn {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--line));
+  border-radius: 8px;
+  background: rgb(var(--surface));
+  color: rgb(var(--muted));
+  cursor: pointer;
+}
+.star-btn svg { display: block; }
+.star-btn[aria-pressed="true"] { color: rgb(var(--star)); }
+.star-btn:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
+
+/* The price hint: the word in bold, then its reason, on the small grey line. */
+.hint b { font-weight: 600; color: rgb(var(--fg)); }
+.hint b.bargain { color: rgb(var(--pitch-ink)); }
+
+/* Your own listing, before Withdraw. */
+.you-tag {
+  flex: none;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(var(--raised));
+  color: rgb(var(--fg));
+}
+
+/* A refused Buy: greyed on the raised background with muted text, kept
+   readable rather than faded. */
+.btn-secondary.small.blocked:disabled {
+  opacity: 1;
+  background: rgb(var(--raised));
+  color: rgb(var(--muted));
+}
+
+#market-loading[hidden], #market-empty[hidden], #market-error[hidden], #listing-sec[hidden],
+#market-nomatch[hidden], #market-controls[hidden], #market-empty-clear[hidden] { display: none; }

@@ -1,8 +1,8 @@
 # Own Club
 
 A football management game for the browser. You name your manager, get a mock
-wallet of 1,000 Dummy USDC and buy any of the 162 clubs: 100 in Division 3,
-200 in Division 2 and 300 in Division 1. Then you
+wallet of 1,000 Dummy USDC and buy any of the 306 clubs, priced 100 USDC in
+Division 3, 200 in Division 2 and 300 in Division 1. Then you
 set your eleven on a pitch diagram, choose the formation, mentality and pressing,
 and follow your club through its group's 34 matchdays. Seven tabs split the club
 screen: Home, Squad, Tactics, Competition, Club, Finance and Transfers, in a bar
@@ -21,14 +21,23 @@ a club taken up the league is worth more than you paid for it. The money stays
 in your wallet after you buy your next club, and a first-time manager still
 starts with 1,000 USDC.
 
-The Coastal League has three tiers and 162 fictional clubs. Division 1 is one
-group of 18; Divisions 2 and 3 have four groups each, A to D, of 18. At the end
-of a season the bottom 8 of Division 1 go down (two into each Division 2 group),
-the top 2 of each Division 2 group go up and its bottom 2 go down into the
-same-letter Division 3 group, and the top 2 of each Division 3 group go up.
+The Coastal League has three tiers and 306 fictional clubs. Division 1 is one
+group of 18; Division 2 has four groups, A to D, and Division 3 has twelve,
+A to L, of 18. At the end of a season the bottom 8 of Division 1 go down (two
+into each Division 2 group), the top 2 of each Division 2 group go up and its
+bottom 6 go down, two into each of its three Division 3 groups, and the top 2
+of each Division 3 group go up into the Division 2 group above it.
 Nobody leaves Division 3, and every group stays at 18. Start next season takes
 the same club and players into its new group. Lower tiers start with weaker
 players.
+
+Everyone who buys a club plays in one shared Coastal League, on London time:
+matches kick off for every club at 12 am, 6 am, 12 pm and 6 pm, and a club run
+by a real manager uses their saved lineup while every other club is run by a
+bot. Buying a club joins the league with the points and squad it already has,
+and selling hands it to a bot while its results stay. A career from before the
+shared league keeps playing on its own clock until its manager presses Join on
+Home.
 
 Every club also has Club credits, a second in-game currency that belongs to the
 career rather than to the person. Its balance shows under your Dummy USDC in the
