@@ -493,16 +493,18 @@ function renderNew() {
     if (isTaken) {
       return `
     <li class="list-row club-row taken-row" aria-disabled="true">
-      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${esc(takenLine(c.id))}</small></span>
+      ${badgeHtml(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${esc(takenLine(c.id))}</small></span>
+      ${codePill(c)}
       <span class="taken">Taken</span>
       <span class="tick" aria-hidden="true"></span>
     </li>`;
     }
     return `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
-      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, run by a bot</small></span>
+      ${badgeHtml(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]} · ${esc(c.city)} · ${esc(groupName(GROUPS[clubToGroup[c.id]].tier))}</small></span>
+      ${codePill(c)}
       <span class="price">${usdc(price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`;
@@ -578,7 +580,12 @@ async function startCareer() {
 
 // ── Club screen ──────────────────────────────────────────────────────────
 function badgeHtml(club) {
-  return '<span class="badge" style="background:' + club.color + '">' + esc(club.short) + '</span>';
+  return '<span class="badge" style="--ka:var(--kit-' + club.kit + ');--kb:var(--kit-' + club.kit + 's)">' + esc(club.short) + '</span>';
+}
+
+// The club's three-letter code: decorative, the name carries the meaning.
+function codePill(club) {
+  return '<span class="code-pill" aria-hidden="true">' + esc(club.code) + '</span>';
 }
 
 function playerStatus(p, starters) {
@@ -660,11 +667,15 @@ function renderClub() {
   $('club-name').textContent = club.name;
   fillGroupPill();
   $('club-pos').textContent = ordinal(me.rank) + ' in ' + place;
+  $('club-code').textContent = club.code;
+  $('club-code').hidden = false;
   $('setup-card').hidden = true;
   $('setup-note').hidden = true;
   $('home-actions').hidden = false;
   $('tab-badge').outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
   $('tab-name').textContent = club.name;
+  $('tab-code').textContent = club.code;
+  $('tab-code').hidden = false;
 
   if (next && !career.finished) {
     $('next-card').hidden = false;
@@ -773,7 +784,8 @@ function renderClub() {
   $('table-list').innerHTML = table.map((r) => `
     <li class="list-row${r.id === career.clubId ? ' me' : ''}">
       <span class="n">${r.rank}</span>
-      <span class="t">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}<small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
+      ${codePill(CLUB_BY_ID[r.id])}
+      <span class="t"><span class="row-title">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}</span><small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
       <span class="g">${r.gd > 0 ? '+' : ''}${r.gd}</span>
       <span class="p">${r.points}</span>
     </li>`).join('');
