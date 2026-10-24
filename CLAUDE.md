@@ -408,3 +408,6 @@ Re-theme by changing the token values there, keeping every text pair at
   no Division 4. The shop lists every division's clubs at its tier price
   (`TIER_PRICE`), and a manager owns one club at a time. Selling a club, owning more than one and real USDC come
   later; the purchase is stored so selling can be added.
+- Names and originality: every club, player, staff member, ground, sponsor and
+  competition is invented; follow the rules in `AGENTS.md` before adding or
+  renaming any of them.
