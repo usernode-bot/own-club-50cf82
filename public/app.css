@@ -643,6 +643,124 @@ button.chip[aria-expanded="true"] {
 .sheet-form { display: block; }
 .sheet-label { display: block; font-size: 14px; line-height: 20px; font-weight: 500; color: rgb(var(--muted)); margin-bottom: 8px; }
 .sheet-form .field { width: 100%; margin-bottom: 4px; }
+#market-loading[hidden], #market-empty[hidden], #market-error[hidden], #listing-sec[hidden] { display: none; }
+
+/* ── Screen 3: the match view ───────────────────────────────────────────── */
+
+/* The announcement strip: one moment, said the way the report says it. */
+.match-call {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--line));
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+.match-call[hidden] { display: none; }
+.match-call .call-icon { display: flex; color: rgb(var(--fg)); flex: none; }
+.match-call .call-main { font-weight: 600; font-size: 14px; line-height: 20px; }
+.match-call .call-sub { font-size: 14px; line-height: 20px; color: rgb(var(--muted)); }
+
+/* The replayed pitch: tall on a phone, across on a laptop, like the drawn
+   pitch's own swap at 768px. The canvas fills the pitch panel. */
+.match-pitch canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 68 / 100;
+}
+@media (min-width: 768px) {
+  .match-pitch canvas { aspect-ratio: 16 / 10; }
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.play-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgb(var(--accent));
+  color: rgb(var(--on-accent));
+  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+.play-btn svg { display: block; }
+.play-btn[hidden] { display: none; }
+.speedrow {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+}
+.chip-speed {
+  appearance: none;
+  font-family: inherit;
+  flex: 1;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--line));
+  background: rgb(var(--surface));
+  border-radius: 8px;
+  font-size: 14px;
+  color: rgb(var(--muted));
+  cursor: pointer;
+}
+.chip-speed[aria-pressed="true"] {
+  border-color: rgb(var(--accent));
+  background: rgb(var(--raised));
+  color: rgb(var(--fg));
+}
+.chip-speed:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; }
+
+/* The scrubber, on the kit's tokens. */
+.scrub {
+  appearance: none;
+  width: 100%;
+  height: 44px;
+  margin: 4px 0 0;
+  background: transparent;
+}
+.scrub:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 4px; }
+.scrub::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(var(--line));
+}
+.scrub::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: rgb(var(--accent));
+  border: 0;
+}
+.scrub::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(var(--line));
+}
+.scrub::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgb(var(--accent));
+  border: 0;
+}
+
+/* The report's Watch button, full width like the report's own buttons. */
+.watch-btn { width: 100%; min-height: 48px; }
+.watch-btn[hidden] { display: none; }
+#match-error[hidden] { display: none; }
 
 /* ── The transfer market ──────────────────────────────────────────────── */
 /* A listing row keeps its name on the left and its star and action as one

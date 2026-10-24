@@ -19,12 +19,14 @@ import {
   wageBill, playerWage, stadiumSeats, homeCrowd, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
   growthOutlook, managerLine, groupsNote, tableZone, topScorers,
+  matchSeed, matchSides, seasonSeed, simulateMatch, watchSeed,
 } from './engine.js';
 import { buildTimeline, matchCrowd, creditsLine } from './match-feed.js';
 import {
   MARKET_SORTS, POSITION_FILTERS, MIN_OVERALL_STEPS, MAX_PRICE_STEPS,
   DEFAULT_MARKET_VIEW, valueHint, filterListings, sortListings, activeFilterCount,
 } from './market-view.js';
+import { createMatchView } from './matchview.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -44,6 +46,9 @@ function growthLine(p) {
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1';
 const TOKEN = params.get('token') || '';
+// A shared link straight into a played match: ?match=<index> opens the match
+// view for that matchday (0-based). Read once at boot, never navigated to.
+const MATCH_PARAM = /^\d+$/.test(params.get('match') || '') ? Number(params.get('match')) : null;
 
 let career = null;
 let version = null;
@@ -63,6 +68,12 @@ let busy = false;
 let autoPlayed = 0;
 let tab = 'home';
 let reportFrom = 'home';
+// The match view: which matchday is open, which screen it was opened from,
+// and the controller (created on first use).
+let matchMd = null;
+let matchFrom = 'competition';
+let matchView = null;
+let matchOpenFor = null;
 let refreshFailed = false;
 // The club's league group is being rebuilt by the server: the setting-up
 // screen shows until the repair comes back, or it gives up after two seconds
@@ -183,9 +194,15 @@ function showView(name) {
     $('view-' + v).hidden = v !== name;
   }
   $('view-report').hidden = name !== 'report';
+  $('view-match').hidden = name !== 'match';
+  // Leaving the match stops its animation loop.
+  if (name !== 'match' && matchView) {
+    matchView.close();
+    matchOpenFor = null;
+  }
   const nav = $('tabnav');
-  nav.hidden = !(career && (name === 'club' || name === 'report'));
-  $('demo-note').hidden = !(DEMO && career && (name === 'club' || name === 'report' || name === 'error'));
+  nav.hidden = !(career && (name === 'club' || name === 'report' || name === 'match'));
+  $('demo-note').hidden = !(DEMO && career && (name === 'club' || name === 'report' || name === 'match' || name === 'error'));
   if (name === 'club') showTab(tab === 'report' ? 'home' : tab);
 }
 
@@ -194,6 +211,7 @@ function render() {
   if (screen === 'club' && career) renderClub();
   if (screen === 'new') renderNew();
   if (screen === 'report' && career && career.lastReport) renderReport();
+  if (screen === 'match' && career) renderMatch();
 }
 
 // Why a career did not load, in one line under the message. The codes in
@@ -271,9 +289,15 @@ async function load() {
       screen = 'club';
       tab = hashTab();
       try {
-        render();
         // A career saved before the zone was stored gets one now, once.
         if (!career.timeZone) { ensureZone(); save(); }
+        // A ?match= link (a shared "watch this one") opens the match view
+        // once, on boot, when that matchday has been played.
+        if (MATCH_PARAM != null && MATCH_PARAM < career.matchday) {
+          openMatch(MATCH_PARAM, 'competition');
+          return;
+        }
+        render();
         return;
       } catch (err) {
         console.error('career render failed', err);
@@ -1428,6 +1452,104 @@ function openReport(from) {
   window.scrollTo(0, 0);
 }
 
+// ── The match view ───────────────────────────────────────────────────────
+// Opens one played matchday. The report comes from the career's saved last
+// report when it is this matchday, else it is re-simulated from the season's
+// seed — the same teams and seed always produce the same match. A re-created
+// one can drift from the recorded result (later fitness, injuries, subs), so
+// the note says so.
+function openMatch(md, from) {
+  if (!career || !Number.isInteger(md) || md < 0 || md >= career.fixtures.length) return;
+  matchFrom = from === 'report' ? 'report' : from === 'home' ? 'home' : 'competition';
+  matchMd = md;
+  const label = matchFrom === 'competition' ? 'Back to Competition' : matchFrom === 'report' ? 'Back to Report' : 'Back to Home';
+  $('match-back-label').textContent = label;
+  $('match-close').textContent = label;
+  screen = 'match';
+  render();
+  window.scrollTo(0, 0);
+}
+
+function renderMatch() {
+  const md = matchMd;
+  const sides = matchSides(career, md);
+  const recorded = career.results.find((r) => r.matchday === md + 1
+    && (r.home.id === career.clubId || r.away.id === career.clubId));
+  if (!sides || !recorded) {
+    if (matchView) matchView.close();
+    matchOpenFor = null;
+    $('match-call').hidden = true;
+    $('match-error').hidden = false;
+    return;
+  }
+  $('match-error').hidden = true;
+
+  let report = career.lastReport && career.lastReport.matchday === md + 1 ? career.lastReport : null;
+  let recreated = false;
+  if (!report) {
+    report = simulateMatch(sides.home, sides.away, matchSeed(seasonSeed(career), md, sides.index));
+    recreated = true;
+  }
+  $('match-note').hidden = !recreated;
+  if (recreated) {
+    const drift = report.homeGoals !== recorded.homeGoals || report.awayGoals !== recorded.awayGoals;
+    $('match-note').textContent = 'Recreated from the season\'s seed' + (drift ? '; the record differs.' : '.');
+  }
+
+  const home = CLUB_BY_ID[report.home.id];
+  const away = CLUB_BY_ID[report.away.id];
+  $('match-home-badge').outerHTML = badgeHtml(home).replace('<span ', '<span id="match-home-badge" ');
+  $('match-home-name').textContent = report.home.name;
+  $('match-away-badge').outerHTML = badgeHtml(away).replace('<span ', '<span id="match-away-badge" ');
+  $('match-away-name').textContent = report.away.name;
+
+  if (!matchView) {
+    matchView = createMatchView({
+      canvas: $('match-canvas'),
+      clock: $('match-clock'),
+      score: $('match-score'),
+      call: $('match-call'),
+      callIcon: $('match-call-icon'),
+      callMain: $('match-call-main'),
+      callSub: $('match-call-sub'),
+      play: $('match-play'),
+      playIcon: $('match-play-icon'),
+      pauseIcon: $('match-pause-icon'),
+      stepBack: $('match-step-back'),
+      speeds: $('match-speeds'),
+      scrub: $('match-scrub'),
+    });
+  }
+  // A re-render while the match is playing (a quiet refresh) keeps it going.
+  if (matchOpenFor !== md) {
+    matchOpenFor = md;
+    matchView.open({
+      report,
+      sides,
+      ownClubId: career.clubId,
+      seed: watchSeed(seasonSeed(career), md, sides.index),
+      meta: { matchday: md + 1 },
+    });
+  }
+}
+
+function matchExit() {
+  if (matchView) {
+    matchView.close();
+    matchOpenFor = null;
+  }
+  if (matchFrom === 'report') {
+    screen = 'report';
+    render();
+  } else {
+    screen = 'club';
+    tab = matchFrom === 'competition' ? 'competition' : 'home';
+    if (location.hash !== '#' + tab) location.hash = '#' + tab;
+    render();
+  }
+  window.scrollTo(0, 0);
+}
+
 // The summer: promotion and relegation, then a fresh season in the new
 // division. The other eight groups are played out from the career's seed.
 async function nextSeason() {
@@ -2562,6 +2684,21 @@ $('report-ft').addEventListener('click', (e) => {
   window.scrollTo(0, 0);
 });
 
+// The report hands its match to the match view; the match view hands itself
+// back to wherever it came from.
+$('report-watch').addEventListener('click', () => {
+  if (career && career.lastReport) openMatch(career.lastReport.matchday - 1, 'report');
+});
+$('match-back').addEventListener('click', matchExit);
+$('match-back').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); matchExit(); }
+});
+$('match-close').addEventListener('click', matchExit);
+$('match-retry').addEventListener('click', () => {
+  matchOpenFor = null;
+  render();
+});
+
 // ── Saving ───────────────────────────────────────────────────────────────
 // Saves run one after another, so a quick second change never sends the
 // previous version number and loses the first change to a 409.
@@ -2725,10 +2862,14 @@ $('youth-retry').addEventListener('click', () => {
   if (youthRetry) promote(youthRetry);
 });
 function openFromEvent(e) {
-  const row = e.target.closest('[data-open-report]');
+  const row = e.target.closest('[data-open-report], [data-open-match]');
   if (!row) return;
   if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
   if (e.type === 'keydown') e.preventDefault();
+  if (row.dataset.openMatch != null && row.dataset.openMatch !== '') {
+    openMatch(Number(row.dataset.openMatch), row.closest('#tab-competition') ? 'competition' : 'home');
+    return;
+  }
   openReport(row.closest('#tab-competition') ? 'competition' : 'home');
 }
 $('last-list').addEventListener('click', openFromEvent);
@@ -2786,6 +2927,7 @@ document.addEventListener('keydown', (e) => {
 
 window.addEventListener('hashchange', () => {
   if (!career) return;
+  if (screen === 'match') { matchExit(); return; }
   if (screen === 'report') { stopFeed(); screen = 'club'; render(); return; }
   if (screen === 'club') showTab(hashTab());
 });
