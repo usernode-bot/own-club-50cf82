@@ -91,6 +91,16 @@
       "expectSelector": "#table-list .list-row"
     },
     {
+      "name": "Demo competition shows the matchday history",
+      "path": "/?demo=1#competition",
+      "expectText": "Matchday history",
+      "expectSelector": "#history-list .md-row",
+      "visual": true,
+      "impact": [
+        "public/**"
+      ]
+    },
+    {
       "name": "Demo club tab shows the facilities",
       "path": "/?demo=1#club",
       "expectText": "Facilities",

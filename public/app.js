@@ -10,6 +10,7 @@ import {
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
+  matchdayHistory,
   repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
   moneyFields, seasonMoney, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
@@ -635,33 +636,7 @@ function renderClub() {
   $('league-note').textContent = note;
   $('league-note').hidden = !note;
 
-  $('fixtures-season').textContent = career.season;
-  const remainder = Math.max(0, career.fixtures.length - career.matchday);
-  const dates = career.nextMatchAt && remainder ? upcomingSlots(career.nextMatchAt, remainder, career.timeZone) : [];
-  const mine = [];
-  career.fixtures.forEach((fixtures, md) => {
-    const f = fixtures.find((x) => x.home === career.clubId || x.away === career.clubId);
-    if (f) mine.push({ md, home: f.home, away: f.away });
-  });
-  const resultFor = (md) => career.results.find((r) => r.matchday === md + 1
-    && (r.home.id === career.clubId || r.away.id === career.clubId));
-  $('fixtures-list').innerHTML = mine.map((f) => {
-    const r = resultFor(f.md);
-    const h = CLUB_BY_ID[f.home];
-    const a = CLUB_BY_ID[f.away];
-    if (r) {
-      const latest = career.lastReport && career.lastReport.matchday === f.md + 1;
-      return `<li class="list-row${latest ? ' row-btn' : ''}"${latest ? ' data-open-report="1" tabindex="0" role="button"' : ''}>
-        <span class="nm">${esc(h.name)} ${r.homeGoals}–${r.awayGoals} ${esc(a.name)}<small>Matchday ${f.md + 1}</small></span>
-        <span class="form"><i class="${resultClass(r, career.clubId)}">${resultLetter(r, career.clubId)}</i></span>
-        ${latest ? '<span class="chev" aria-hidden="true">›</span>' : ''}
-      </li>`;
-    }
-    const when = dates[f.md - career.matchday];
-    return `<li class="list-row">
-      <span class="nm">Matchday ${f.md + 1}, ${esc(displayName(h))} v ${esc(displayName(a))}<small>${when ? esc(fixtureDate(when, career.timeZone)) : 'To be played'}</small></span>
-    </li>`;
-  }).join('');
+  renderHistory();
 
   renderFinance();
 
@@ -685,6 +660,137 @@ function renderClub() {
   renderStaff();
   renderAcademy();
   if (tab === 'tactics') drawPitch();
+}
+
+// ── Matchday history ─────────────────────────────────────────────────────
+// The Competition tab's history of the season's played matchdays, newest
+// first. The engine assembles it: the stored scores, results, Club credits
+// and kick-offs are exact, and the minute-by-minute events come from a
+// deterministic replay of the season that only survives where its scorelines
+// still match the stored ones. This file only filters, expands and renders.
+// The replay runs once per career load, so it is memoised on the career.
+let historyFilter = 'all';
+const expandedMd = new Set();
+const historyMemo = new WeakMap();
+
+function matchdayHistoryCached() {
+  if (!career) return [];
+  const key = (career.results ? career.results.length : 0) + ':' + (career.matchday || 0);
+  const hit = historyMemo.get(career);
+  if (hit && hit.key === key) return hit.value;
+  const value = matchdayHistory(career);
+  historyMemo.set(career, { key, value });
+  return value;
+}
+
+function renderHistory() {
+  const history = matchdayHistoryCached();
+  $('history-season').textContent = career.season;
+  const chips = $('history-chips');
+  const list = $('history-list');
+  const empty = $('history-empty');
+  const note = $('history-note');
+  const upLabel = $('upcoming-label');
+  const upList = $('upcoming-list');
+  for (const btn of chips.querySelectorAll('[data-md-filter]')) {
+    btn.setAttribute('aria-pressed', String(btn.dataset.mdFilter === historyFilter));
+  }
+
+  // The matchdays still to play, with their kick-off dates where the
+  // schedule has stamped them.
+  const remainder = Math.max(0, career.fixtures.length - career.matchday);
+  const dates = career.nextMatchAt && remainder
+    ? upcomingSlots(career.nextMatchAt, remainder, career.timeZone) : [];
+  const upcoming = [];
+  career.fixtures.forEach((fixtures, md) => {
+    if (md < career.matchday) return;
+    const f = fixtures.find((x) => x.home === career.clubId || x.away === career.clubId);
+    if (f) upcoming.push({ md, home: f.home, away: f.away });
+  });
+  upList.innerHTML = upcoming.map((f) => {
+    const when = dates[f.md - career.matchday];
+    const h = CLUB_BY_ID[f.home];
+    const a = CLUB_BY_ID[f.away];
+    return `<li class="list-row">
+      <span class="nm">Matchday ${f.md + 1}, ${esc(displayName(h))} v ${esc(displayName(a))}<small>${when ? esc(fixtureDate(when, career.timeZone)) : 'To be played'}</small></span>
+    </li>`;
+  }).join('');
+  upLabel.hidden = upList.hidden = !upcoming.length;
+
+  if (!history.length) {
+    chips.hidden = true;
+    list.hidden = true;
+    note.hidden = true;
+    empty.hidden = false;
+    $('history-empty-text').textContent = career.nextMatchAt
+      ? 'Your first match kicks off ' + fixtureDate(new Date(career.nextMatchAt), career.timeZone) + '.'
+      : 'Your first match kicks off when the season starts.';
+    return;
+  }
+  empty.hidden = true;
+  chips.hidden = false;
+  list.hidden = false;
+  note.textContent = 'Played ' + career.matchday + ' of ' + career.fixtures.length + ' matchdays.';
+  note.hidden = false;
+
+  const shown = history.filter((e) => historyFilter === 'all' ? true
+    : historyFilter === 'home' ? e.venue === 'Home'
+      : historyFilter === 'away' ? e.venue === 'Away'
+        : e.result === 'W');
+  if (!shown.length) {
+    const names = { home: 'home', away: 'away', wins: 'winning' };
+    list.innerHTML = `<li class="list-row"><span class="nm">No ${names[historyFilter] || ''} matchdays played yet.</span></li>`;
+    return;
+  }
+  list.innerHTML = shown.map(mdItem).join('');
+}
+
+// One matchday: the row (badge, opponent, scoreline, result pill) and, when
+// it is expanded, the full-time summary as the rows under it.
+function mdItem(e) {
+  const opp = CLUB_BY_ID[e.opponentId];
+  const ownGoals = e.venue === 'Home' ? e.homeGoals : e.awayGoals;
+  const oppGoals = e.venue === 'Home' ? e.awayGoals : e.homeGoals;
+  const when = e.kickoffISO ? fixtureDate(new Date(e.kickoffISO), career.timeZone) : null;
+  const open = expandedMd.has(e.matchday);
+  const row = `<li class="list-row md-row row-btn" role="button" tabindex="0"
+      aria-expanded="${open}"${open ? ' aria-controls="md-sum-' + e.matchday + '"' : ''}
+      data-md="${e.matchday}" aria-label="Matchday ${e.matchday}, ${esc(opp.name)}, ${ownGoals} ${ownGoals === 1 ? 'goal' : 'goals'} to ${oppGoals}, expanded ${open ? 'yes' : 'no'}">
+      ${badgeHtml(opp)}
+      <span class="nm md-nm">${esc(opp.name)}<small>Matchday ${e.matchday} · ${e.venue}${when ? ' · ' + esc(when) : ''}</small></span>
+      <span class="md-sc">${ownGoals}–${oppGoals}</span>
+      <span class="form"><i class="${e.result.toLowerCase()}">${e.result}</i></span>
+      <span class="chev" aria-hidden="true">${open ? '‹' : '›'}</span>
+    </li>`;
+  return row + (open ? mdSummary(e, ownGoals, oppGoals) : '');
+}
+
+// The full-time summary: the score again, then the matchday's moments (the
+// replayed or stored events), what the day earned in Club credits and, where
+// the career kept the money, what was left after the day's costs. The newest
+// matchday also carries the button that opens the full report.
+function mdSummary(e, ownGoals, oppGoals) {
+  const ownSide = e.venue === 'Home' ? 'home' : 'away';
+  const rows = [`<li class="sum-row ft" id="md-sum-${e.matchday}"><span class="nm">Full time</span><span class="big-score">${ownGoals}–${oppGoals}</span></li>`];
+  if (Array.isArray(e.moments) && e.moments.length) {
+    for (const m of e.moments) {
+      const isOwn = m.side === ownSide;
+      const txt = momentText(m, isOwn);
+      rows.push(`<li class="sum-row"><span class="min">${m.minute}'</span>
+        <span class="ico${isOwn ? ' own' : ''}">${ICONS[m.type] || ''}</span>
+        <span class="ev${isOwn ? '' : ' away'}">${esc(txt.main)}${txt.sub ? '<small>' + esc(txt.sub) + '</small>' : ''}</span></li>`);
+    }
+  } else {
+    rows.push('<li class="sum-row"><span class="nm">The minute-by-minute events of this matchday are not kept.</span></li>');
+  }
+  rows.push(`<li class="sum-row"><span class="nm">Club credits<small>For the ${e.result === 'W' ? 'win' : e.result === 'L' ? 'loss' : 'draw'}</small></span><span class="price">${signed(e.credits)}</span></li>`);
+  if (e.money) {
+    rows.push(`<li class="sum-row"><span class="nm">After the day's costs<small>Ground upkeep, maintenance and wages paid</small></span><span class="price">${signed(e.money.net)}</span></li>`);
+  }
+  if (e.matchday === career.matchday) {
+    rows.push('<li class="sum-row"><button type="button" class="btn-secondary" data-open-report="1">Full report</button></li>');
+  }
+  return rows.join('');
 }
 
 // ── Finance ──────────────────────────────────────────────────────────────
@@ -2124,8 +2230,35 @@ function openFromEvent(e) {
 }
 $('last-list').addEventListener('click', openFromEvent);
 $('last-list').addEventListener('keydown', openFromEvent);
-$('fixtures-list').addEventListener('click', openFromEvent);
-$('fixtures-list').addEventListener('keydown', openFromEvent);
+// The matchday history: a chip filters the list, a row expands or collapses
+// its full-time summary, and the newest matchday's summary holds the button
+// that opens the full report.
+function historyEvent(e) {
+  const chip = e.target.closest('[data-md-filter]');
+  if (chip) {
+    historyFilter = chip.dataset.mdFilter;
+    renderHistory();
+    return;
+  }
+  const report = e.target.closest('[data-open-report]');
+  if (report) {
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.type === 'keydown') e.preventDefault();
+    openReport('competition');
+    return;
+  }
+  const row = e.target.closest('[data-md]');
+  if (!row) return;
+  if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.type === 'keydown') e.preventDefault();
+  const md = Number(row.dataset.md);
+  if (expandedMd.has(md)) expandedMd.delete(md);
+  else expandedMd.add(md);
+  renderHistory();
+}
+$('history-chips').addEventListener('click', historyEvent);
+$('history-list').addEventListener('click', historyEvent);
+$('history-list').addEventListener('keydown', historyEvent);
 // The phone bar's More button: opens the menu above the bar, and closes it on
 // a choice, a tap outside or Escape.
 $('tab-more').addEventListener('click', (e) => {

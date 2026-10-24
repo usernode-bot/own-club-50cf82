@@ -331,13 +331,26 @@
         <!-- Competition -->
         <div class="panel" id="tab-competition" hidden>
           <div class="sec">
+            <div class="section-label"><span>Matchday history</span><span>Season <span id="history-season"></span></span></div>
+            <div class="divrow md-chips" id="history-chips" role="group" aria-label="Filter matchdays" hidden>
+              <button type="button" class="chip md-chip" data-md-filter="all" aria-pressed="true">All</button>
+              <button type="button" class="chip md-chip" data-md-filter="home" aria-pressed="false">Home</button>
+              <button type="button" class="chip md-chip" data-md-filter="away" aria-pressed="false">Away</button>
+              <button type="button" class="chip md-chip" data-md-filter="wins" aria-pressed="false">Wins</button>
+            </div>
+            <p class="league-note" id="history-note" hidden></p>
+            <ul class="list" id="history-list"></ul>
+            <div class="state-empty" id="history-empty" hidden>
+              <p class="state-title">No matchday played yet</p>
+              <p class="state-text" id="history-empty-text"></p>
+            </div>
+            <div class="section-label up-label" id="upcoming-label" hidden><span>Upcoming</span></div>
+            <ul class="list" id="upcoming-list" hidden></ul>
+          </div>
+          <div class="sec">
             <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
             <ul class="list tbl" id="table-list"></ul>
             <p class="league-note" id="league-note" hidden></p>
-          </div>
-          <div class="sec">
-            <div class="section-label"><span>Fixtures and results</span><span>Season <span id="fixtures-season"></span></span></div>
-            <ul class="list" id="fixtures-list"></ul>
           </div>
         </div>
 

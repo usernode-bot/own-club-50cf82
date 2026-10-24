@@ -2158,6 +2158,171 @@ export function playDueMatches(state, now, zone) {
   return played;
 }
 
+// ── The matchday history ─────────────────────────────────────────────────
+// The Competition tab's history of the matchdays already played. The career
+// stores each fixture's score, so the scores, results and Club credits are
+// exact; the minute-by-minute detail (goals, cards, injuries) is only kept
+// for the most recent matchday, so older matchdays are re-simulated here with
+// the same deterministic engine that played them. Nothing is stored: the
+// replay runs on a throwaway copy of the squads each time.
+
+// The slot immediately before a kick-off: the greatest MATCH_SLOTS wall-clock
+// instant strictly before `instant` in `zone`. The inverse of slotAfter, used
+// to walk the kick-off chain backwards from the career's next match.
+export function previousSlot(instant, zone) {
+  const at = instant instanceof Date ? instant : new Date(instant);
+  if (Number.isNaN(at.getTime())) return null;
+  const clock = localClock(at, zone);
+  for (let i = MATCH_SLOTS.length - 1; i >= 0; i--) {
+    const hour = MATCH_SLOTS[i];
+    if (hour >= clock.hour) continue;
+    const t = wallClock(clock.day, hour, zone);
+    if (t.getTime() < at.getTime()) return t;
+  }
+  const t = wallClock(addDays(clock.day, -1), MATCH_SLOTS[MATCH_SLOTS.length - 1], zone);
+  return t.getTime() < at.getTime() ? t : null;
+}
+
+// The kick-off instant of each played matchday, 1-based order. The career
+// keeps only the last few instants (`plays`) and its next kick-off, so older
+// ones are walked back from there. A stored `plays` instant is the truth for
+// its matchday and anchors the walk behind it.
+function kickoffChain(state, zone, count) {
+  const out = new Array(count).fill(null);
+  const plays = (Array.isArray(state.plays) ? state.plays : []).filter(isIsoString);
+  const known = Math.min(plays.length, count);
+  for (let i = 0; i < known; i++) out[count - known + i] = plays[plays.length - known + i];
+  let cursor = isIsoString(state.nextMatchAt) ? new Date(state.nextMatchAt) : null;
+  if (!cursor && out[count - 1]) cursor = new Date(out[count - 1]);
+  for (let md = count; md >= 1; md--) {
+    if (out[md - 1]) { cursor = new Date(out[md - 1]); continue; }
+    if (!cursor) break;
+    const prev = previousSlot(cursor, zone);
+    if (!prev) break;
+    out[md - 1] = prev.toISOString();
+    cursor = prev;
+  }
+  return out;
+}
+
+// Every played matchday of this season, replayed. The squads go back to how
+// the season began — season 1 rebuilds them from the career's seed with
+// buildSquad, later seasons reset the stored squads to the rollover's fresh
+// fitness and no injuries, because attributes only change at the rollover —
+// and then each matchday's nine fixtures are simulated with the same
+// per-match seeds playMatchday used, applying each report so the squads
+// evolve exactly as they did. Money, fans, the academy and the sponsor are
+// left alone: only the reports are wanted. The replay is exact while the
+// manager's current team sheet is the one every matchday was played with;
+// matchdayHistory reconciles each replayed scoreline against the stored one,
+// so a drifted matchday is never shown with events that contradict it.
+export function seasonReplay(state) {
+  if (!state || !Array.isArray(state.fixtures)) return [];
+  const count = Math.min(state.matchday || 0, Array.isArray(state.results) ? state.results.length : 0);
+  const reports = new Array(count).fill(null);
+  if (count <= 0) return reports;
+  const seed = seasonSeed(state);
+  const division = state.division || 1;
+  const rs = {
+    clubId: state.clubId,
+    tactics: state.tactics,
+    roles: state.roles || {},
+    squads: {},
+    lineup: [],
+  };
+  for (const id of Object.keys(state.squads || {})) {
+    rs.squads[id] = (state.squads[id] || []).map((p) => ({ ...p, fitness: 100, injury: 0 }));
+  }
+  // Squads the seed can rebuild exactly are rebuilt: season 1's every club
+  // (buildSquad is deterministic, right down to the starting fitness), and in
+  // later seasons the bot clubs, whose squads the rollover built the same way.
+  // A manager's later-season squad keeps its stored players at the rollover's
+  // fresh fitness instead; the players who joined or graduated after the
+  // season began are carried over from the stored squad either way.
+  for (const id of Object.keys(rs.squads)) {
+    if ((state.season || 1) > 1 && id === state.clubId) continue;
+    const club = CLUB_BY_ID[id];
+    if (!club) continue;
+    const built = buildSquad(seed, CLUB_INDEX[id], club.rep, division);
+    const builtIds = new Set(built.map((p) => p.id));
+    const extras = rs.squads[id].filter((p) => !builtIds.has(p.id));
+    rs.squads[id] = built.concat(extras);
+  }
+  // The eleven the season opened with: the same autoLineup the career and the
+  // rollover both set, from the rewound squad and the roles saved today.
+  rs.lineup = autoLineup(rs.squads[state.clubId] || [], state.tactics.formation, rs.roles);
+  for (let md = 0; md < count; md++) {
+    const fixtures = state.fixtures[md];
+    if (!Array.isArray(fixtures)) continue;
+    const day = fixtures.map((f, i) => simulateMatch(teamFor(rs, f.home), teamFor(rs, f.away), matchSeed(seed, md, i)));
+    for (const report of day) applyReport(rs, report);
+    reports[md] = day.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
+  }
+  return reports;
+}
+
+// One entry per played matchday, newest first, everything the Competition
+// tab's history row needs. `moments` is null when the matchday's events are
+// not kept (the replay drifted from the stored scoreline); every other field
+// comes from the stored career and is exact.
+export function matchdayHistory(state) {
+  if (!state || !Array.isArray(state.fixtures) || !Array.isArray(state.results)) return [];
+  const zone = validTimeZone(state.timeZone) ? state.timeZone : 'UTC';
+  const own = new Map();
+  for (const r of state.results) {
+    if (!r || !Number.isInteger(r.matchday)) continue;
+    if ((r.home && r.home.id) === state.clubId || (r.away && r.away.id) === state.clubId) own.set(r.matchday, r);
+  }
+  const count = own.size;
+  if (count <= 0) return [];
+  const kickoffs = kickoffChain(state, zone, Math.max(...own.keys()));
+  const moneyByMatchday = new Map();
+  for (const h of Array.isArray(state.financeHistory) ? state.financeHistory : []) {
+    if (h && Number.isInteger(h.matchday) && (h.season || 1) === (state.season || 1)) moneyByMatchday.set(h.matchday, h);
+  }
+  const replay = seasonReplay(state);
+  const entries = [];
+  for (const md of [...own.keys()].sort((a, b) => a - b)) {
+    const r = own.get(md);
+    const atHome = r.home.id === state.clubId;
+    const goalsFor = atHome ? r.homeGoals : r.awayGoals;
+    const goalsAgainst = atHome ? r.awayGoals : r.homeGoals;
+    let moments = null;
+    let reconciled = false;
+    const replayed = replay[md - 1];
+    if (replayed && replayed.homeGoals === r.homeGoals && replayed.awayGoals === r.awayGoals) {
+      moments = replayed.moments;
+      reconciled = true;
+    }
+    // The newest matchday's own report is stored: the exact truth, whatever
+    // the manager has changed since. The matchday check keeps a report that
+    // outlived its season from masquerading as this season's.
+    const stored = state.lastReport;
+    if (stored && stored.matchday === md && md === state.matchday
+      && stored.homeGoals === r.homeGoals && stored.awayGoals === r.awayGoals
+      && Array.isArray(stored.moments)) {
+      moments = stored.moments;
+      reconciled = true;
+    }
+    entries.push({
+      matchday: md,
+      home: r.home,
+      away: r.away,
+      homeGoals: r.homeGoals,
+      awayGoals: r.awayGoals,
+      venue: atHome ? 'Home' : 'Away',
+      opponentId: atHome ? r.away.id : r.home.id,
+      result: goalsFor > goalsAgainst ? 'W' : goalsFor < goalsAgainst ? 'L' : 'D',
+      credits: creditsForResult(goalsFor, goalsAgainst),
+      kickoffISO: kickoffs[md - 1] || null,
+      moments,
+      money: moneyByMatchday.get(md) || null,
+      reconciled,
+    });
+  }
+  return entries.reverse();
+}
+
 // What a save changes: the same season and matchday ('same'), the rollover to
 // the next season's first matchday ('rollover'), or anything else ('stale').
 export function saveCheck(stored, incoming) {
