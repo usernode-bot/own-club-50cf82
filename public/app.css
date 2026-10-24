@@ -130,6 +130,56 @@ button.chip[aria-expanded="true"] {
 .club-row .badge { flex: none; }
 .club-row.me { background: rgb(var(--raised)); }
 
+/* A club's badge in its two kit colours: the primary field carries the white
+   monogram, the lighter secondary shows as the lower wedge. --ka and --kb
+   come from the club's kit index (badgeHtml); before they are set the badge
+   rests on the raised colour. */
+.badge {
+  background: linear-gradient(
+    135deg,
+    rgb(var(--ka, 234 239 231)) 0%,
+    rgb(var(--ka, 234 239 231)) 62%,
+    rgb(var(--kb, var(--ka, 234 239 231))) 62%,
+    rgb(var(--kb, var(--ka, 234 239 231))) 100%
+  );
+}
+/* On a dark card the badge needs an edge to read against. */
+.dark .badge { box-shadow: 0 0 0 2px rgb(var(--line)); }
+
+/* A club's three-letter code: a quiet read-only chip, never a button. */
+.code-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid rgb(var(--line));
+  border-radius: 6px;
+  background: rgb(var(--surface));
+  color: rgb(var(--muted));
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* On the green header the pill inverts to the header's own white-on-green. */
+.top .code-pill {
+  background: transparent;
+  border-color: rgba(255, 255, 255, .45);
+  color: #fff;
+}
+.title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+/* A long club name ends in an ellipsis instead of pushing the row wide. */
+.row-title {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.club-row .nm, .tbl .t { min-width: 0; }
+
 /* A club's price in the shop, and the wallet's balance: figures line up. */
 .price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bal { font-size: 20px; line-height: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }

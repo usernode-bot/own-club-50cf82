@@ -11,16 +11,16 @@
 // quality of the squad it is dealt. The pyramid itself is built below, after
 // the formations, because a generated club is dealt one of them.
 const COASTAL_CLUBS = [
-  { id: 'harbourside', name: 'Harbourside FC', short: 'HF', color: 'rgb(var(--pitch))', rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay' },
-  { id: 'redvale', name: 'Redvale Athletic', short: 'RA', color: '#7a3b8f', rep: 5, formation: '4-2-3-1', objective: 'Win the league', ground: 'Redvale Park' },
-  { id: 'kingsmoor', name: 'Kingsmoor United', short: 'KU', color: '#1e4fa3', rep: 5, formation: '4-3-3', objective: 'Win the league', ground: 'Kingsmoor Road' },
-  { id: 'northmoor', name: 'Northmoor Town', short: 'NT', color: '#146b5a', rep: 4, formation: '4-4-2', objective: 'Finish in the top half', ground: 'Moor Lane' },
-  { id: 'baymouth', name: 'Baymouth Rovers', short: 'BR', color: '#a03d1c', rep: 3, formation: '4-4-2', objective: 'Finish in the top half', ground: 'The Harbour End' },
-  { id: 'saltmarsh', name: 'Saltmarsh City', short: 'SM', color: '#4a3a8a', rep: 3, formation: '3-5-2', objective: 'Finish in the top half', ground: 'Marsh Field' },
-  { id: 'cliffton', name: 'Cliffton Wanderers', short: 'CW', color: '#2f4858', rep: 3, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Cliff Top' },
-  { id: 'marrow', name: 'Marrow Bay', short: 'MB', color: '#7c2d5d', rep: 2, formation: '4-3-3', objective: 'Avoid finishing bottom', ground: 'Bay Side' },
-  { id: 'gullport', name: 'Gullport United', short: 'GU', color: '#3f5a1d', rep: 2, formation: '4-4-2', objective: 'Avoid finishing bottom', ground: 'The Nest' },
-  { id: 'kestrel', name: 'Kestrel Park', short: 'KP', color: '#8a4a1f', rep: 1, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Kestrel Lane' },
+  { id: 'harbourside', name: 'Harbourside FC', short: 'HF', city: 'Harbourside', kit: 16, rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay' },
+  { id: 'redvale', name: 'Redvale Athletic', short: 'RA', city: 'Redvale', kit: 12, rep: 5, formation: '4-2-3-1', objective: 'Win the league', ground: 'Redvale Park' },
+  { id: 'kingsmoor', name: 'Kingsmoor United', short: 'KU', city: 'Kingsmoor', kit: 7, rep: 5, formation: '4-3-3', objective: 'Win the league', ground: 'Kingsmoor Road' },
+  { id: 'northmoor', name: 'Northmoor Town', short: 'NT', city: 'Northmoor', kit: 15, rep: 4, formation: '4-4-2', objective: 'Finish in the top half', ground: 'Moor Lane' },
+  { id: 'baymouth', name: 'Baymouth Rovers', short: 'BR', city: 'Baymouth', kit: 10, rep: 3, formation: '4-4-2', objective: 'Finish in the top half', ground: 'The Harbour End' },
+  { id: 'saltmarsh', name: 'Saltmarsh City', short: 'SM', city: 'Saltmarsh', kit: 3, rep: 3, formation: '3-5-2', objective: 'Finish in the top half', ground: 'Marsh Field' },
+  { id: 'cliffton', name: 'Cliffton Wanderers', short: 'CW', city: 'Cliffton', kit: 11, rep: 3, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Cliff Top' },
+  { id: 'marrow', name: 'Marrow Bay', short: 'MB', city: 'Marrow', kit: 8, rep: 2, formation: '4-3-3', objective: 'Avoid finishing bottom', ground: 'Bay Side' },
+  { id: 'gullport', name: 'Gullport United', short: 'GU', city: 'Gullport', kit: 9, rep: 2, formation: '4-4-2', objective: 'Avoid finishing bottom', ground: 'The Nest' },
+  { id: 'kestrel', name: 'Kestrel Park', short: 'KP', city: 'Kestrel', kit: 4, rep: 1, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Kestrel Lane' },
 ];
 
 // ── Formations, mentalities, pressing, roles ─────────────────────────────
@@ -105,12 +105,99 @@ const PLACE_POOL = [
   'Uppermill', 'Wrenfield', 'Yewdale', 'Barrowden',
 ];
 const CLUB_SUFFIXES = ['FC', 'Athletic', 'Town', 'United', 'Rovers', 'City', 'Wanderers'];
-const GROUND_WORDS = ['Road', 'Lane', 'Park', 'Field', 'End', 'Green', 'Way', 'Quay'];
-// Dark enough for the white initials on the badge in both looks.
-const BADGE_COLORS = [
-  '#5a4632', '#7a2f3a', '#2f5d62', '#4b3f72', '#6b4a1f', '#2d5340', '#7a5a1e', '#274b78',
-  '#5c2d4a', '#3a4a2a', '#6f3a24', '#334d5c', '#6a2f5a', '#3f4770', '#59421c', '#2b5a4f',
+// The naming grammar every club follows: an invented city stem plus one
+// generic suffix. These twelve are the league's full suffix palette; the
+// shipped clubs use the seven in CLUB_SUFFIXES and keep the names they were
+// saved with — a club's id is its name's slug, so renaming one would move
+// every career, listing and owner row that points at it. If the set is ever
+// regenerated, use the full palette and grow app.js's displayName regex to
+// match.
+export const CLUB_NAME_SUFFIXES = ['Athletic', 'United', 'City', 'Town', 'Sporting', 'Rovers', 'Wanderers', 'Albion', 'Union', 'FC', 'SC', 'AC'];
+const GROUND_WORDS = ['Road', 'Lane', 'Park', 'Field', 'End', 'Green', 'Way', 'Quay', 'Ground', 'Arena'];
+
+// Real football stays out of the game. A club whose normalised name matches
+// the club list is never generated, and the tests hold every name, stadium
+// and code against them. A few stems happen to be small real towns; the
+// invented suffixes keep those clubs fictional.
+export const REAL_CLUB_DENYLIST = [
+  // Premier League and EFL, in their common forms.
+  'Arsenal', 'Arsenal FC', 'Aston Villa', 'AFC Bournemouth', 'Bournemouth', 'Brentford FC', 'Brentford',
+  'Brighton and Hove Albion', 'Burnley FC', 'Burnley', 'Chelsea FC', 'Chelsea', 'Crystal Palace FC',
+  'Everton FC', 'Everton', 'Fulham FC', 'Leeds United', 'Liverpool FC', 'Liverpool', 'Manchester City',
+  'Manchester United', 'Newcastle United', 'Nottingham Forest', 'Sheffield United', 'Sunderland AFC',
+  'Sunderland', 'Tottenham Hotspur', 'West Ham United', 'Wolverhampton Wanderers', 'Wolves',
+  'Leicester City', 'Ipswich Town', 'Southampton FC', 'Luton Town', 'Hull City', 'Middlesbrough FC',
+  'Middlesbrough', 'Norwich City', 'Swansea City', 'Watford FC', 'West Bromwich Albion', 'Stoke City',
+  'Derby County', 'Preston North End', 'Blackburn Rovers', 'Bristol City', 'Millwall FC', 'Millwall',
+  'Queens Park Rangers', 'QPR', 'Coventry City', 'Sheffield Wednesday', 'Charlton Athletic',
+  'Bolton Wanderers', 'Wigan Athletic', 'Reading FC', 'Huddersfield Town', 'Blackpool FC', 'Port Vale',
+  'Rotherham United', 'Oxford United', 'Doncaster Rovers', 'Barnsley FC', 'Wrexham AFC', 'Stockport County',
+  'Leyton Orient', 'Stevenage FC', 'Lincoln City', 'Wycombe Wanderers', 'Peterborough United',
+  'Gillingham FC', 'Crewe Alexandra', 'Shrewsbury Town', 'Fleetwood Town', 'Accrington Stanley',
+  'Swindon Town', 'Grimsby Town', 'Carlisle United', 'Barrow AFC', 'Tranmere Rovers', 'Oldham Athletic',
+  'Hartlepool United', 'York City', 'Halifax Town', 'Aldershot Town', 'Boston United',
+  // Scottish and Welsh football's famous names.
+  'Celtic FC', 'Celtic', 'Rangers FC', 'Rangers', 'Aberdeen FC', 'Heart of Midlothian', 'Hibernian FC',
+  'Dundee United', 'Motherwell FC', 'Kilmarnock FC', 'St Mirren', 'Dundee FC', 'Cardiff City',
+  'Newport County', 'Albion Rovers',
+  // The major European clubs.
+  'Real Madrid', 'FC Barcelona', 'Barcelona', 'Atletico Madrid', 'Athletic Bilbao', 'Real Sociedad',
+  'Real Betis', 'Sevilla FC', 'Valencia CF', 'Villarreal CF', 'Bayern Munich', 'Borussia Dortmund',
+  'RB Leipzig', 'Bayer Leverkusen', 'Eintracht Frankfurt', 'Borussia Monchengladbach', 'Paris Saint-Germain',
+  'Olympique Lyonnais', 'Olympique de Marseille', 'AS Monaco', 'Juventus', 'AC Milan', 'Inter Milan',
+  'SSC Napoli', 'AS Roma', 'SS Lazio', 'ACF Fiorentina', 'Atalanta BC', 'AFC Ajax', 'PSV Eindhoven',
+  'Feyenoord', 'SL Benfica', 'FC Porto', 'Sporting CP', 'Galatasaray', 'Fenerbahce SK', 'Besiktas JK',
+  'Olympiacos FC', 'Panathinaikos FC', 'Red Star Belgrade', 'Club Brugge', 'RSC Anderlecht',
+  'FC Basel', 'Red Bull Salzburg', 'Celtic Glasgow',
 ];
+// Stadium names real football is known by; a generated ground never matches.
+export const REAL_STADIUM_DENYLIST = [
+  'Old Trafford', 'Anfield', 'Goodison Park', 'Emirates Stadium', 'Etihad Stadium', 'Stamford Bridge',
+  'Tottenham Hotspur Stadium', 'London Stadium', 'Wembley Stadium', 'Villa Park', 'St James Park',
+  'Elland Road', 'Hillsborough Stadium', 'Bramall Lane', 'King Power Stadium', 'Amex Stadium',
+  'Camp Nou', 'Santiago Bernabeu', 'Metropolitano Stadium', 'Allianz Arena', 'Signal Iduna Park',
+  'San Siro', 'Stadio Giuseppe Meazza', 'Juventus Stadium', 'Parc des Princes', 'Estadio da Luz',
+  'Estadio do Dragao', 'Celtic Park', 'Ibrox Stadium', 'Estadio Azteca', 'Maracana',
+];
+
+// Case, accents and spacing never hide a match: "Paris Saint-Germain" and
+// "paris  saint–germain" land on the same normalised name.
+export function normalizeClubName(name) {
+  return String(name)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// A club's three-letter code, unique across the whole pyramid: the stem's
+// first three letters, then its first three consonants, then the stem's first
+// two letters plus the suffix's initial, then letters A to Z, then a final
+// sweep that always terminates. Pure string work, no rng draw, so it cannot
+// move a single card in any stream.
+function clubCode(name, used) {
+  const [stem, suffix = ''] = name.split(' ');
+  const up = stem.toUpperCase().replace(/[^A-Z]/g, '');
+  const consonants = up.replace(/[AEIOU]/g, '');
+  const candidates = [];
+  if (up.length >= 3) candidates.push(up.slice(0, 3));
+  if (consonants.length >= 3) candidates.push(consonants.slice(0, 3));
+  if (up.length >= 2 && suffix) candidates.push(up.slice(0, 2) + suffix[0].toUpperCase());
+  if (up.length >= 2) {
+    for (let i = 0; i < 26; i++) candidates.push(up.slice(0, 2) + String.fromCharCode(65 + i));
+    for (const a of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+      for (const b of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') candidates.push(up[0] + a + b);
+    }
+  }
+  for (const c of candidates) if (!used.has(c)) return c;
+  return up.slice(0, 3);
+}
+
+// Kit colours live in the stylesheet as tokens (styles/tailwind-input.css,
+// --kit-0 to --kit-16 with a -s secondary each): a club carries its index,
+// never a colour, so re-theming stays a stylesheet edit. Index 16 is
+// Harbourside's, the pitch token itself.
 // The reputation a generated club is dealt, by its place in its division. The
 // whole pattern drops a rung in the bottom half of the pyramid.
 const GENERATED_REPS = [3, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2];
@@ -135,6 +222,30 @@ function uniqueShort(name, used) {
   return p.slice(0, 2);
 }
 
+// One stadium word per club that shares a stem: a drawn word stays unless an
+// earlier club of the same stem already took it, in which case the club takes
+// the first free word in a hash order of its own. Runs after the generation
+// draws, so no stream moves and no formation changes.
+function uniqueGrounds(clubs) {
+  const taken = new Map();
+  for (const c of clubs) {
+    const stem = c.name.split(' ')[0];
+    const word = c.ground.slice(stem.length + 1);
+    const used = taken.get(stem) || new Set();
+    if (!used.has(word)) {
+      used.add(word);
+      taken.set(stem, used);
+      continue;
+    }
+    const free = GROUND_WORDS
+      .slice()
+      .sort((a, b) => hash(PYRAMID_SEED, 'stadium', stem, a) - hash(PYRAMID_SEED, 'stadium', stem, b))
+      .find((w) => !used.has(w));
+    c.ground = stem + ' ' + free;
+    used.add(free);
+  }
+}
+
 function generateClubs() {
   const rng = mulberry32(hash(PYRAMID_SEED, 'clubs'));
   const combos = [];
@@ -145,11 +256,13 @@ function generateClubs() {
   }
   const names = new Set(COASTAL_CLUBS.map((c) => c.name));
   const shorts = new Set(COASTAL_CLUBS.map((c) => c.short));
+  const denied = new Set(REAL_CLUB_DENYLIST.map(normalizeClubName));
   const out = [];
   for (const { place, suffix } of combos) {
     if (out.length === PYRAMID_CLUBS) break;
     const name = place + ' ' + suffix;
     if (names.has(name)) continue;
+    if (denied.has(normalizeClubName(name))) continue;
     names.add(name);
     const short = uniqueShort(name, shorts);
     shorts.add(short);
@@ -164,17 +277,27 @@ function generateClubs() {
       id: slugify(name),
       name,
       short,
-      color: BADGE_COLORS[n % BADGE_COLORS.length],
+      city: place,
+      kit: n % 16,
       rep,
       formation: FORMATION_NAMES[Math.floor(rng() * FORMATION_NAMES.length)],
       objective: objectiveForRep(rep),
       ground: place + ' ' + GROUND_WORDS[Math.floor(rng() * GROUND_WORDS.length)],
     });
   }
+  uniqueGrounds(out);
   return out;
 }
 
-export const CLUBS = COASTAL_CLUBS.concat(generateClubs());
+// Codes are claimed in CLUBS order, the ten original clubs first, so a
+// generated club that would draw the same three letters falls down the ladder.
+const ALL_CLUBS = COASTAL_CLUBS.concat(generateClubs());
+const usedCodes = new Set();
+for (const c of ALL_CLUBS) {
+  c.code = clubCode(c.name, usedCodes);
+  usedCodes.add(c.code);
+}
+export const CLUBS = ALL_CLUBS;
 export const CLUB_BY_ID = Object.fromEntries(CLUBS.map((c) => [c.id, c]));
 const CLUB_INDEX = Object.fromEntries(CLUBS.map((c, i) => [c.id, i]));
 export const COASTAL_IDS = COASTAL_CLUBS.map((c) => c.id);
@@ -1840,8 +1963,8 @@ export function simulateMatch(home, away, seed) {
 
   const report = {
     matchday: null,
-    home: { id: home.club.id, name: home.club.name, short: home.club.short, color: home.club.color },
-    away: { id: away.club.id, name: away.club.name, short: away.club.short, color: away.club.color },
+    home: { id: home.club.id, name: home.club.name, short: home.club.short },
+    away: { id: away.club.id, name: away.club.name, short: away.club.short },
     homeGoals,
     awayGoals,
     moments,
