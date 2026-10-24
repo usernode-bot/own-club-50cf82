@@ -11,6 +11,7 @@ import {
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
   DUTIES, dutyOf, outOfPosition, opponentPreview,
+  matchdayHistory,
   repairCareer, groupSetupError, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
   moneyFields, seasonMoney, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
@@ -19,12 +20,14 @@ import {
   wageBill, playerWage, stadiumSeats, homeCrowd, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
   growthOutlook, managerLine, groupsNote, tableZone, topScorers,
+  matchSeed, matchSides, seasonSeed, simulateMatch, watchSeed,
 } from './engine.js';
 import { buildTimeline, matchCrowd, creditsLine } from './match-feed.js';
 import {
   MARKET_SORTS, POSITION_FILTERS, MIN_OVERALL_STEPS, MAX_PRICE_STEPS,
   DEFAULT_MARKET_VIEW, valueHint, filterListings, sortListings, activeFilterCount,
 } from './market-view.js';
+import { createMatchView } from './matchview.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -44,6 +47,9 @@ function growthLine(p) {
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1';
 const TOKEN = params.get('token') || '';
+// A shared link straight into a played match: ?match=<index> opens the match
+// view for that matchday (0-based). Read once at boot, never navigated to.
+const MATCH_PARAM = /^\d+$/.test(params.get('match') || '') ? Number(params.get('match')) : null;
 
 let career = null;
 let version = null;
@@ -63,6 +69,12 @@ let busy = false;
 let autoPlayed = 0;
 let tab = 'home';
 let reportFrom = 'home';
+// The match view: which matchday is open, which screen it was opened from,
+// and the controller (created on first use).
+let matchMd = null;
+let matchFrom = 'competition';
+let matchView = null;
+let matchOpenFor = null;
 let refreshFailed = false;
 // The club's league group is being rebuilt by the server: the setting-up
 // screen shows until the repair comes back, or it gives up after two seconds
@@ -183,9 +195,15 @@ function showView(name) {
     $('view-' + v).hidden = v !== name;
   }
   $('view-report').hidden = name !== 'report';
+  $('view-match').hidden = name !== 'match';
+  // Leaving the match stops its animation loop.
+  if (name !== 'match' && matchView) {
+    matchView.close();
+    matchOpenFor = null;
+  }
   const nav = $('tabnav');
-  nav.hidden = !(career && (name === 'club' || name === 'report'));
-  $('demo-note').hidden = !(DEMO && career && (name === 'club' || name === 'report' || name === 'error'));
+  nav.hidden = !(career && (name === 'club' || name === 'report' || name === 'match'));
+  $('demo-note').hidden = !(DEMO && career && (name === 'club' || name === 'report' || name === 'match' || name === 'error'));
   if (name === 'club') showTab(tab === 'report' ? 'home' : tab);
 }
 
@@ -194,6 +212,7 @@ function render() {
   if (screen === 'club' && career) renderClub();
   if (screen === 'new') renderNew();
   if (screen === 'report' && career && career.lastReport) renderReport();
+  if (screen === 'match' && career) renderMatch();
 }
 
 // Why a career did not load, in one line under the message.
@@ -265,9 +284,15 @@ async function load() {
       screen = 'club';
       tab = hashTab();
       try {
-        render();
         // A career saved before the zone was stored gets one now, once.
         if (!career.timeZone) { ensureZone(); save(); }
+        // A ?match= link (a shared "watch this one") opens the match view
+        // once, on boot, when that matchday has been played.
+        if (MATCH_PARAM != null && MATCH_PARAM < career.matchday) {
+          openMatch(MATCH_PARAM, 'competition');
+          return;
+        }
+        render();
         return;
       } catch (err) {
         console.error('career render failed', err);
@@ -877,41 +902,7 @@ function renderClub() {
   $('league-note').textContent = note;
   $('league-note').hidden = !note;
 
-  // The whole group's fixtures, newest first: the next matchday with its
-  // kick-off time, then each matchday already played with its scores. The
-  // manager's own match is highlighted, and the latest one opens its report.
-  $('fixtures-season').textContent = career.season;
-  const played = career.matchday;
-  const groups = [];
-  if (played < career.fixtures.length) {
-    const when = career.nextMatchAt ? upcomingSlots(career.nextMatchAt, 1, career.timeZone)[0] : null;
-    let title = 'Matchday ' + (played + 1);
-    if (when) title += ', ' + fixtureDate(when, career.timeZone);
-    groups.push({ title, rows: (career.fixtures[played] || []).map((f) => ({
-      home: CLUB_BY_ID[f.home], away: CLUB_BY_ID[f.away], result: null,
-    })) });
-  }
-  for (let md = played - 1; md >= 0; md--) {
-    const rows = career.results.filter((r) => r.matchday === md + 1).map((r) => ({
-      home: r.home, away: r.away, result: r,
-    }));
-    if (rows.length) groups.push({ title: 'Matchday ' + (md + 1), rows });
-  }
-  $('fixtures-list').innerHTML = groups.map((g) => `<li class="list-row md-head">${esc(g.title)}</li>`
-    + g.rows.map((f) => {
-      const mine = f.home.id === career.clubId || f.away.id === career.clubId;
-      if (!f.result) {
-        return `<li class="list-row${mine ? ' me' : ''}">
-          <span class="nm">${esc(displayName(f.home))} v ${esc(displayName(f.away))}${mine ? '<small>Your match</small>' : ''}</span>
-        </li>`;
-      }
-      const latest = mine && career.lastReport && career.lastReport.matchday === f.result.matchday;
-      return `<li class="list-row${latest ? ' row-btn' : ''}${mine ? ' me' : ''}"${latest ? ' data-open-report="1" tabindex="0" role="button"' : ''}>
-        <span class="nm">${esc(f.home.name)} ${f.result.homeGoals}–${f.result.awayGoals} ${esc(f.away.name)}${mine ? '<small>Your match</small>' : ''}</span>
-        ${mine ? `<span class="form"><i class="${resultClass(f.result, career.clubId)}">${resultLetter(f.result, career.clubId)}</i></span>` : ''}
-        ${latest ? '<span class="chev" aria-hidden="true">›</span>' : ''}
-      </li>`;
-    }).join('')).join('');
+  renderHistory();
 
   // The group's leading scorers, from the goals already saved on each player.
   const scorers = topScorers(career);
@@ -950,6 +941,137 @@ function renderClub() {
   renderStaff();
   renderAcademy();
   if (tab === 'tactics') drawPitch();
+}
+
+// ── Matchday history ─────────────────────────────────────────────────────
+// The Competition tab's history of the season's played matchdays, newest
+// first. The engine assembles it: the stored scores, results, Club credits
+// and kick-offs are exact, and the minute-by-minute events come from a
+// deterministic replay of the season that only survives where its scorelines
+// still match the stored ones. This file only filters, expands and renders.
+// The replay runs once per career load, so it is memoised on the career.
+let historyFilter = 'all';
+const expandedMd = new Set();
+const historyMemo = new WeakMap();
+
+function matchdayHistoryCached() {
+  if (!career) return [];
+  const key = (career.results ? career.results.length : 0) + ':' + (career.matchday || 0);
+  const hit = historyMemo.get(career);
+  if (hit && hit.key === key) return hit.value;
+  const value = matchdayHistory(career);
+  historyMemo.set(career, { key, value });
+  return value;
+}
+
+function renderHistory() {
+  const history = matchdayHistoryCached();
+  $('history-season').textContent = career.season;
+  const chips = $('history-chips');
+  const list = $('history-list');
+  const empty = $('history-empty');
+  const note = $('history-note');
+  const upLabel = $('upcoming-label');
+  const upList = $('upcoming-list');
+  for (const btn of chips.querySelectorAll('[data-md-filter]')) {
+    btn.setAttribute('aria-pressed', String(btn.dataset.mdFilter === historyFilter));
+  }
+
+  // The matchdays still to play, with their kick-off dates where the
+  // schedule has stamped them.
+  const remainder = Math.max(0, career.fixtures.length - career.matchday);
+  const dates = career.nextMatchAt && remainder
+    ? upcomingSlots(career.nextMatchAt, remainder, career.timeZone) : [];
+  const upcoming = [];
+  career.fixtures.forEach((fixtures, md) => {
+    if (md < career.matchday) return;
+    const f = fixtures.find((x) => x.home === career.clubId || x.away === career.clubId);
+    if (f) upcoming.push({ md, home: f.home, away: f.away });
+  });
+  upList.innerHTML = upcoming.map((f) => {
+    const when = dates[f.md - career.matchday];
+    const h = CLUB_BY_ID[f.home];
+    const a = CLUB_BY_ID[f.away];
+    return `<li class="list-row">
+      <span class="nm">Matchday ${f.md + 1}, ${esc(displayName(h))} v ${esc(displayName(a))}<small>${when ? esc(fixtureDate(when, career.timeZone)) : 'To be played'}</small></span>
+    </li>`;
+  }).join('');
+  upLabel.hidden = upList.hidden = !upcoming.length;
+
+  if (!history.length) {
+    chips.hidden = true;
+    list.hidden = true;
+    note.hidden = true;
+    empty.hidden = false;
+    $('history-empty-text').textContent = career.nextMatchAt
+      ? 'Your first match kicks off ' + fixtureDate(new Date(career.nextMatchAt), career.timeZone) + '.'
+      : 'Your first match kicks off when the season starts.';
+    return;
+  }
+  empty.hidden = true;
+  chips.hidden = false;
+  list.hidden = false;
+  note.textContent = 'Played ' + career.matchday + ' of ' + career.fixtures.length + ' matchdays.';
+  note.hidden = false;
+
+  const shown = history.filter((e) => historyFilter === 'all' ? true
+    : historyFilter === 'home' ? e.venue === 'Home'
+      : historyFilter === 'away' ? e.venue === 'Away'
+        : e.result === 'W');
+  if (!shown.length) {
+    const names = { home: 'home', away: 'away', wins: 'winning' };
+    list.innerHTML = `<li class="list-row"><span class="nm">No ${names[historyFilter] || ''} matchdays played yet.</span></li>`;
+    return;
+  }
+  list.innerHTML = shown.map(mdItem).join('');
+}
+
+// One matchday: the row (badge, opponent, scoreline, result pill) and, when
+// it is expanded, the full-time summary as the rows under it.
+function mdItem(e) {
+  const opp = CLUB_BY_ID[e.opponentId];
+  const ownGoals = e.venue === 'Home' ? e.homeGoals : e.awayGoals;
+  const oppGoals = e.venue === 'Home' ? e.awayGoals : e.homeGoals;
+  const when = e.kickoffISO ? fixtureDate(new Date(e.kickoffISO), career.timeZone) : null;
+  const open = expandedMd.has(e.matchday);
+  const row = `<li class="list-row md-row row-btn" role="button" tabindex="0"
+      aria-expanded="${open}"${open ? ' aria-controls="md-sum-' + e.matchday + '"' : ''}
+      data-md="${e.matchday}" aria-label="Matchday ${e.matchday}, ${esc(opp.name)}, ${ownGoals} ${ownGoals === 1 ? 'goal' : 'goals'} to ${oppGoals}, expanded ${open ? 'yes' : 'no'}">
+      ${badgeHtml(opp)}
+      <span class="nm md-nm">${esc(opp.name)}<small>Matchday ${e.matchday} · ${e.venue}${when ? ' · ' + esc(when) : ''}</small></span>
+      <span class="md-sc">${ownGoals}–${oppGoals}</span>
+      <span class="form"><i class="${e.result.toLowerCase()}">${e.result}</i></span>
+      <span class="chev" aria-hidden="true">${open ? '‹' : '›'}</span>
+    </li>`;
+  return row + (open ? mdSummary(e, ownGoals, oppGoals) : '');
+}
+
+// The full-time summary: the score again, then the matchday's moments (the
+// replayed or stored events), what the day earned in Club credits and, where
+// the career kept the money, what was left after the day's costs. The newest
+// matchday also carries the button that opens the full report.
+function mdSummary(e, ownGoals, oppGoals) {
+  const ownSide = e.venue === 'Home' ? 'home' : 'away';
+  const rows = [`<li class="sum-row ft" id="md-sum-${e.matchday}"><span class="nm">Full time</span><span class="big-score">${ownGoals}–${oppGoals}</span></li>`];
+  if (Array.isArray(e.moments) && e.moments.length) {
+    for (const m of e.moments) {
+      const isOwn = m.side === ownSide;
+      const txt = momentText(m, isOwn);
+      rows.push(`<li class="sum-row"><span class="min">${m.minute}'</span>
+        <span class="ico${isOwn ? ' own' : ''}">${ICONS[m.type] || ''}</span>
+        <span class="ev${isOwn ? '' : ' away'}">${esc(txt.main)}${txt.sub ? '<small>' + esc(txt.sub) + '</small>' : ''}</span></li>`);
+    }
+  } else {
+    rows.push('<li class="sum-row"><span class="nm">The minute-by-minute events of this matchday are not kept.</span></li>');
+  }
+  rows.push(`<li class="sum-row"><span class="nm">Club credits<small>For the ${e.result === 'W' ? 'win' : e.result === 'L' ? 'loss' : 'draw'}</small></span><span class="price">${signed(e.credits)}</span></li>`);
+  if (e.money) {
+    rows.push(`<li class="sum-row"><span class="nm">After the day's costs<small>Ground upkeep, maintenance and wages paid</small></span><span class="price">${signed(e.money.net)}</span></li>`);
+  }
+  if (e.matchday === career.matchday) {
+    rows.push('<li class="sum-row"><button type="button" class="btn-secondary" data-open-report="1">Full report</button></li>');
+  }
+  return rows.join('');
 }
 
 // ── Finance ──────────────────────────────────────────────────────────────
@@ -1345,6 +1467,104 @@ function openReport(from) {
   announce('');
   screen = 'report';
   render();
+  window.scrollTo(0, 0);
+}
+
+// ── The match view ───────────────────────────────────────────────────────
+// Opens one played matchday. The report comes from the career's saved last
+// report when it is this matchday, else it is re-simulated from the season's
+// seed — the same teams and seed always produce the same match. A re-created
+// one can drift from the recorded result (later fitness, injuries, subs), so
+// the note says so.
+function openMatch(md, from) {
+  if (!career || !Number.isInteger(md) || md < 0 || md >= career.fixtures.length) return;
+  matchFrom = from === 'report' ? 'report' : from === 'home' ? 'home' : 'competition';
+  matchMd = md;
+  const label = matchFrom === 'competition' ? 'Back to Competition' : matchFrom === 'report' ? 'Back to Report' : 'Back to Home';
+  $('match-back-label').textContent = label;
+  $('match-close').textContent = label;
+  screen = 'match';
+  render();
+  window.scrollTo(0, 0);
+}
+
+function renderMatch() {
+  const md = matchMd;
+  const sides = matchSides(career, md);
+  const recorded = career.results.find((r) => r.matchday === md + 1
+    && (r.home.id === career.clubId || r.away.id === career.clubId));
+  if (!sides || !recorded) {
+    if (matchView) matchView.close();
+    matchOpenFor = null;
+    $('match-call').hidden = true;
+    $('match-error').hidden = false;
+    return;
+  }
+  $('match-error').hidden = true;
+
+  let report = career.lastReport && career.lastReport.matchday === md + 1 ? career.lastReport : null;
+  let recreated = false;
+  if (!report) {
+    report = simulateMatch(sides.home, sides.away, matchSeed(seasonSeed(career), md, sides.index));
+    recreated = true;
+  }
+  $('match-note').hidden = !recreated;
+  if (recreated) {
+    const drift = report.homeGoals !== recorded.homeGoals || report.awayGoals !== recorded.awayGoals;
+    $('match-note').textContent = 'Recreated from the season\'s seed' + (drift ? '; the record differs.' : '.');
+  }
+
+  const home = CLUB_BY_ID[report.home.id];
+  const away = CLUB_BY_ID[report.away.id];
+  $('match-home-badge').outerHTML = badgeHtml(home).replace('<span ', '<span id="match-home-badge" ');
+  $('match-home-name').textContent = report.home.name;
+  $('match-away-badge').outerHTML = badgeHtml(away).replace('<span ', '<span id="match-away-badge" ');
+  $('match-away-name').textContent = report.away.name;
+
+  if (!matchView) {
+    matchView = createMatchView({
+      canvas: $('match-canvas'),
+      clock: $('match-clock'),
+      score: $('match-score'),
+      call: $('match-call'),
+      callIcon: $('match-call-icon'),
+      callMain: $('match-call-main'),
+      callSub: $('match-call-sub'),
+      play: $('match-play'),
+      playIcon: $('match-play-icon'),
+      pauseIcon: $('match-pause-icon'),
+      stepBack: $('match-step-back'),
+      speeds: $('match-speeds'),
+      scrub: $('match-scrub'),
+    });
+  }
+  // A re-render while the match is playing (a quiet refresh) keeps it going.
+  if (matchOpenFor !== md) {
+    matchOpenFor = md;
+    matchView.open({
+      report,
+      sides,
+      ownClubId: career.clubId,
+      seed: watchSeed(seasonSeed(career), md, sides.index),
+      meta: { matchday: md + 1 },
+    });
+  }
+}
+
+function matchExit() {
+  if (matchView) {
+    matchView.close();
+    matchOpenFor = null;
+  }
+  if (matchFrom === 'report') {
+    screen = 'report';
+    render();
+  } else {
+    screen = 'club';
+    tab = matchFrom === 'competition' ? 'competition' : 'home';
+    if (location.hash !== '#' + tab) location.hash = '#' + tab;
+    render();
+  }
   window.scrollTo(0, 0);
 }
 
@@ -2593,6 +2813,21 @@ $('report-ft').addEventListener('click', (e) => {
   window.scrollTo(0, 0);
 });
 
+// The report hands its match to the match view; the match view hands itself
+// back to wherever it came from.
+$('report-watch').addEventListener('click', () => {
+  if (career && career.lastReport) openMatch(career.lastReport.matchday - 1, 'report');
+});
+$('match-back').addEventListener('click', matchExit);
+$('match-back').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); matchExit(); }
+});
+$('match-close').addEventListener('click', matchExit);
+$('match-retry').addEventListener('click', () => {
+  matchOpenFor = null;
+  render();
+});
+
 // ── Saving ───────────────────────────────────────────────────────────────
 // Saves run one after another, so a quick second change never sends the
 // previous version number and loses the first change to a 409.
@@ -2756,16 +2991,47 @@ $('youth-retry').addEventListener('click', () => {
   if (youthRetry) promote(youthRetry);
 });
 function openFromEvent(e) {
-  const row = e.target.closest('[data-open-report]');
+  const row = e.target.closest('[data-open-report], [data-open-match]');
   if (!row) return;
   if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
   if (e.type === 'keydown') e.preventDefault();
+  if (row.dataset.openMatch != null && row.dataset.openMatch !== '') {
+    openMatch(Number(row.dataset.openMatch), row.closest('#tab-competition') ? 'competition' : 'home');
+    return;
+  }
   openReport(row.closest('#tab-competition') ? 'competition' : 'home');
 }
 $('last-list').addEventListener('click', openFromEvent);
 $('last-list').addEventListener('keydown', openFromEvent);
-$('fixtures-list').addEventListener('click', openFromEvent);
-$('fixtures-list').addEventListener('keydown', openFromEvent);
+// The matchday history: a chip filters the list, a row expands or collapses
+// its full-time summary, and the newest matchday's summary holds the button
+// that opens the full report.
+function historyEvent(e) {
+  const chip = e.target.closest('[data-md-filter]');
+  if (chip) {
+    historyFilter = chip.dataset.mdFilter;
+    renderHistory();
+    return;
+  }
+  const report = e.target.closest('[data-open-report]');
+  if (report) {
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.type === 'keydown') e.preventDefault();
+    openReport('competition');
+    return;
+  }
+  const row = e.target.closest('[data-md]');
+  if (!row) return;
+  if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.type === 'keydown') e.preventDefault();
+  const md = Number(row.dataset.md);
+  if (expandedMd.has(md)) expandedMd.delete(md);
+  else expandedMd.add(md);
+  renderHistory();
+}
+$('history-chips').addEventListener('click', historyEvent);
+$('history-list').addEventListener('click', historyEvent);
+$('history-list').addEventListener('keydown', historyEvent);
 // The phone bar's More button: opens the menu above the bar, and closes it on
 // a choice, a tap outside or Escape.
 $('tab-more').addEventListener('click', (e) => {
@@ -2790,6 +3056,7 @@ document.addEventListener('keydown', (e) => {
 
 window.addEventListener('hashchange', () => {
   if (!career) return;
+  if (screen === 'match') { matchExit(); return; }
   if (screen === 'report') { stopFeed(); screen = 'club'; render(); return; }
   if (screen === 'club') showTab(hashTab());
 });

@@ -363,15 +363,28 @@
         <!-- Competition -->
         <div class="panel" id="tab-competition" hidden>
           <div class="sec">
+            <div class="section-label"><span>Matchday history</span><span>Season <span id="history-season"></span></span></div>
+            <div class="divrow md-chips" id="history-chips" role="group" aria-label="Filter matchdays" hidden>
+              <button type="button" class="chip md-chip" data-md-filter="all" aria-pressed="true">All</button>
+              <button type="button" class="chip md-chip" data-md-filter="home" aria-pressed="false">Home</button>
+              <button type="button" class="chip md-chip" data-md-filter="away" aria-pressed="false">Away</button>
+              <button type="button" class="chip md-chip" data-md-filter="wins" aria-pressed="false">Wins</button>
+            </div>
+            <p class="league-note" id="history-note" hidden></p>
+            <ul class="list" id="history-list"></ul>
+            <div class="state-empty" id="history-empty" hidden>
+              <p class="state-title">No matchday played yet</p>
+              <p class="state-text" id="history-empty-text"></p>
+            </div>
+            <div class="section-label up-label" id="upcoming-label" hidden><span>Upcoming</span></div>
+            <ul class="list" id="upcoming-list" hidden></ul>
+          </div>
+          <div class="sec">
             <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
             <div class="legend" id="table-legend" hidden></div>
             <ul class="list tbl" id="table-list"></ul>
             <p class="league-note setup-note" id="setup-note" hidden><b>Setting up your group</b>The table comes back with your results kept.</p>
             <p class="league-note" id="league-note" hidden></p>
-          </div>
-          <div class="sec">
-            <div class="section-label"><span>Fixtures and results</span><span>Season <span id="fixtures-season"></span></span></div>
-            <ul class="list" id="fixtures-list"></ul>
           </div>
           <div class="sec">
             <div class="section-label"><span>Top scorers</span><span>Goals</span></div>
@@ -532,6 +545,10 @@
       </div>
 
       <div class="sec">
+        <button class="btn-secondary watch-btn" id="report-watch" type="button">Watch the match</button>
+      </div>
+
+      <div class="sec">
         <div class="section-label"><span>Match</span><span id="report-match-teams"></span></div>
         <div class="feed-controls" id="feed-controls">
           <button class="btn-secondary" type="button" id="feed-play">Play</button>
@@ -563,6 +580,67 @@
 
       <div class="sec">
         <button class="btn-primary" id="report-close">Back to Home</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen 3: the match, replayed on a canvas pitch. -->
+  <div data-spec-screen="3" id="view-match" hidden>
+    <div class="app">
+      <div class="top">
+        <div class="back" id="match-back" role="button" tabindex="0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg><span id="match-back-label">Back to Competition</span>
+        </div>
+        <div class="sm" id="match-clock">Matchday</div>
+        <div class="score">
+          <div class="team"><span class="badge" id="match-home-badge"></span><span id="match-home-name"></span></div>
+          <div class="big" id="match-score">0&#8211;0</div>
+          <div class="team"><span class="badge" id="match-away-badge"></span><span id="match-away-name"></span></div>
+        </div>
+        <div class="sm" id="match-note" hidden></div>
+      </div>
+
+      <div class="sec">
+        <div class="match-call" id="match-call" hidden aria-live="polite">
+          <span class="call-icon" id="match-call-icon" aria-hidden="true"></span>
+          <span class="call-main" id="match-call-main"></span>
+          <span class="call-sub" id="match-call-sub"></span>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="pitch match-pitch">
+          <canvas id="match-canvas" role="img"></canvas>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="controls">
+          <button class="icon-btn play-btn" id="match-play" type="button" aria-label="Play">
+            <span id="match-play-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+            <span id="match-pause-icon" hidden aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg></span>
+          </button>
+          <button class="icon-btn play-btn" id="match-step-back" type="button" aria-label="Previous moment" hidden>
+            <svg width="24" height="24" viewBox="0 0 24 24"><path d="M7 6h2.2v12H7zM18 6l-8 6 8 6z" fill="currentColor"/></svg>
+          </button>
+          <div class="speedrow" id="match-speeds" role="group" aria-label="Playback speed">
+            <button class="chip chip-speed" data-speed="0.5" type="button" aria-pressed="false">Half</button>
+            <button class="chip chip-speed" data-speed="1" type="button" aria-pressed="true">Normal</button>
+            <button class="chip chip-speed" data-speed="2" type="button" aria-pressed="false">Double</button>
+          </div>
+        </div>
+        <input class="scrub" id="match-scrub" type="range" min="0" max="90" step="0.1" value="0" aria-label="Scrub the match">
+      </div>
+
+      <div class="sec">
+        <div class="state-error" id="match-error" hidden>
+          <p class="state-text" id="match-error-text">This match could not be replayed. Your other tabs still work.</p>
+          <button class="btn-secondary" id="match-retry" type="button">Retry</button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <button class="btn-primary" id="match-close">Back</button>
       </div>
     </div>
   </div>
