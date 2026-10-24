@@ -187,6 +187,52 @@ button.chip[aria-expanded="true"] {
 .club-row .badge { flex: none; }
 .club-row.me { background: rgb(var(--raised)); }
 
+/* ── The Competition tab's matchday history ─────────────────────────────── */
+
+/* The filter chips: compact, wrapping, unlike New career's equal columns. */
+.md-chips { flex-wrap: wrap; margin-bottom: 8px; }
+.md-chips .chip {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* A history row: the opponent's badge and name, the scoreline from your own
+   side, and the result pill. Long names truncate instead of pushing the
+   scoreline off the row. */
+.md-nm { min-width: 0; }
+.md-nm, .md-nm small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-sc { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.md-row .form { flex: none; }
+.md-row .chev { flex: none; }
+
+/* The expanded full-time summary: the score again, the matchday's moments
+   and what the day earned, in the report's own row shapes. */
+.sum-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 16px;
+}
+.sum-row .nm { flex: 1; min-width: 0; }
+.sum-row .nm small { display: block; font-size: 14px; line-height: 20px; color: rgb(var(--muted)); font-weight: 400; }
+.sum-row.ft { background: rgb(var(--raised)); }
+.big-score { font-size: 20px; line-height: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sum-row .min { width: 32px; flex: none; font-weight: 700; color: rgb(var(--muted)); }
+.sum-row .ev { flex: 1; min-width: 0; }
+.sum-row .ev small { display: block; color: rgb(var(--muted)); }
+.sum-row .away { text-align: right; }
+
+/* Upcoming, under the history. */
+.up-label { margin-top: 16px; }
+
 /* A club's badge in its two kit colours: the primary field carries the white
    monogram, the lighter secondary shows as the lower wedge. --ka and --kb
    come from the club's kit index (badgeHtml); before they are set the badge
