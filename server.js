@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const { queryWithRetry, loadFailureBody } = require('./career-db');
 const { buyListing } = require('./transfers-db');
+const { ensureLeague, catchUpLeague, loadClub, saveClub } = require('./league-db');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -240,6 +241,8 @@ async function boot() {
     'state jsonb',
     'version integer NOT NULL DEFAULT 1',
     'updated_at timestamptz NOT NULL DEFAULT now()',
+    "mode text NOT NULL DEFAULT 'solo'",
+    'legacy_state jsonb',
   ];
   for (const column of guards) {
     const name = column.split(' ')[0];
@@ -316,6 +319,44 @@ async function boot() {
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
   await pool.query('CREATE INDEX IF NOT EXISTS transfer_listings_seller ON transfer_listings (seller_user_id)');
+  await pool.query('ALTER TABLE transfer_listings ADD COLUMN IF NOT EXISTS shared boolean NOT NULL DEFAULT false');
+  // The shared league. One public row per season, one per group, and one
+  // private row per club a person runs (it holds a user_id, so the platform's
+  // erase and export cover it).
+  await pool.query(`CREATE TABLE IF NOT EXISTS league_seasons (
+    season integer PRIMARY KEY,
+    seed integer NOT NULL,
+    groups jsonb NOT NULL,
+    matchday integer NOT NULL DEFAULT 0,
+    phase text NOT NULL DEFAULT 'playing',
+    next_match_at timestamptz,
+    plays jsonb NOT NULL DEFAULT '[]'::jsonb,
+    version integer NOT NULL DEFAULT 1,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS league_groups (
+    season integer NOT NULL,
+    group_index integer NOT NULL,
+    tier integer NOT NULL,
+    group_letter text,
+    state jsonb NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (season, group_index)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS league_managers (
+    club_id text PRIMARY KEY,
+    user_id text NOT NULL,
+    manager_name text NOT NULL DEFAULT '',
+    lineup jsonb NOT NULL DEFAULT '[]'::jsonb,
+    tactics jsonb,
+    roles jsonb NOT NULL DEFAULT '{}'::jsonb,
+    version integer NOT NULL DEFAULT 1,
+    joined_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("COMMENT ON TABLE league_managers IS 'staging:private'");
+  await pool.query('CREATE INDEX IF NOT EXISTS league_managers_user ON league_managers (user_id)');
+  const eg = await engine();
+  await ensureLeagueRows(eg);
   if (IS_STAGING) {
     // Three obviously fake players from the two fake staging clubs, put back
     // whenever one has been bought.
@@ -337,6 +378,121 @@ async function boot() {
            SELECT 1 FROM transfer_listings WHERE seller_user_id = $1 AND player->>'name' = $5)`,
         [user, club, player, price, name]);
     }
+  }
+}
+
+// Create season 1 the first time, and in staging give the two fake owners
+// their clubs in the shared league.
+async function ensureLeagueRows(e) {
+  await ensureLeague(pool, e, new Date(), IS_STAGING);
+  if (!IS_STAGING) return;
+  const seeds = [
+    ['wrenfield-wanderers', 'staging-demo-owner-1', 'Staging Demo Manager'],
+    ['torcross-rovers', 'staging-demo-owner-2', 'Staging Demo Rival'],
+  ];
+  for (const [clubId, userId, name] of seeds) {
+    await pool.query(
+      `INSERT INTO league_managers (club_id, user_id, manager_name, lineup, tactics, roles)
+       VALUES ($1, $2, $3, '[]'::jsonb, NULL, '{}'::jsonb)
+       ON CONFLICT (club_id) DO NOTHING`,
+      [clubId, userId, name]
+    );
+  }
+}
+
+// The shared league as it stands, after every due kick-off has been played.
+async function leagueState(e, now) {
+  return catchUpLeague(pool, e, now || new Date(), { staging: IS_STAGING });
+}
+
+function leagueMeta(loaded) {
+  return {
+    season: loaded.league.season,
+    matchday: loaded.league.matchday,
+    phase: loaded.league.phase,
+    nextMatchAt: loaded.league.nextMatchAt,
+    zone: 'Europe/London',
+  };
+}
+
+function managerNames(managers) {
+  const owners = {};
+  for (const id in managers || {}) owners[id] = managers[id].manager_name || '';
+  return owners;
+}
+
+function groupIndexOf(loaded, clubId) {
+  return loaded.groups.findIndex((g) => Array.isArray(g.clubIds) && g.clubIds.includes(clubId));
+}
+
+// A shared career's page: the club view built from the group and its manager.
+function viewFor(loaded, clubId, manager) {
+  const index = groupIndexOf(loaded, clubId);
+  if (index < 0) return null;
+  return engineView(loaded, index, clubId, manager);
+}
+
+function engineView(loaded, index, clubId, manager) {
+  // The engine is loaded asynchronously, so this is filled by the caller.
+  return loaded.e.clubView(loaded.league, loaded.groups[index], index, clubId, manager);
+}
+
+// Play every due kick-off for the whole league once, then return the league
+// and this person's shared career row.
+async function sharedContext(e, now) {
+  const loaded = await leagueState(e, now);
+  loaded.e = e;
+  return loaded;
+}
+
+async function isSharedUser(userId) {
+  const row = await sharedRow(userId);
+  return !!(row && row.mode === 'shared');
+}
+
+async function sharedRow(userId) {
+  const { rows } = await pool.query(
+    'SELECT club_id, state, version, mode FROM careers WHERE user_id = $1 AND is_demo = false',
+    [userId]
+  );
+  return rows[0] || null;
+}
+
+// Run one club action on a shared club: lock its group row, rebuild the club
+// view, apply the engine function, write the club entry and the manager back.
+async function sharedClubAction(req, e, apply) {
+  const loaded = await sharedContext(e, req.now);
+  const row = await sharedRow(req.user.id);
+  if (!row || row.mode !== 'shared') return { error: 'no_career' };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const ctx = await loadClub(client, e, loaded.league.season, row.club_id);
+    if (!ctx) {
+      await client.query('ROLLBACK');
+      return { error: 'no_career' };
+    }
+    const view = e.clubView(ctx.league, ctx.group, ctx.index, row.club_id, ctx.manager);
+    const out = apply(view);
+    if (out.error) {
+      await client.query('ROLLBACK');
+      return out;
+    }
+    const finalView = out.state || view;
+    const parts = e.clubFromView(finalView);
+    ctx.group.clubs[row.club_id] = parts.entry;
+    const mgr = ctx.manager
+      ? { ...ctx.manager, lineup: finalView.lineup, tactics: finalView.tactics, roles: finalView.roles }
+      : null;
+    await saveClub(client, loaded.league.season, ctx.index, ctx.group, mgr);
+    await client.query('COMMIT');
+    const career = e.clubView(ctx.league, ctx.group, ctx.index, row.club_id, mgr);
+    return { career, version: mgr ? (ctx.manager.version || 1) + 1 : row.version, out };
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
@@ -367,8 +523,7 @@ async function catchUp(row, now, demo, fallbackZone) {
   return { state, version: row.version, autoPlayed: played, changed, zone };
 }
 
-async function catchUpAndSave(userId, demo, row, now, fallbackZone) {
-  const out = await catchUp(row, now, demo, fallbackZone);
+async function catchUpAndSave(userId, demo, row, now, fallbackZone) {  const out = await catchUp(row, now, demo, fallbackZone);
   if (!out.changed) return out;
   const upd = await pool.query(
     'UPDATE careers SET state = $3, version = version + 1 WHERE user_id = $1 AND is_demo = $2 AND version = $4 RETURNING version',
@@ -423,46 +578,23 @@ function homeroomWalletFor(user) {
 app.get('/api/career', async (req, res) => {
   const demo = wantsDemo(req);
   try {
-    if (!req.user) {
-      // A guest looking around in staging sees the demo season, read-only.
-      if (demo) {
-        const e = await engine();
+    const e = await engine();
+    if (demo) {
+      if (!req.user) {
         const state = demoCareer(e, req.now);
         const out = await catchUp({ state, version: 1 }, req.now, true);
-        return res.json({
-          career: out.state, version: 1, demo: true, shop: SHOP, autoPlayed: out.autoPlayed, owners: {},
-        });
+        return res.json({ career: out.state, version: 1, demo: true, mode: 'solo', shop: SHOP, autoPlayed: out.autoPlayed, owners: {} });
       }
-      const eg = await engine();
-      const { taken, owners } = await clubOwners();
-      return res.json({ career: null, version: 0, demo: false, owners, shop: {
-        ...SHOP,
-        taken,
-        groups: eg.shopGroups(taken),
-        balance: STARTING_BALANCE,
-        kept: false,
-      } });
-    }
-    const { rows } = await queryWithRetry(
-      pool,
-      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
-      [req.user.id, demo]
-    );
-    if (rows.length) {
-      const state = rows[0].state;
-      if (!state || typeof state !== 'object' || Array.isArray(state)) {
-        const requestId = crypto.randomUUID().slice(0, 8);
-        console.error('career load failed [' + requestId + '] career_unreadable state is not an object');
-        return res.status(500).json({ error: 'career_unreadable', requestId, message: 'The saved career could not be shown.' });
+      const { rows } = await queryWithRetry(
+        pool,
+        "SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = true",
+        [req.user.id]
+      );
+      if (rows.length) {
+        const out = await catchUpAndSave(req.user.id, true, { state: rows[0].state, version: rows[0].version }, req.now);
+        const { owners } = await clubOwners();
+        return res.json({ career: out.state, version: out.version, demo: true, mode: 'solo', shop: SHOP, autoPlayed: out.autoPlayed, owners, homeroomWallet: homeroomWalletFor(req.user), groupBroken: !!out.groupBroken });
       }
-      // Every kick-off that has passed is played now, with the saved lineup
-      // and tactics, and the result is stored before the page sees it.
-      const out = await catchUpAndSave(req.user.id, demo, { state, version: rows[0].version }, req.now);
-      const { owners } = await clubOwners();
-      return res.json({ career: out.state, version: out.version, demo, shop: SHOP, autoPlayed: out.autoPlayed, owners, homeroomWallet: homeroomWalletFor(req.user), groupBroken: !!out.groupBroken });
-    }
-    if (demo) {
-      const e = await engine();
       const state = demoCareer(e, req.now);
       const out = await catchUp({ state, version: 1 }, req.now, true);
       await pool.query(
@@ -476,24 +608,53 @@ app.get('/api/career', async (req, res) => {
         [req.user.id]
       );
       const { owners } = await clubOwners();
-      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP, autoPlayed: out.autoPlayed, owners, homeroomWallet: homeroomWalletFor(req.user) });
+      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, mode: 'solo', shop: SHOP, autoPlayed: out.autoPlayed, owners, homeroomWallet: homeroomWalletFor(req.user) });
     }
-    // No career yet is an ordinary answer: the page shows New career, with the
-    // wallet this person already has (a first-time manager gets the starting
-    // balance). A guest gets none.
-    const e = await engine();
+    // Every request first plays the shared league's due kick-offs, once.
+    const loaded = await sharedContext(e, req.now);
+    const league = leagueMeta(loaded);
+    const owners = managerNames(loaded.managers);
+    if (!req.user) {
+      const { taken } = await clubOwners();
+      return res.json({
+        career: null, version: 0, demo: false, mode: 'solo', owners, league,
+        shop: { ...SHOP, taken, groups: e.shopGroups(taken), balance: STARTING_BALANCE, kept: false },
+      });
+    }
+    const row = await sharedRow(req.user.id);
+    if (row && row.mode === 'shared') {
+      const manager = loaded.managers[row.club_id] || null;
+      const view = viewFor(loaded, row.club_id, manager);
+      if (!view) return res.status(500).json({ error: 'career_unreadable', message: 'The shared league has no place for your club.' });
+      return res.json({
+        career: view, version: manager ? manager.version : row.version, mode: 'shared', demo: false,
+        shop: SHOP, autoPlayed: 0, owners, league, homeroomWallet: homeroomWalletFor(req.user),
+      });
+    }
+    if (row) {
+      const state = row.state;
+      if (!state || typeof state !== 'object' || Array.isArray(state)) {
+        const requestId = crypto.randomUUID().slice(0, 8);
+        console.error('career load failed [' + requestId + '] career_unreadable state is not an object');
+        return res.status(500).json({ error: 'career_unreadable', requestId, message: 'The saved career could not be shown.' });
+      }
+      const out = await catchUpAndSave(req.user.id, false, { state, version: row.version }, req.now);
+      const solo = await clubOwners();
+      return res.json({
+        career: out.state, version: out.version, demo: false, mode: 'solo', shop: SHOP,
+        autoPlayed: out.autoPlayed, owners: solo.owners, league,
+        homeroomWallet: homeroomWalletFor(req.user), groupBroken: !!out.groupBroken,
+      });
+    }
     const wallet = await queryWithRetry(pool, 'SELECT usdc FROM wallets WHERE user_id = $1', [req.user.id]);
     const stored = wallet.rows[0];
-    const { taken, owners } = await clubOwners();
+    const { taken } = await clubOwners();
+    const takenShared = new Set(Object.keys(loaded.managers));
+    for (const id of takenShared) if (!taken.includes(id)) taken.push(id);
     return res.json({
-      career: null,
-      version: 0,
-      demo: false,
-      owners,
+      career: null, version: 0, demo: false, mode: 'solo', owners, league,
       shop: {
-        ...SHOP,
-        taken,
-        groups: e.shopGroups(taken),
+        ...SHOP, taken, groups: e.shopGroups(taken),
         balance: e.openingBalance(stored && stored.usdc, STARTING_BALANCE),
         kept: !!stored,
       },
@@ -527,34 +688,19 @@ app.post('/api/career', async (req, res) => {
   }
   try {
     const e = await engine();
-    // The shop and the price are the server's: a forged club or balance in the
-    // request body never gets through. The price follows the division the
-    // club is in today. The balance is checked inside the transaction,
-    // against the wallet that is being debited.
     const groupIndex = e.clubToGroup[clubId];
     if (groupIndex === undefined) {
       return res.status(400).json({ error: 'club', message: 'That club is not in the shop.' });
     }
-    const tier = e.GROUPS[groupIndex].tier;
-    const price = TIER_PRICE[tier];
-    if (e.purchaseError(clubId, price, price) === 'club') {
-      return res.status(400).json({ error: 'club', message: 'That club is not in the shop.' });
-    }
-    const zone = e.validTimeZone(req.body && req.body.timeZone) ? req.body.timeZone : 'UTC';
-    const seed = crypto.randomInt(1, 2147483647);
-    const state = e.buildInitialState(clubId, managerName.trim(), seed);
-    state.managerName = managerName.trim();
-    state.timeZone = demo ? 'Europe/London' : zone;
-    state.nextMatchAt = e.slotAfter(req.now, state.timeZone).toISOString();
-    state.purchase = { clubId, price, tier, at: req.now.toISOString() };
-
     if (demo) {
+      const zone = 'Europe/London';
+      const seed = crypto.randomInt(1, 2147483647);
       const demoState = demoCareer(e, req.now);
       demoState.managerName = managerName.trim();
       const out = await catchUp({ state: demoState, version: 1 }, req.now, true);
       const { rows } = await pool.query(
-        `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
-         VALUES ($1, true, $2, $3, $4, $5, 1)
+        `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version, mode)
+         VALUES ($1, true, $2, $3, $4, $5, 1, 'solo')
          ON CONFLICT (user_id, is_demo) DO UPDATE SET
            manager_name = EXCLUDED.manager_name, club_id = EXCLUDED.club_id,
            seed = EXCLUDED.seed, state = EXCLUDED.state,
@@ -562,13 +708,36 @@ app.post('/api/career', async (req, res) => {
          RETURNING state, version`,
         [req.user.id, demoState.managerName, demoState.clubId, DEMO_SEED, out.state]
       );
-      return res.json({ career: rows[0].state, version: rows[0].version, demo });
+      return res.json({ career: rows[0].state, version: rows[0].version, demo, mode: 'solo' });
     }
-
+    // Buying a club joins the shared league: the club keeps the points it has.
+    const loaded = await sharedContext(e, req.now);
+    const index = groupIndexOf(loaded, clubId);
+    const tier = index >= 0 ? loaded.groups[index].tier : e.GROUPS[groupIndex].tier;
+    const price = TIER_PRICE[tier];
+    if (e.purchaseError(clubId, price, price) === 'club') {
+      return res.status(400).json({ error: 'club', message: 'That club is not in the shop.' });
+    }
+    const preview = viewFor(loaded, clubId, null);
+    if (!preview) return res.status(400).json({ error: 'club', message: 'That club is not in the shop.' });
+    const season = loaded.league.season;
+    const state = {
+      clubId,
+      managerName: managerName.trim(),
+      wallet: null,
+      purchase: { clubId, price, tier, season, at: req.now.toISOString() },
+    };
+    const manager = {
+      club_id: clubId,
+      manager_name: managerName.trim(),
+      lineup: preview.lineup,
+      tactics: preview.tactics,
+      roles: preview.roles,
+      version: 1,
+    };
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      // One club at a time: a manager sells before buying another.
       const existing = await client.query(
         'SELECT 1 FROM careers WHERE user_id = $1 AND is_demo = false FOR UPDATE',
         [req.user.id]
@@ -591,8 +760,6 @@ app.post('/api/career', async (req, res) => {
           });
         }
       }
-      // A first-time manager is given the starting balance; the club is paid
-      // for out of the wallet the person keeps between careers.
       await client.query(
         'INSERT INTO wallets (user_id, usdc) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING',
         [req.user.id, STARTING_BALANCE]
@@ -607,23 +774,29 @@ app.post('/api/career', async (req, res) => {
         'UPDATE wallets SET usdc = usdc - $2, updated_at = now() WHERE user_id = $1 RETURNING usdc',
         [req.user.id, price]
       );
-      // The career's wallet is a display copy of the row, written here only.
       state.wallet = { currency: CURRENCY, balance: debit.rows[0].usdc };
       const { rows } = await client.query(
-        `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version)
-         VALUES ($1, false, $2, $3, $4, $5, 1)
+        `INSERT INTO careers (user_id, is_demo, manager_name, club_id, seed, state, version, mode)
+         VALUES ($1, false, $2, $3, $4, $5, 1, 'shared')
          ON CONFLICT (user_id, is_demo) DO UPDATE SET
-           manager_name = EXCLUDED.manager_name,
-           club_id = EXCLUDED.club_id,
-           seed = EXCLUDED.seed,
-           state = EXCLUDED.state,
-           version = careers.version + 1,
-           updated_at = now()
-         RETURNING state, version`,
-        [req.user.id, state.managerName, clubId, seed, state]
+           manager_name = EXCLUDED.manager_name, club_id = EXCLUDED.club_id,
+           seed = EXCLUDED.seed, state = EXCLUDED.state, mode = 'shared',
+           version = careers.version + 1, updated_at = now()
+         RETURNING version`,
+        [req.user.id, state.managerName, clubId, loaded.league.seed, state]
+      );
+      await client.query(
+        `INSERT INTO league_managers (club_id, user_id, manager_name, lineup, tactics, roles, version)
+         VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, 1)
+         ON CONFLICT (club_id) DO UPDATE SET
+           user_id = EXCLUDED.user_id, manager_name = EXCLUDED.manager_name,
+           lineup = EXCLUDED.lineup, tactics = EXCLUDED.tactics, roles = EXCLUDED.roles,
+           version = league_managers.version + 1, joined_at = now()`,
+        [clubId, req.user.id, state.managerName, JSON.stringify(manager.lineup), JSON.stringify(manager.tactics), JSON.stringify(manager.roles)]
       );
       await client.query('COMMIT');
-      return res.json({ career: rows[0].state, version: rows[0].version, demo });
+      const career = e.clubView(loaded.league, loaded.groups[index], index, clubId, manager);
+      return res.json({ career, version: rows[0].version, demo: false, mode: 'shared', league: leagueMeta(loaded) });
     } catch (err) {
       try { await client.query('ROLLBACK'); } catch (_) {}
       throw err;
@@ -631,8 +804,95 @@ app.post('/api/career', async (req, res) => {
       client.release();
     }
   } catch (err) {
-    console.error('career create failed: ' + err.message);
+    console.error('career create failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
     return res.status(500).json({ error: 'career_create_failed' });
+  }
+});
+
+// Join the shared league with the club a solo save already runs. The solo
+// save is kept in legacy_state, never read again; the club is taken as it
+// stands in the shared league.
+app.post('/api/career/join', async (req, res) => {
+  if (wantsDemo(req)) return res.status(409).json({ error: 'demo' });
+  try {
+    const e = await engine();
+    const loaded = await sharedContext(e, req.now);
+    const row = await sharedRow(req.user.id);
+    if (!row) return res.status(404).json({ error: 'no_career' });
+    if (row.mode === 'shared') return res.status(409).json({ error: 'shared', message: 'You already play in the shared league.' });
+    const clubId = row.club_id;
+    const index = groupIndexOf(loaded, clubId);
+    if (index < 0) return res.status(409).json({ error: 'owned', message: 'That club is not in the shared league.' });
+    const managerName = row.state && row.state.managerName ? row.state.managerName : 'Manager';
+    const preview = viewFor(loaded, clubId, null);
+    const manager = {
+      club_id: clubId,
+      manager_name: managerName,
+      lineup: preview.lineup,
+      tactics: preview.tactics,
+      roles: preview.roles,
+      version: 1,
+    };
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query(
+        'SELECT state, version, mode, club_id FROM careers WHERE user_id = $1 AND is_demo = false FOR UPDATE',
+        [req.user.id]
+      );
+      if (!locked.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'no_career' });
+      }
+      if (locked.rows[0].mode === 'shared') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'shared' });
+      }
+      const claim = await client.query(
+        'INSERT INTO club_owners (club_id, user_id, manager_name) VALUES ($1, $2, $3) ON CONFLICT (club_id) DO NOTHING RETURNING club_id',
+        [clubId, req.user.id, managerName]
+      );
+      if (!claim.rows.length) {
+        const owner = await client.query('SELECT user_id FROM club_owners WHERE club_id = $1', [clubId]);
+        if (owner.rows.length && owner.rows[0].user_id !== req.user.id) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'owned', message: 'Another manager runs ' + e.CLUB_BY_ID[clubId].name + ' in the shared league.' });
+        }
+      }
+      const old = locked.rows[0].state || {};
+      const slim = {
+        clubId,
+        managerName,
+        wallet: old.wallet || null,
+        purchase: old.purchase || null,
+      };
+      await client.query(
+        `UPDATE careers SET mode = 'shared', state = $2::jsonb, legacy_state = $3::jsonb,
+           version = version + 1, updated_at = now()
+         WHERE user_id = $1 AND is_demo = false RETURNING version`,
+        [req.user.id, slim, old]
+      );
+      await client.query(
+        `INSERT INTO league_managers (club_id, user_id, manager_name, lineup, tactics, roles, version)
+         VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, 1)
+         ON CONFLICT (club_id) DO UPDATE SET
+           user_id = EXCLUDED.user_id, manager_name = EXCLUDED.manager_name,
+           lineup = EXCLUDED.lineup, tactics = EXCLUDED.tactics, roles = EXCLUDED.roles,
+           version = league_managers.version + 1, joined_at = now()`,
+        [clubId, req.user.id, managerName, JSON.stringify(manager.lineup), JSON.stringify(manager.tactics), JSON.stringify(manager.roles)]
+      );
+      await client.query('COMMIT');
+      const career = e.clubView(loaded.league, loaded.groups[index], index, clubId, manager);
+      return res.json({ career, version: 1, mode: 'shared', league: leagueMeta(loaded) });
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('career join failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({ error: 'career_join_failed' });
   }
 });
 
@@ -646,10 +906,45 @@ app.put('/api/career', async (req, res) => {
     const e = await engine();
     if (!e.CLUB_BY_ID[state.clubId]) return res.status(400).json({ error: 'club' });
     const { rows: storedRows } = await pool.query(
-      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
+      'SELECT state, version, mode, club_id FROM careers WHERE user_id = $1 AND is_demo = $2',
       [req.user.id, demo]
     );
     if (!storedRows.length) return res.status(404).json({ error: 'no_career' });
+    if (!demo && storedRows[0].mode === 'shared') {
+      const loaded = await sharedContext(e, req.now);
+      const clubId = storedRows[0].club_id;
+      const manager = loaded.managers[clubId] || null;
+      const view = viewFor(loaded, clubId, manager);
+      if (!manager || !view) return res.status(404).json({ error: 'no_career' });
+      // The page may only say how the club plays, never how the league stands.
+      if ((state.season || 1) !== view.season || (state.matchday || 0) !== view.matchday) {
+        return res.status(409).json({ error: 'version_mismatch' });
+      }
+      const squad = view.squads[clubId];
+      const ids = new Set(squad.map((p) => p.id));
+      let lineup = Array.isArray(state.lineup) ? state.lineup : manager.lineup;
+      const formation = state.tactics && e.FORMATIONS[state.tactics.formation]
+        ? state.tactics.formation : (manager.tactics && e.FORMATIONS[manager.tactics.formation] ? manager.tactics.formation : view.tactics.formation);
+      if (!Array.isArray(lineup) || lineup.length !== 11 || new Set(lineup).size !== 11
+        || !lineup.every((id) => ids.has(id))) {
+        lineup = e.autoLineup(squad, formation, state.roles || manager.roles || {});
+      }
+      const storedTactics = manager.tactics || view.tactics;
+      const tactics = {
+        formation,
+        mentality: state.tactics && e.MENTALITIES[state.tactics.mentality] ? state.tactics.mentality : storedTactics.mentality,
+        pressing: state.tactics && e.PRESSING[state.tactics.pressing] ? state.tactics.pressing : storedTactics.pressing,
+      };
+      const roles = {};
+      for (const id of ids) if (state.roles && state.roles[id] && e.ROLES[state.roles[id]]) roles[id] = state.roles[id];
+      const upd = await pool.query(
+        `UPDATE league_managers SET lineup = $2::jsonb, tactics = $3::jsonb, roles = $4::jsonb,
+           version = version + 1 WHERE club_id = $1 AND version = $5 RETURNING version`,
+        [clubId, JSON.stringify(lineup), JSON.stringify(tactics), JSON.stringify(roles), manager.version]
+      );
+      if (!upd.rows.length) return res.status(409).json({ error: 'version_mismatch' });
+      return res.json({ version: upd.rows[0].version });
+    }
     const incomingZone = e.validTimeZone(state.timeZone) ? state.timeZone : null;
     // A kick-off that passed before this save plays first. The page reloads
     // and shows the new result.
@@ -738,6 +1033,18 @@ app.post('/api/career/facility', async (req, res) => {
     if (!e.FACILITY_BY_KEY[facility] || !Number.isInteger(level)
       || level < 1 || level > e.FACILITY_MAX_LEVEL) {
       return res.status(400).json({ error: 'facility', message: 'Choose a facility and the level next to it.' });
+    }
+    if (!demo && await isSharedUser(req.user.id)) {
+      const r = await sharedClubAction(req, e, (state) => {
+        const stored = e.facilityLevels(state)[facility];
+        return level === stored - 1
+          ? e.downgradeFacility(state, facility, level)
+          : e.upgradeFacility(state, facility, level);
+      });
+      if (r.error === 'level') return res.status(409).json({ error: 'level' });
+      if (r.error === 'credits') return res.status(409).json({ error: 'credits' });
+      if (r.error) return res.status(400).json({ error: 'facility' });
+      return res.json({ career: r.career, version: r.version });
     }
     const { rows } = await pool.query(
       'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
@@ -883,13 +1190,17 @@ app.get('/api/transfers', async (req, res) => {
   try {
     const e = await engine();
     const userId = req.user ? req.user.id : null;
+    const modeRow = userId
+      ? await pool.query('SELECT mode FROM careers WHERE user_id = $1 AND is_demo = false', [userId]) : null;
+    const shared = !!(modeRow && modeRow.rows.length && modeRow.rows[0].mode === 'shared');
     const { rows } = await queryWithRetry(
       pool,
-      `SELECT id, seller_user_id, seller_club_id, player, asking_price, created_at
+      `SELECT id, seller_user_id, seller_club_id, player, asking_price, created_at, shared
          FROM transfer_listings ORDER BY created_at DESC, id DESC LIMIT 200`
     );
-    const mine = userId ? rows.filter((r) => r.seller_user_id === userId) : [];
-    const listings = userId ? rows.filter((r) => r.seller_user_id !== userId) : rows;
+    const inMode = rows.filter((r) => r.shared === shared);
+    const mine = userId ? inMode.filter((r) => r.seller_user_id === userId) : [];
+    const listings = userId ? inMode.filter((r) => r.seller_user_id !== userId) : inMode;
     return res.json({
       listings: listings.slice(0, 100).map((r) => listingOut(e, r)),
       mine: mine.map((r) => listingOut(e, r)),
@@ -910,6 +1221,19 @@ app.post('/api/transfers', async (req, res) => {
     const e = await engine();
     if (typeof playerId !== 'string' || !Number.isInteger(price)) {
       return res.status(400).json({ error: 'player_or_price', message: TRANSFER_MESSAGES.price });
+    }
+    if (await isSharedUser(req.user.id)) {
+      const r = await sharedClubAction(req, e, (state) => e.listPlayer(state, playerId, price));
+      if (r.error) {
+        const code = r.error === 'price' ? 400 : 409;
+        return res.status(code).json({ error: r.error, message: TRANSFER_MESSAGES[r.error] || '' });
+      }
+      const ins = await pool.query(
+        `INSERT INTO transfer_listings (seller_user_id, seller_club_id, player, asking_price, shared)
+         VALUES ($1, $2, $3::jsonb, $4, true) RETURNING id, seller_club_id, player, asking_price, created_at`,
+        [req.user.id, r.career.clubId, r.out.snapshot, price]
+      );
+      return res.json({ career: r.career, version: r.version, listing: listingOut(e, ins.rows[0]) });
     }
     const found = await pool.query(
       'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = false',
@@ -977,6 +1301,19 @@ app.delete('/api/transfers/:id', async (req, res) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'gone', message: TRANSFER_MESSAGES.gone });
   try {
     const e = await engine();
+    if (await isSharedUser(req.user.id)) {
+      const listed = await pool.query(
+        'SELECT id, seller_user_id, player, asking_price, shared FROM transfer_listings WHERE id = $1',
+        [id]
+      );
+      if (!listed.rows.length || !listed.rows[0].shared) return res.status(409).json({ error: 'gone', message: TRANSFER_MESSAGES.gone });
+      if (listed.rows[0].seller_user_id !== req.user.id) return res.status(403).json({ error: 'not_yours', message: 'That listing is not yours.' });
+      const listing = { id: listed.rows[0].id, player: listed.rows[0].player, price: listed.rows[0].asking_price };
+      const r = await sharedClubAction(req, e, (state) => e.returnListing(state, listing));
+      if (r.error) return res.status(409).json({ error: r.error, message: TRANSFER_MESSAGES[r.error] || '' });
+      await pool.query('DELETE FROM transfer_listings WHERE id = $1', [id]);
+      return res.json({ career: r.career, version: r.version });
+    }
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -1038,6 +1375,59 @@ app.post('/api/transfers/:id/buy', async (req, res) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(409).json({ error: 'gone', message: TRANSFER_MESSAGES.gone });
   try {
     const e = await engine();
+    if (await isSharedUser(req.user.id)) {
+      const loaded = await sharedContext(e, req.now);
+      const row = await sharedRow(req.user.id);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const listed = await client.query(
+          'SELECT id, seller_user_id, seller_club_id, player, asking_price, shared FROM transfer_listings WHERE id = $1 FOR UPDATE',
+          [id]
+        );
+        if (!listed.rows.length || !listed.rows[0].shared) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'gone', message: TRANSFER_MESSAGES.gone });
+        }
+        const listingRow = listed.rows[0];
+        if (listingRow.seller_user_id === req.user.id) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'own_listing', message: TRANSFER_MESSAGES.own_listing });
+        }
+        const buyer = await loadClub(client, e, loaded.league.season, row.club_id);
+        if (!buyer) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'no_career' });
+        }
+        const buyerView = e.clubView(buyer.league, buyer.group, buyer.index, row.club_id, buyer.manager);
+        const listing = { id: listingRow.id, player: listingRow.player, price: listingRow.asking_price };
+        const out = e.buyPlayer(buyerView, listing);
+        if (out.error) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: out.error === 'full' ? 'squad_full' : out.error, message: TRANSFER_MESSAGES[out.error] || '' });
+        }
+        const finalView = out.state || buyerView;
+        const parts = e.clubFromView(finalView);
+        buyer.group.clubs[row.club_id] = parts.entry;
+        const mgr = buyer.manager ? { ...buyer.manager, lineup: finalView.lineup, tactics: finalView.tactics, roles: finalView.roles } : null;
+        await saveClub(client, loaded.league.season, buyer.index, buyer.group, mgr);
+        const seller = await loadClub(client, e, loaded.league.season, listingRow.seller_club_id);
+        if (seller) {
+          const entry = seller.group.clubs[listingRow.seller_club_id];
+          entry.credits = (entry.credits || 0) + listingRow.asking_price;
+          await saveClub(client, loaded.league.season, seller.index, seller.group, null);
+        }
+        await client.query('DELETE FROM transfer_listings WHERE id = $1', [id]);
+        await client.query('COMMIT');
+        const career = e.clubView(buyer.league, buyer.group, buyer.index, row.club_id, mgr);
+        return res.json({ career, version: mgr ? (buyer.manager.version || 1) + 1 : row.version });
+      } catch (err) {
+        try { await client.query('ROLLBACK'); } catch (_) {}
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
     const found = await pool.query(
       'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = false',
       [req.user.id]
@@ -1061,6 +1451,14 @@ async function playerAction(req, res, e, run) {
   const { playerId } = req.body || {};
   if (typeof playerId !== 'string') return res.status(400).json({ error: 'player', message: TRANSFER_MESSAGES.player });
   const demo = wantsDemo(req);
+  if (!demo && await isSharedUser(req.user.id)) {
+    const r = await sharedClubAction(req, e, (state) => run(state, playerId));
+    if (r.error) {
+      const code = r.error === 'player' ? 404 : 409;
+      return res.status(code).json({ error: r.error, message: TRANSFER_MESSAGES[r.error] || '' });
+    }
+    return res.json({ career: r.career, version: r.version, price: r.out.price });
+  }
   const found = await pool.query(
     'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
     [req.user.id, demo]
@@ -1114,6 +1512,15 @@ app.post('/api/career/staff', async (req, res) => {
     if (!e.STAFF_BY_KEY[role] || (action !== 'hire' && action !== 'release')) {
       return res.status(400).json({ error: 'staff', message: 'Choose a staff role and whether to hire or release.' });
     }
+    if (!demo && await isSharedUser(req.user.id)) {
+      const r = await sharedClubAction(req, e, (state) => (action === 'hire'
+        ? e.hireStaff(state, role) : e.releaseStaff(state, role)));
+      if (r.error === 'credits') return res.status(409).json({ error: 'credits' });
+      if (r.error === 'hired') return res.status(409).json({ error: 'hired' });
+      if (r.error === 'not_hired') return res.status(409).json({ error: 'not_hired' });
+      if (r.error) return res.status(400).json({ error: 'staff' });
+      return res.json({ career: r.career, version: r.version });
+    }
     const { rows } = await pool.query(
       'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
       [req.user.id, demo]
@@ -1147,6 +1554,12 @@ app.post('/api/career/youth', async (req, res) => {
     const e = await engine();
     if (typeof id !== 'string' || !id) {
       return res.status(400).json({ error: 'youth', message: 'Choose a young player to promote.' });
+    }
+    if (!demo && await isSharedUser(req.user.id)) {
+      const r = await sharedClubAction(req, e, (state) => e.promoteYouth(state, id));
+      if (r.error === 'squad_full') return res.status(409).json({ error: 'squad_full' });
+      if (r.error) return res.status(409).json({ error: 'youth' });
+      return res.json({ career: r.career, version: r.version });
     }
     const { rows } = await pool.query(
       'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
@@ -1187,12 +1600,20 @@ app.delete('/api/career', async (req, res) => {
     try {
       await client.query('BEGIN');
       const found = await client.query(
-        'SELECT club_id, state FROM careers WHERE user_id = $1 AND is_demo = false FOR UPDATE',
+        'SELECT club_id, state, mode FROM careers WHERE user_id = $1 AND is_demo = false FOR UPDATE',
         [req.user.id]
       );
       if (found.rows.length) {
         const row = found.rows[0];
-        const price = e.saleValue(row.state, SALE_VALUE);
+        let price;
+        if (row.mode === 'shared') {
+          const loaded = await sharedContext(e, req.now);
+          const index = groupIndexOf(loaded, row.club_id);
+          price = index >= 0 ? (SALE_VALUE[loaded.groups[index].tier] || 0) : 0;
+          await client.query('DELETE FROM league_managers WHERE club_id = $1 AND user_id = $2', [row.club_id, req.user.id]);
+        } else {
+          price = e.saleValue(row.state, SALE_VALUE);
+        }
         // A career from before the wallet existed is credited the starting
         // balance as well, so selling never loses the money it never stored.
         const credit = await client.query(

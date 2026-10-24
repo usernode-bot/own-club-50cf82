@@ -1978,10 +1978,31 @@ export function objectiveMet(rank, objective, size = DIVISION_SIZE) {
 }
 
 // ── Preparing a side for the simulation ──────────────────────────────────
-function teamFor(state, clubId) {
+function lineupUsable(squad, lineup) {
+  if (!Array.isArray(lineup) || lineup.length !== 11 || new Set(lineup).size !== 11) return false;
+  const ids = new Set((squad || []).map((p) => p.id));
+  return lineup.every((id) => ids.has(id));
+}
+
+function teamFor(state, clubId, managers) {
   const club = CLUB_BY_ID[clubId];
   const squad = state.squads[clubId];
   const isUser = clubId === state.clubId;
+  const managed = managers && managers[clubId];
+  if (!isUser && managed) {
+    const tactics = managed.tactics && FORMATIONS[managed.tactics.formation]
+      ? {
+        formation: managed.tactics.formation,
+        mentality: MENTALITIES[managed.tactics.mentality] ? managed.tactics.mentality : 'Balanced',
+        pressing: PRESSING[managed.tactics.pressing] ? managed.tactics.pressing : 'Medium',
+      }
+      : { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' };
+    const roles = managed.roles && typeof managed.roles === 'object' ? managed.roles : {};
+    const lineup = lineupUsable(squad, managed.lineup)
+      ? managed.lineup.slice()
+      : autoLineup(squad, tactics.formation, roles);
+    return { club, squad, lineup, tactics, roles };
+  }
   const tactics = isUser ? state.tactics : { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' };
   const roles = isUser ? state.roles || {} : {};
   const lineup = isUser ? state.lineup : autoLineup(squad, tactics.formation, roles);
@@ -2348,35 +2369,10 @@ export function applyReport(state, report) {
   if (state.clubId === report.home.id || state.clubId === report.away.id) fixLineup(state);
 }
 
-export function playMatchday(state) {
-  const md = state.matchday;
-  if (md >= state.fixtures.length) return [];
-  const reports = [];
-  state.fixtures[md].forEach((f, i) => {
-    const home = teamFor(state, f.home);
-    const away = teamFor(state, f.away);
-    const report = simulateMatch(home, away, matchSeed(seasonSeed(state), md, i));
-    report.matchday = md + 1;
-    report.fixtureIndex = i;
-    reports.push(report);
-  });
-  for (const report of reports) applyReport(state, report);
-  for (const r of reports) {
-    state.results.push({
-      matchday: r.matchday,
-      home: r.home,
-      away: r.away,
-      homeGoals: r.homeGoals,
-      awayGoals: r.awayGoals,
-    });
-  }
-  const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
-  state.lastReport = own;
-  // Only the manager's own fixture earns or pays Club credits, from the
-  // manager's side: the result, the home gate and what the home crowd spends
-  // at the shop, food stand and hotel, less ground upkeep, maintenance, player
-  // wages and staff wages, each paid only as far as the balance reaches.
-  if (own) {
+// Settle one club's matchday: result credits, home gate and sales, upkeep,
+// maintenance and wages, fans, the finance history and the academy. Shared by
+// the solo career (its own fixture) and the shared league (all 18 clubs).
+export function settleClubMatch(state, own, md) {
     const atHome = own.home.id === state.clubId;
     const goalsFor = atHome ? own.homeGoals : own.awayGoals;
     const goalsAgainst = atHome ? own.awayGoals : own.homeGoals;
@@ -2459,7 +2455,37 @@ export function playMatchday(state) {
     }, ...m.financeHistory].slice(0, FINANCE_HISTORY_MAX);
     // The academy takes in young players after every matchday.
     academyIntake(state, md + 1);
+}
+
+export function playMatchday(state) {
+  const md = state.matchday;
+  if (md >= state.fixtures.length) return [];
+  const reports = [];
+  state.fixtures[md].forEach((f, i) => {
+    const home = teamFor(state, f.home);
+    const away = teamFor(state, f.away);
+    const report = simulateMatch(home, away, matchSeed(seasonSeed(state), md, i));
+    report.matchday = md + 1;
+    report.fixtureIndex = i;
+    reports.push(report);
+  });
+  for (const report of reports) applyReport(state, report);
+  for (const r of reports) {
+    state.results.push({
+      matchday: r.matchday,
+      home: r.home,
+      away: r.away,
+      homeGoals: r.homeGoals,
+      awayGoals: r.awayGoals,
+    });
   }
+  const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
+  state.lastReport = own;
+  // Only the manager's own fixture earns or pays Club credits, from the
+  // manager's side: the result, the home gate and what the home crowd spends
+  // at the shop, food stand and hotel, less ground upkeep, maintenance, player
+  // wages and staff wages, each paid only as far as the balance reaches.
+  if (own) settleClubMatch(state, own, md);
   state.matchday = md + 1;
   state.finished = state.matchday >= state.fixtures.length;
   return reports;
@@ -3074,4 +3100,349 @@ export function findDemoSeed(max = 400) {
     if (me && me.rank === 3 && me.played === 17) return { seed, points: me.points, table: table.map((r) => [r.rank, r.name, r.points]) };
   }
   return null;
+}
+
+// ── The shared league ────────────────────────────────────────────────────
+// One Coastal League every manager plays in together. The server keeps one
+// row per group and plays every due kick-off for all 17 groups, so two
+// managers in the same group read the same table, fixture list and report.
+export const LEAGUE_SEED = 771201;
+export const LEAGUE_ZONE = 'Europe/London';
+
+// A club nobody has taken over yet: no Club credits, no staff, no prospects,
+// the division's starting fans and a sponsor for the season.
+export function leagueClubEntry(seed, season, tier) {
+  return {
+    credits: 0,
+    fans: FAN_SEED[tier] || FAN_SEED[3],
+    facilities: facilityLevels({}),
+    staff: staffFields({}),
+    youth: [],
+    finance: { season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 },
+    financeHistory: [],
+    sponsor: sponsorFor(seed, season, tier),
+    lastSponsor: null,
+    lastReport: null,
+  };
+}
+
+// One group's row. `carried` is the squads and club entries the previous
+// season leaves for these clubs, keyed by club id.
+export function buildLeagueGroup(seed, season, index, group, carried) {
+  const ids = group.clubIds.slice();
+  const ss = seasonSeed({ seed, season });
+  const squads = {};
+  const clubs = {};
+  for (const id of ids) {
+    const old = carried && carried[id];
+    squads[id] = old && Array.isArray(old.squad)
+      ? old.squad
+      : buildSquad(ss, CLUB_INDEX[id], CLUB_BY_ID[id].rep, group.tier);
+    clubs[id] = old && old.entry ? old.entry : leagueClubEntry(seed, season, group.tier);
+  }
+  return {
+    season,
+    tier: group.tier,
+    group: group.group,
+    clubIds: ids,
+    squads,
+    fixtures: buildFixtures(hash(ss, 'group', index), ids),
+    results: [],
+    matchday: 0,
+    finished: false,
+    clubs,
+  };
+}
+
+// The descriptors for the 17 groups, in GROUPS order.
+export function leagueGroups() {
+  return GROUPS.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds.slice() }));
+}
+
+// Season 1 of the shared league, matchday 0, waiting for the server to stamp
+// its first kick-off.
+export function buildLeague(seed = LEAGUE_SEED) {
+  return {
+    season: 1,
+    seed,
+    groups: leagueGroups(),
+    matchday: 0,
+    phase: 'playing',
+    nextMatchAt: null,
+    plays: [],
+  };
+}
+
+function leagueClubView(group, index, league, clubId, managers) {
+  const entry = group.clubs[clubId] || leagueClubEntry(league.seed, league.season, group.tier);
+  const mgr = managers && managers[clubId];
+  const club = CLUB_BY_ID[clubId];
+  let tactics = { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' };
+  let roles = {};
+  if (mgr && mgr.tactics && FORMATIONS[mgr.tactics.formation]) {
+    tactics = {
+      formation: mgr.tactics.formation,
+      mentality: MENTALITIES[mgr.tactics.mentality] ? mgr.tactics.mentality : 'Balanced',
+      pressing: PRESSING[mgr.tactics.pressing] ? mgr.tactics.pressing : 'Medium',
+    };
+  }
+  if (mgr && mgr.roles && typeof mgr.roles === 'object') roles = mgr.roles;
+  const lineup = mgr && lineupUsable(group.squads[clubId], mgr.lineup)
+    ? mgr.lineup.slice()
+    : autoLineup(group.squads[clubId], tactics.formation, roles);
+  return {
+    version: 3,
+    season: league.season,
+    seed: league.seed,
+    division: group.tier,
+    group: group.group,
+    groups: league.groups,
+    groupIndex: index,
+    clubId,
+    managerName: mgr && typeof mgr.manager_name === 'string' ? mgr.manager_name : '',
+    squads: group.squads,
+    fixtures: group.fixtures,
+    results: group.results,
+    matchday: group.matchday,
+    finished: group.finished,
+    tactics,
+    roles,
+    lineup,
+    plays: league.plays || [],
+    credits: entry.credits,
+    fans: entry.fans,
+    facilities: entry.facilities,
+    staff: entry.staff,
+    youth: entry.youth,
+    finance: entry.finance,
+    financeHistory: entry.financeHistory,
+    sponsor: entry.sponsor,
+    lastSponsor: entry.lastSponsor,
+    lastReport: entry.lastReport,
+  };
+}
+
+// Play one group's next matchday: every fixture, both sides' player effects,
+// and each club's own money, fans, finance history and academy intake. A
+// manager's saved lineup, tactics and roles are used for their club; any
+// other, or an unusable lineup, gets the bot's best eleven. Returns the
+// lineups that had to be rebuilt so the server can store them.
+export function playLeagueMatchday(group, index, league, managers) {
+  const rebuilt = {};
+  if (group.matchday >= group.fixtures.length) return rebuilt;
+  const md = group.matchday;
+  const ss = seasonSeed({ seed: league.seed, season: league.season });
+  const reports = [];
+  group.fixtures[md].forEach((f, i) => {
+    const home = teamFor(group, f.home, managers);
+    const away = teamFor(group, f.away, managers);
+    const report = simulateMatch(home, away, matchSeed(ss, md, i));
+    report.matchday = md + 1;
+    report.fixtureIndex = i;
+    reports.push(report);
+  });
+  const neutral = { squads: group.squads, clubId: null, tactics: { formation: '4-4-2' }, roles: {} };
+  for (const r of reports) applyReport(neutral, r);
+  for (const clubId of group.clubIds) {
+    const mgr = managers && managers[clubId];
+    if (mgr && !lineupUsable(group.squads[clubId], mgr.lineup)) {
+      rebuilt[clubId] = teamFor(group, clubId, managers).lineup;
+    }
+  }
+  for (const id of group.clubIds) {
+    const view = leagueClubView(group, index, league, id, managers);
+    const own = reports.find((r) => r.home.id === id || r.away.id === id) || null;
+    view.lastReport = own;
+    if (own) settleClubMatch(view, own, md);
+    const entry = group.clubs[id];
+    entry.credits = view.credits;
+    entry.fans = view.fans;
+    entry.facilities = view.facilities;
+    entry.staff = view.staff;
+    entry.youth = view.youth;
+    entry.finance = view.finance;
+    entry.financeHistory = view.financeHistory;
+    entry.sponsor = view.sponsor;
+    entry.lastSponsor = view.lastSponsor;
+    entry.lastReport = view.lastReport;
+  }
+  for (const r of reports) {
+    group.results.push({
+      matchday: r.matchday,
+      home: r.home,
+      away: r.away,
+      homeGoals: r.homeGoals,
+      awayGoals: r.awayGoals,
+    });
+  }
+  group.matchday = md + 1;
+  group.finished = group.matchday >= group.fixtures.length;
+  return rebuilt;
+}
+
+// Promotion and relegation, from the 17 final tables, unchanged from the
+// solo rollover. Returns the next season's group descriptors.
+export function movePyramid(groups, tables) {
+  const next = groups.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds.slice() }));
+  const d1 = 0;
+  const d2First = 1;
+  const d2Count = GROUP_COUNTS[2];
+  // Division 1 loses its bottom 8, two into each Division 2 group in order of
+  // finish, and gains the top 2 of each Division 2 group.
+  const relegated = tables[d1].slice(10, 18).map((r) => r.id);
+  next[d1].clubIds = next[d1].clubIds.filter((id) => !relegated.includes(id));
+  relegated.forEach((id, k) => { next[d2First + (k % d2Count)].clubIds.push(id); });
+  for (let gi = d2First; gi < d2First + d2Count; gi++) {
+    const up = tables[gi].slice(0, 2).map((r) => r.id);
+    next[gi].clubIds = next[gi].clubIds.filter((id) => !up.includes(id));
+    next[d1].clubIds.push(...up);
+  }
+  // Each Division 2 group's bottom 6 go down into its three Division 3
+  // groups, two each in finish order, and it takes in the top 2 of each of
+  // them. Nobody leaves Division 3.
+  for (let gi = d2First; gi < d2First + d2Count; gi++) {
+    const feeders = feederIndices(gi);
+    const down = tables[gi].slice(-6).map((r) => r.id);
+    next[gi].clubIds = next[gi].clubIds.filter((id) => !down.includes(id));
+    down.forEach((id, k) => {
+      next[feeders[relegationFeeder(13 + k)]].clubIds.push(id);
+    });
+    for (const f of feeders) {
+      const up = tables[f].slice(0, 2).map((r) => r.id);
+      next[f].clubIds = next[f].clubIds.filter((id) => !up.includes(id));
+      next[gi].clubIds.push(...up);
+    }
+  }
+  return next;
+}
+
+// A club's squad the summer leaves it: a year older, with a graduate in the
+// place of every retiree.
+export function carryClubSquad(state, season, tier) {
+  const aged = ageingFor(state);
+  const leaving = new Set(aged.retiring.map((r) => r.id));
+  const academy = facilityLevels(state).academy;
+  const players = aged.players.filter((p) => !leaving.has(p.id)).map(playerForNewSeason);
+  aged.retiring.forEach((r, i) => {
+    players.push(playerForNewSeason(academyGraduate(state.seed, season, i, r.pos, academy, tier)));
+  });
+  return players;
+}
+
+// The next season: promotion and relegation once, every club's squad aged and
+// carried, its money settled, and its facilities, staff and prospects kept.
+export function nextLeagueSeason(league, groups) {
+  const descriptors = groups.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds.slice() }));
+  const tables = groups.map((g, i) => leagueTable({
+    version: 3,
+    season: league.season,
+    seed: league.seed,
+    division: g.tier,
+    group: g.group,
+    groups: descriptors,
+    groupIndex: i,
+    clubIds: g.clubIds,
+    squads: g.squads,
+    fixtures: g.fixtures,
+    results: g.results,
+    matchday: g.matchday,
+    finished: g.finished,
+    clubId: null,
+  }));
+  const moved = movePyramid(descriptors, tables);
+  const season = league.season + 1;
+  return moved.map((d, i) => {
+    const carried = {};
+    for (const id of d.clubIds) {
+      const oldIndex = groups.findIndex((g) => g.clubIds.includes(id));
+      const old = groups[oldIndex >= 0 ? oldIndex : 0];
+      if (!old || !old.clubIds.includes(id)) continue;
+      const view = leagueClubView(old, oldIndex, league, id, null);
+      const money = seasonEndMoney(view);
+      carried[id] = {
+        squad: carryClubSquad(view, season, d.tier),
+        entry: {
+          credits: money.credits,
+          fans: Math.min(money.fans, FAN_CAP[d.tier] || FAN_CAP[3]),
+          facilities: view.facilities,
+          staff: view.staff,
+          youth: view.youth,
+          finance: money.finance,
+          financeHistory: [],
+          sponsor: money.sponsor,
+          lastSponsor: money.lastSponsor,
+          lastReport: null,
+        },
+      };
+    }
+    return buildLeagueGroup(league.seed, season, i, d, carried);
+  });
+}
+
+// Every kick-off that has passed, for the whole league, in order. The first
+// slot after the last matchday rolls the season over; the first matchday of
+// the new season plays at the slot after that.
+export function playDueLeague(league, groups, managers, now) {
+  const at = now instanceof Date ? now : new Date(now);
+  let played = 0;
+  let rollover = null;
+  const rebuilt = {};
+  while (league.nextMatchAt && Date.parse(league.nextMatchAt) <= at.getTime()) {
+    const slot = new Date(league.nextMatchAt);
+    league.plays = (Array.isArray(league.plays) ? league.plays : []).concat(slot.toISOString()).slice(-MATCHES_PER_DAY);
+    if (league.phase === 'summer') {
+      const rolled = nextLeagueSeason(league, groups);
+      groups.splice(0, groups.length, ...rolled);
+      league.season += 1;
+      league.groups = rolled.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds }));
+      league.matchday = 0;
+      league.phase = 'playing';
+      rollover = { season: league.season };
+      league.nextMatchAt = slotAfter(slot, LEAGUE_ZONE).toISOString();
+      continue;
+    }
+    for (let i = 0; i < groups.length; i++) {
+      Object.assign(rebuilt, playLeagueMatchday(groups[i], i, league, managers));
+    }
+    league.matchday = (league.matchday || 0) + 1;
+    if (league.matchday >= MATCHDAYS) {
+      league.matchday = MATCHDAYS;
+      league.phase = 'summer';
+    }
+    league.nextMatchAt = slotAfter(slot, LEAGUE_ZONE).toISOString();
+    played++;
+  }
+  return { played, rollover, rebuilt };
+}
+
+// What a shared-league manager's page reads: the same career-shaped state the
+// tabs already render, built from the group and the manager's own tactics.
+export function clubView(league, group, index, clubId, manager) {
+  const managers = manager ? { [clubId]: manager } : {};
+  const view = leagueClubView(group, index, league, clubId, managers);
+  view.mode = 'shared';
+  view.timeZone = LEAGUE_ZONE;
+  view.nextMatchAt = league.phase === 'summer' ? null : league.nextMatchAt;
+  view.nextSeasonAt = league.phase === 'summer' ? league.nextMatchAt : null;
+  return view;
+}
+
+// Split a club view back into the club entry and its squad, so the engine's
+// club actions (facilities, staff, academy, sales) work on a shared club.
+export function clubFromView(view) {
+  return {
+    squad: view.squads[view.clubId],
+    entry: {
+      credits: view.credits,
+      fans: view.fans,
+      facilities: view.facilities,
+      staff: view.staff,
+      youth: view.youth,
+      finance: view.finance,
+      financeHistory: view.financeHistory,
+      sponsor: view.sponsor,
+      lastSponsor: view.lastSponsor,
+      lastReport: view.lastReport,
+    },
+  };
 }

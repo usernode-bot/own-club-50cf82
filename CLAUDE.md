@@ -128,6 +128,31 @@ slot instant into `plays` and saving. An unusable lineup is replaced by
 null until Start next season. `public/app.js` shows the countdown and refreshes
 quietly when a kick-off passes.
 
+Everyone plays in one shared Coastal League. `league_seasons` (public) holds the
+season, its 17 group descriptors, `matchday`, `phase` (`playing` or `summer`),
+`nextMatchAt`, `plays` and a version; `league_groups` (public) holds each group's
+clubs, squads, fixtures, results and every club's own money, facilities, staff,
+academy and last report; `league_managers` (staging:private) holds the person,
+name, lineup, tactics and roles for each club a real manager runs. The world seed
+is `LEAGUE_SEED` and the one clock is `LEAGUE_ZONE` (`Europe/London`). Every
+request plays every due kick-off for all 17 groups once, under a row lock on the
+current season, through `playDueLeague`; a manager's club uses their saved lineup
+and tactics, every other club gets `autoLineup`, and `playLeagueMatchday`
+settles result credits, gate, matchday sales, upkeep, wages, fans, finance
+history and academy intake for all 18 clubs. Season 1 matchday 1 is the first
+kick-off after the league starts; the slot after matchday 34 is the summer, when
+`nextLeagueSeason` applies promotion and relegation once and carries every
+club's squad, money, facilities, staff and prospects, and the next matchday plays
+at the kick-off after that. Buying a club joins the shared league with the club
+as it stands (its points, squad and credits stay); selling frees it to a bot and
+leaves its league entry intact. A `careers` row has `mode` (`solo` or `shared`);
+a shared row keeps only the club, name and wallet in `state`, and a solo career
+that joins has its old state moved to `legacy_state`, never read again. The two
+markets are kept apart by `transfer_listings.shared`. Staging starts the league
+six kick-offs in the past, so matchdays 1 to 6 are played, and its two fake
+owners run their clubs in Division 3 Group A. `league-db.js` owns the catch-up and
+the club locks; `server.js` builds the page's career-shaped view with `clubView`.
+
 One manager per club: the public `club_owners` table (`club_id` primary key,
 `user_id`, `manager_name`) records who bought a club and the display name they
 gave. `GET /api/career` sends the taken ids with the shop and an `owners` map
@@ -363,6 +388,12 @@ change follows it, and updates it when a request changes the look on purpose.
   border; the current tab is pitch green, on a raised background in the
   sidebar, never amber. The header with the club, matchday and position sits
   above every tab.
+- **Shared league:** the Buy a club screen keeps its header, club list and amber
+  Buy action, and adds one grey `league-note` line naming the season and matchday
+  the league is on. A solo save's Home gets one Shared league `section-label`,
+  one `list-row` with a small grey line and a plain secondary Join button, and a
+  confirm panel whose primary reads "Join shared league": never amber as a new
+  primary action anywhere else.
 - **Competition:** every league-table row keeps the club's name as its title
   and carries the same small grey line a Squad row has under it: "Manager
   <name>" for a club a person runs (your own row included), "Run by a bot" for

@@ -50,7 +50,7 @@ let screen = 'loading';
 // What the shop says a club costs and how much a new wallet holds. The server
 // sends these with every load; the defaults only stand in until it does.
 let shop = { price: 100, startingBalance: 1000, currency: 'Dummy USDC' };
-const SHOP_GROUPS = GROUPS;
+let SHOP_GROUPS = GROUPS;
 let pickedDivision = TIER_COUNT;
 let pickedGroup = 'A';
 let pickedClub = GROUPS.filter((g) => g.tier === TIER_COUNT)[0].clubIds[0];
@@ -78,6 +78,8 @@ let homeroomWallet = undefined;
 // Which clubs a real person runs, as clubId -> manager name, from the server.
 // Only the name is shown; the page never sees an account id.
 let owners = {};
+// The shared league as it stands: season, matchday, phase and the next kick-off.
+let league = null;
 
 const TABS = ['home', 'squad', 'tactics', 'competition', 'club', 'finance', 'transfers'];
 // On a phone the bar keeps the first four tabs and folds these into More.
@@ -125,6 +127,7 @@ async function refreshShop() {
     if (status === 200 && data && data.shop) {
       shop = data.shop;
       owners = data.owners && typeof data.owners === 'object' ? data.owners : {};
+      league = data.league || league;
       renderNew();
     }
   } catch (_) { /* the error already says the club is taken */ }
@@ -227,6 +230,7 @@ async function load() {
   }
 
   if (answer && answer.data && answer.data.shop) shop = answer.data.shop;
+  if (answer && answer.data) league = answer.data.league || null;
   // The linked Homeroom wallet, sent for a signed-in person and absent for a
   // guest looking at the demo.
   if (answer && answer.data) homeroomWallet = answer.data.homeroomWallet;
@@ -444,6 +448,21 @@ function takenLine(id) {
 
 function renderNew() {
   $('manager-name').value = $('manager-name').value || '';
+  $('new-title').textContent = 'Buy a club';
+  if (league) {
+    const nextMd = Math.min(34, (league.matchday || 0) + 1);
+    $('new-sub').textContent = league.phase === 'summer'
+      ? 'One shared league: season ' + league.season + ' complete'
+      : 'One shared league: season ' + league.season + ', matchday ' + nextMd + ' of 34';
+    const note = $('shared-note');
+    note.hidden = false;
+    note.textContent = league.phase === 'summer'
+      ? 'Every club here plays in one shared league, at the same moment for everyone: 12 am, 6 am, 12 pm and 6 pm London time. The new season starts at the next kick-off, and the points every club has stay.'
+      : 'Every club here plays in one shared league, at the same moment for everyone: 12 am, 6 am, 12 pm and 6 pm London time. You take over at matchday ' + nextMd + ' of 34, and the points your club already has stay.';
+  } else {
+    $('new-sub').textContent = 'Three tiers, 306 clubs, 34 matchdays';
+    $('shared-note').hidden = true;
+  }
   const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
   const prices = shop.prices || { 1: 300, 2: 200, 3: 100 };
   const price = prices[pickedDivision] || shop.price;
@@ -673,6 +692,7 @@ function renderClub() {
   const next = nextFixture(career);
   const pyramid = career.version >= 2;
   const place = placeName(career);
+  const shared = career.mode === 'shared';
 
   if (pyramid) {
     $('club-md').textContent = career.finished
@@ -689,6 +709,8 @@ function renderClub() {
   $('setup-card').hidden = true;
   $('setup-note').hidden = true;
   $('home-actions').hidden = false;
+  $('shared-sec').hidden = shared || DEMO;
+  $('next-season').hidden = shared;
   $('tab-badge').outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
   $('tab-name').textContent = club.name;
   $('tab-code').textContent = club.code;
@@ -706,6 +728,9 @@ function renderClub() {
     $('next-venue').textContent = next.venue;
     $('next-label').textContent = 'Next match';
     $('kickoff-when').textContent = kickoffText(career.nextMatchAt, career.timeZone, nowDate());
+    $('kickoff-note').textContent = shared
+      ? 'Every club in the Coastal League plays at the same moment: 12 am, 6 am, 12 pm and 6 pm London time, with your saved lineup and tactics.'
+      : 'Matches play by themselves at 12 am, 6 am, 12 pm and 6 pm your time, with your saved lineup and tactics.';
   } else {
     $('next-card').hidden = true;
     $('season-card').hidden = false;
@@ -733,6 +758,11 @@ function renderClub() {
         + '. The academy brings in one young player for each.');
     }
     if (outcome.joinsNewLeague) bits.push('Next season the Coastal League becomes three tiers, and your club starts in ' + to + '.');
+    if (shared) {
+      bits.push(career.nextSeasonAt
+        ? 'Season ' + (career.season + 1) + ' starts by itself at ' + fixtureDate(new Date(career.nextSeasonAt), 'Europe/London') + ', with promotion and relegation for every club.'
+        : 'The next season starts by itself at the next kick-off, with promotion and relegation for every club.');
+    }
     $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + place;
     $('season-text').textContent = bits.join(' ');
   }
@@ -888,6 +918,10 @@ function renderClub() {
   if (DEMO) {
     $('confirm-text').textContent = 'Sell ' + club.name
       + '? This is the staging demo season, so no wallet is credited.';
+  } else if (career.mode === 'shared') {
+    $('confirm-text').textContent = 'Sell ' + club.name + forPrice
+      + '? The ' + usdc(price) + ' goes into your wallet. ' + club.name
+      + ' stays in the shared league with its squad, results, Club credits and facilities, and a bot runs it from the next kick-off.';
   } else {
     $('confirm-text').textContent = 'Sell ' + club.name + forPrice
       + '? This career and its results end, and the ' + usdc(price)
@@ -1322,6 +1356,51 @@ async function nextSeason() {
   }
 }
 $('next-season').addEventListener('click', nextSeason);
+
+// Joining the shared league with a solo save: the save is kept, and the club
+// is taken over as it stands in the shared league.
+let joinBusy = false;
+function openJoin() {
+  if (!career) return;
+  const club = CLUB_BY_ID[career.clubId];
+  $('join-confirm-text').textContent = 'Join the shared league with ' + club.name + '? You take over ' + club.name
+    + ' as it stands there: ' + placeName(career) + ', matchday ' + ((league && league.matchday) || 0) + ' of 34, with that squad, those results and its Club credits. This save stops playing and is kept, not deleted. Your Dummy USDC does not change.';
+  $('join-confirm').hidden = false;
+  $('join-error').hidden = true;
+}
+$('join-shared').addEventListener('click', openJoin);
+$('join-no').addEventListener('click', () => { $('join-confirm').hidden = true; });
+$('join-yes').addEventListener('click', async () => {
+  if (!career || joinBusy) return;
+  joinBusy = true;
+  const btn = $('join-yes');
+  btn.disabled = true;
+  try {
+    const { status, data } = await api('POST', {}, '/api/career/join');
+    if (status === 200 && data && data.career) {
+      career = data.career;
+      version = data.version;
+      league = data.league || league;
+      $('join-confirm').hidden = true;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+    const clubName = CLUB_BY_ID[career.clubId] ? CLUB_BY_ID[career.clubId].name : 'Your club';
+    const text = status === 409 && data && data.error === 'owned'
+      ? 'Another manager runs ' + clubName + ' in the shared league. Sell this club to buy another.'
+      : clubName + ' could not join the shared league. Your save is unchanged.';
+    $('join-error-text').textContent = text;
+    $('join-error').hidden = false;
+    if (status === 409 && data && data.error === 'owned') $('join-confirm').hidden = true;
+  } catch (err) {
+    $('join-error-text').textContent = 'Your club could not join the shared league. Your save is unchanged.';
+    $('join-error').hidden = false;
+  } finally {
+    joinBusy = false;
+    btn.disabled = false;
+  }
+});
 
 // ── The pitch, drawn on a canvas ─────────────────────────────────────────
 const canvas = $('pitch-canvas');
@@ -2630,8 +2709,16 @@ document.addEventListener('visibilitychange', () => {
 });
 setInterval(() => {
   if (screen !== 'club' || !career) return;
+  const shared = career.mode === 'shared';
+  if (career.nextSeasonAt && nowDate().getTime() >= Date.parse(career.nextSeasonAt)) {
+    refresh();
+    return;
+  }
   if (tab === 'home' && career.nextMatchAt) {
     $('kickoff-when').textContent = kickoffText(career.nextMatchAt, career.timeZone, nowDate());
+    $('kickoff-note').textContent = shared
+      ? 'Every club in the Coastal League plays at the same moment: 12 am, 6 am, 12 pm and 6 pm London time, with your saved lineup and tactics.'
+      : 'Matches play by themselves at 12 am, 6 am, 12 pm and 6 pm your time, with your saved lineup and tactics.';
     if (nowDate().getTime() >= Date.parse(career.nextMatchAt)) refresh();
   }
 }, 30000);
