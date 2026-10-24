@@ -8,7 +8,18 @@
   "governance": {
     "preset": "you_or_the_group"
   },
+  "bootParams": ["match"],
   "tests": [
+    {
+      "name": "Demo match view opens from a shared link",
+      "path": "/?demo=1&match=2",
+      "expectText": "Normal",
+      "expectSelector": "#match-canvas",
+      "visual": true,
+      "impact": [
+        "public/**"
+      ]
+    },
     {
       "name": "New career screen",
       "path": "/",

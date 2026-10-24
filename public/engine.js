@@ -1090,6 +1090,12 @@ export function matchSeed(careerSeed, matchday, index) {
   return hash(careerSeed, 'match', matchday, index);
 }
 
+// The seed a match view's ball choreography draws from: a stream of its own,
+// so it never shares draws with the simulation's matchSeed.
+export function watchSeed(careerSeed, matchday, index) {
+  return hash(careerSeed, 'watch', matchday, index);
+}
+
 function poisson(rng, lambda) {
   const l = Math.exp(-lambda);
   let k = 0;
@@ -1537,6 +1543,31 @@ function teamFor(state, clubId) {
   const roles = isUser ? state.roles || {} : {};
   const lineup = isUser ? state.lineup : autoLineup(squad, tactics.formation, roles);
   return { club, squad, lineup, tactics, roles };
+}
+
+// The two sides of one played fixture, read-only, for the match view. The
+// same teams teamFor builds for the simulation, with each lineup guaranteed
+// usable (11 unique ids in the squad) so a saved one that has drifted can
+// never crash the view. Returns null when the matchday is out of range or
+// the club has no fixture in it.
+export function matchSides(state, md) {
+  if (!Number.isInteger(md) || md < 0 || md >= state.fixtures.length) return null;
+  const fixtures = state.fixtures[md];
+  const index = fixtures.findIndex((f) => f.home === state.clubId || f.away === state.clubId);
+  if (index < 0) return null;
+  const f = fixtures[index];
+  const usable = (team) => {
+    const ids = new Set(team.squad.map((p) => p.id));
+    const ok = Array.isArray(team.lineup) && team.lineup.length === 11
+      && new Set(team.lineup).size === 11
+      && team.lineup.every((id) => ids.has(id));
+    return ok ? team : { ...team, lineup: autoLineup(team.squad, team.tactics.formation, team.roles) };
+  };
+  return {
+    index,
+    home: usable(teamFor(state, f.home)),
+    away: usable(teamFor(state, f.away)),
+  };
 }
 
 function sidePower(team) {
