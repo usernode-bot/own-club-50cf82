@@ -114,6 +114,18 @@
       "expectSelector": "[data-formation]"
     },
     {
+      "name": "Demo tactics previews the next opponent",
+      "path": "/?demo=1#tactics",
+      "expectText": "Next opponent",
+      "expectSelector": "#opponent-list .list-row"
+    },
+    {
+      "name": "Demo tactics offers Auto pick",
+      "path": "/?demo=1#tactics",
+      "expectText": "Auto pick",
+      "expectSelector": "#auto-pick"
+    },
+    {
       "name": "Demo competition tab",
       "path": "/?demo=1#competition",
       "expectSelector": "#table-list .list-row"

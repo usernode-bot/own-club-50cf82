@@ -967,6 +967,8 @@ export function removePlayer(state, id) {
   const kept = squad.filter((p) => p.id !== id).map((p) => ({ ...p }));
   const roles = { ...(state.roles || {}) };
   delete roles[id];
+  const duties = { ...(state.duties || {}) };
+  delete duties[id];
   if (leaving && leaving.captain) {
     const mids = kept.filter((p) => POS_GROUP[p.pos] === 'MF');
     if (mids.length) {
@@ -978,6 +980,7 @@ export function removePlayer(state, id) {
     ...state,
     squads: { ...state.squads, [state.clubId]: kept },
     roles,
+    duties,
     lineup: (state.lineup || []).filter((x) => x !== id),
   };
   if (next.lineup.length < SQUAD_MIN) {
@@ -1199,6 +1202,72 @@ export function defaultRole(pos) {
   if (g === 'DF') return pos === 'RB' || pos === 'LB' ? 'Full-back' : 'Centre-back';
   if (g === 'MF') return pos === 'DM' ? 'Ball-winner' : 'Playmaker';
   return pos === 'ST' ? 'Poacher' : 'Inside forward';
+}
+
+// A shirt's duty: how far forward the role is asked to play. It is saved with
+// the team sheet and shown beside the role, but the simulation does not read
+// it yet.
+export const DUTIES = ['Defend', 'Support', 'Attack'];
+
+const DEFAULT_DUTY = {
+  Goalkeeper: 'Defend',
+  'Centre-back': 'Defend',
+  'Ball-winner': 'Defend',
+  'Sweeper keeper': 'Support',
+  'Full-back': 'Support',
+  Playmaker: 'Support',
+  'Box-to-box': 'Support',
+  'Target forward': 'Support',
+  'Wing-back': 'Attack',
+  Poacher: 'Attack',
+  'Inside forward': 'Attack',
+};
+
+export function defaultDuty(role) {
+  return DEFAULT_DUTY[role] || 'Support';
+}
+
+// The central midfield places are one place for this purpose: a central
+// midfielder moved between holding, central and attacking midfield is not out
+// of position.
+const CENTRAL_MF = ['DM', 'CM', 'AM'];
+
+export function outOfPosition(pos, slotPos) {
+  if (pos === slotPos) return false;
+  if (CENTRAL_MF.includes(pos) && CENTRAL_MF.includes(slotPos)) return false;
+  return true;
+}
+
+// Every player of the manager's squad with the duty he is set to, defaulting
+// from his role. Entries for players no longer in the squad are dropped.
+export function dutyFields(state) {
+  const squad = state && state.squads && Array.isArray(state.squads[state.clubId])
+    ? state.squads[state.clubId] : [];
+  const given = state && state.duties && typeof state.duties === 'object' && !Array.isArray(state.duties)
+    ? state.duties : {};
+  const roles = state && state.roles && typeof state.roles === 'object' ? state.roles : {};
+  const out = {};
+  for (const p of squad) {
+    if (!p || !p.id) continue;
+    const stored = given[p.id];
+    out[p.id] = DUTIES.includes(stored)
+      ? stored
+      : defaultDuty(roles[p.id] || defaultRole(p.pos));
+  }
+  return out;
+}
+
+// One player's duty, defaulting from his role for a squad saved before duties
+// existed or a player who has only just arrived.
+export function dutyOf(state, id) {
+  const squad = state && state.squads && Array.isArray(state.squads[state.clubId])
+    ? state.squads[state.clubId] : [];
+  const p = squad.find((q) => q && q.id === id);
+  if (!p) return 'Support';
+  const stored = state.duties && state.duties[id];
+  if (DUTIES.includes(stored)) return stored;
+  const roles = state.roles || {};
+  return defaultDuty(roles[id] || defaultRole(p.pos));
 }
 
 export function overallOf(attrs, pos) {
@@ -1805,6 +1874,7 @@ export function repairCareer(state) {
     ...state,
     tactics,
     roles,
+    duties: dutyFields({ ...state, roles }),
     lineup,
     matchday,
     // Today's match times, kept by the server. A career saved before this
@@ -1953,6 +2023,31 @@ export function formOf(state, clubId, count = 5) {
     else if (r.away.id === clubId) played.push(r.awayGoals > r.homeGoals ? 'W' : r.awayGoals < r.homeGoals ? 'L' : 'D');
   }
   return played.slice(-count);
+}
+
+// The next opponent, as the Tactics tab previews it: who it is, where it sits
+// in the group, its last five results and the formation it plays. Null once
+// the season is over.
+export function opponentPreview(state) {
+  const next = nextFixture(state);
+  if (!next) return null;
+  const club = CLUB_BY_ID[next.opponentId];
+  if (!club) return null;
+  const table = leagueTable(state);
+  const row = table.find((r) => r.id === next.opponentId);
+  return {
+    clubId: club.id,
+    name: club.name,
+    short: club.short,
+    kit: club.kit,
+    venue: next.venue,
+    matchday: next.matchday,
+    rank: row ? row.rank : table.length,
+    size: table.length,
+    form: formOf(state, club.id),
+    formation: club.formation,
+    played: row ? row.played : 0,
+  };
 }
 
 export function nextFixture(state) {
@@ -2955,6 +3050,7 @@ export function buildInitialState(clubId, managerName, seed) {
     staff: staffFields({}),
     youth: [],
   };
+  state.duties = dutyFields(state);
   state.lineup = autoLineup(squads[clubId], state.tactics.formation, state.roles);
   return state;
 }
@@ -3212,10 +3308,13 @@ export function startNextSeason(state) {
     staff: staffFields(state),
     youth: youthFields(state),
   };
-  // The manager's players keep the roles they were given.
+  // The manager's players keep the roles and duties they were given.
+  next.duties = {};
   for (const p of next.squads[next.clubId]) {
     if (state.roles && state.roles[p.id]) next.roles[p.id] = state.roles[p.id];
+    if (state.duties && DUTIES.includes(state.duties[p.id])) next.duties[p.id] = state.duties[p.id];
   }
+  next.duties = dutyFields(next);
   next.lineup = autoLineup(next.squads[next.clubId], next.tactics.formation, next.roles);
   // The wallet, the purchase, the day's matches and the manager's clock
   // belong to the career, not the season.

@@ -186,6 +186,37 @@ button.chip[aria-expanded="true"] {
 .row-btn { cursor: pointer; }
 .club-row .badge { flex: none; }
 .club-row.me { background: rgb(var(--raised)); }
+/* The shop's club code sits in the small grey line with the squad size, so
+   the name column gets the room the chip used to take. */
+.club-row .nm small .code-pill { display: inline-flex; vertical-align: -4px; }
+
+/* On a phone the name and its grey line take the row's remaining width: the
+   name shares the first line with the price and tick, and the details run
+   the full width underneath on one line. */
+@media (max-width: 479px) {
+  .club-row,
+  .club-row.taken-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    column-gap: 8px;
+    align-items: center;
+  }
+  .club-row { grid-template-areas: "badge title price tick" "badge det det det"; }
+  .club-row.taken-row { grid-template-areas: "badge title taken tick" "badge det det det"; }
+  .club-row .badge { grid-area: badge; }
+  .club-row .nm { display: contents; }
+  .club-row .nm .row-title { grid-area: title; min-width: 0; }
+  .club-row .nm small {
+    grid-area: det;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .club-row .price { grid-area: price; }
+  .club-row .taken { grid-area: taken; }
+  .club-row .tick { grid-area: tick; }
+}
 
 /* ── The Competition tab's matchday history ─────────────────────────────── */
 
@@ -408,6 +439,15 @@ button.chip[aria-expanded="true"] {
 .vital-track i, .attr-track i { display: block; height: 100%; background: rgb(var(--pitch-ink)); }
 .sheet-field { display: flex; flex-direction: column; gap: 4px; }
 .sheet-field .section-label { margin: 0; }
+.sheet-pair { display: flex; gap: 8px; }
+.sheet-pair .sheet-field { flex: 1; min-width: 0; }
+/* An injured bench player: greyed, with the injury cross in front of his
+   name, and his Bring on left switched off. */
+.row-out .pos, .row-out .nm { color: rgb(var(--muted)); opacity: .7; }
+.row-out .ico { display: inline-flex; vertical-align: -4px; margin-right: 4px; color: rgb(var(--card-r)); }
+.row-out .ico svg { display: block; }
+/* The next opponent's form chips stay on one line at the end of the row. */
+#opponent-list .form { flex: none; }
 .sheet-body .list-row { padding: 8px 12px; }
 .sheet-body .btn-secondary.small { min-height: 44px; padding: 0 12px; font-size: 14px; }
 
