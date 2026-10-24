@@ -471,11 +471,21 @@
       </div>
 
       <div class="sec">
-        <div class="section-label"><span>Key moments</span></div>
+        <div class="section-label"><span>Match</span><span id="report-match-teams"></span></div>
+        <div class="feed-controls" id="feed-controls">
+          <button class="btn-secondary" type="button" id="feed-play">Play</button>
+          <button class="btn-secondary" type="button" id="feed-skip">Skip to full time</button>
+        </div>
+        <p class="sr-only" id="report-live" aria-live="polite"></p>
         <ul class="list" id="report-moments"></ul>
       </div>
 
-      <div class="sec">
+      <div class="sec" id="report-ft-sec" hidden>
+        <div class="section-label"><span>Full time</span></div>
+        <ul class="list" id="report-ft"></ul>
+      </div>
+
+      <div class="sec" id="report-stats-sec" hidden>
         <div class="section-label"><span id="report-stats-home"></span><span id="report-stats-away"></span></div>
         <ul class="list" id="report-stats"></ul>
       </div>
@@ -485,7 +495,7 @@
         <ul class="list" id="report-finance"></ul>
       </div>
 
-      <div class="sec">
+      <div class="sec" id="report-ratings-sec" hidden>
         <div class="section-label"><span>Player ratings</span><span id="report-ratings-team"></span></div>
         <ul class="list" id="report-ratings"></ul>
       </div>
