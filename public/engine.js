@@ -1320,22 +1320,281 @@ export function fixLineup(state) {
   return state.lineup;
 }
 
+// ── Group setup: check and repair ────────────────────────────────────────
+// A career's league group must hold its 18 clubs and a full 34-matchday
+// fixture list. A saved career that lost part of it (a short club list, a
+// truncated fixture list) is rebuilt here, keeping every result already
+// played. A whole setup is never touched: a healthy career comes back from
+// these functions exactly as it went in.
+
+// The stored group in slot `index` has the shape today's club screen reads:
+// its tier and letter match the pyramid's slot, and it holds DIVISION_SIZE
+// unique, known club ids. Which clubs they are is the group's own business —
+// promotions move clubs between slots at a rollover.
+function groupShapeOk(g, index) {
+  const want = GROUPS[index];
+  if (!want || !g || typeof g !== 'object' || Array.isArray(g)) return false;
+  if (g.tier !== want.tier || g.group !== want.group) return false;
+  if (!Array.isArray(g.clubIds) || g.clubIds.length !== DIVISION_SIZE) return false;
+  const seen = new Set();
+  for (const id of g.clubIds) {
+    if (!CLUB_BY_ID[id] || seen.has(id)) return false;
+    seen.add(id);
+  }
+  return true;
+}
+
+// A saved squad the match engine can play with.
+function squadUsable(squad) {
+  return Array.isArray(squad) && squad.length >= SQUAD_MIN && squad.length <= 60
+    && squad.every((p) => p && typeof p === 'object'
+      && typeof p.id === 'string' && typeof p.name === 'string'
+      && POS_GROUP[p.pos] && Number.isInteger(p.overall));
+}
+
+// A saved result the league table can count.
+function resultUsable(r) {
+  return !!r && typeof r === 'object' && !Array.isArray(r)
+    && Number.isInteger(r.matchday) && r.matchday >= 1 && r.matchday <= MATCHDAYS
+    && !!CLUB_BY_ID[r.home && r.home.id] && !!CLUB_BY_ID[r.away && r.away.id]
+    && Number.isInteger(r.homeGoals) && r.homeGoals >= 0
+    && Number.isInteger(r.awayGoals) && r.awayGoals >= 0;
+}
+
+// Why a career's league setup is not whole, or null when it is. Only a
+// three-tier career is checked; careers from before it keep their own
+// behaviour. The first failure wins.
+export function groupSetupError(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return 'state';
+  if (!(state.version >= 3)) return null;
+  if (!CLUB_BY_ID[state.clubId]) return 'club';
+  if (!Array.isArray(state.groups) || state.groups.length !== GROUPS.length
+    || !state.groups.every((g, i) => groupShapeOk(g, i))) return 'groups';
+  const at = state.groupIndex;
+  if (!Number.isInteger(at) || at < 0 || at >= state.groups.length) return 'groupIndex';
+  const own = state.groups[at];
+  if (own.tier !== state.division || own.group !== state.group
+    || !own.clubIds.includes(state.clubId)) return 'groupIndex';
+  if (!Number.isInteger(state.matchday) || state.matchday < 0
+    || state.matchday > MATCHDAYS) return 'matchday';
+  const inGroup = new Set(own.clubIds);
+  const half = DIVISION_SIZE / 2;
+  if (!Array.isArray(state.fixtures) || state.fixtures.length !== MATCHDAYS) return 'fixtures';
+  for (const day of state.fixtures) {
+    if (!Array.isArray(day) || day.length !== half) return 'fixtures';
+    const seen = new Set();
+    for (const pair of day) {
+      if (!pair || typeof pair !== 'object' || Array.isArray(pair)) return 'fixtures';
+      if (!inGroup.has(pair.home) || !inGroup.has(pair.away) || pair.home === pair.away) return 'fixtures';
+      if (seen.has(pair.home) || seen.has(pair.away)) return 'fixtures';
+      seen.add(pair.home);
+      seen.add(pair.away);
+    }
+    if (seen.size !== DIVISION_SIZE) return 'fixtures';
+  }
+  if (!Array.isArray(state.results)) return 'results';
+  const perDay = new Map();
+  for (const r of state.results) {
+    if (!resultUsable(r)) return 'results';
+    if (!inGroup.has(r.home.id) || !inGroup.has(r.away.id)) return 'membership';
+    perDay.set(r.matchday, (perDay.get(r.matchday) || 0) + 1);
+  }
+  // The played matchdays and the results must agree: a career partway through
+  // a season carries a full day's results for every matchday it played, and
+  // none beyond it. A matchday claimed with no results behind it is damage
+  // the repair replays, not a day the table can show.
+  for (let d = 1; d <= MATCHDAYS; d++) {
+    const n = perDay.get(d) || 0;
+    if (d <= state.matchday ? n !== half : n !== 0) return 'results';
+  }
+  return null;
+}
+
+// Rebuild a broken group setup, keeping every result already played. A state
+// that passes groupSetupError comes back as the same object, untouched;
+// null means the damage is beyond repair. Everything is deterministic from
+// the career's own season seed, so the same saved state always rebuilds the
+// same fixtures.
+export function repairGroupSetup(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
+  if (!groupSetupError(state)) return state;
+  const seed = seasonSeed(state);
+
+  // Each matchday's pairings, read back from its own results in stored order.
+  // A day takes its first half results that do not double-book a club, so a
+  // damaged record beyond a full day's worth is simply not chosen.
+  const byDay = new Map();
+  const chosen = new Set();
+  const half = DIVISION_SIZE / 2;
+  if (Array.isArray(state.results)) {
+    for (const r of state.results) {
+      if (!resultUsable(r)) continue;
+      if (!byDay.has(r.matchday)) byDay.set(r.matchday, []);
+      const day = byDay.get(r.matchday);
+      if (day.length < half && !day.some((p) => p.home === r.home.id || p.home === r.away.id
+        || p.away === r.home.id || p.away === r.away.id)) {
+        day.push({ home: r.home.id, away: r.away.id });
+        chosen.add(r);
+      }
+    }
+  }
+  // How far the season really went: the last matchday whose results are all
+  // there. A day with a record missing replays rather than showing a played
+  // matchday with an empty half.
+  let played = 0;
+  while (played < MATCHDAYS && (byDay.get(played + 1) || []).length === half) played++;
+  // The results the rebuilt career keeps, in the order they were saved: the
+  // pairings the played days chose, and nothing from a day beyond them. What
+  // a damaged day dropped does not come back.
+  const results = Array.isArray(state.results)
+    ? state.results.filter((r) => chosen.has(r) && r.matchday <= played) : [];
+
+  // Every club the kept history names, the manager's own first: the
+  // membership the rebuilt group must hold. More than DIVISION_SIZE of them
+  // is damage nothing can absorb.
+  const kept = [state.clubId];
+  const seen = new Set([state.clubId]);
+  for (const r of results) {
+    for (const side of [r.home, r.away]) {
+      if (!seen.has(side.id)) { seen.add(side.id); kept.push(side.id); }
+    }
+  }
+  if (kept.length > DIVISION_SIZE) return null;
+
+  // Where the club plays: the stored group it sits in when that group is
+  // whole and the kept results agree with it; else any whole stored group of
+  // its division holding it; else the canonical pyramid slot, which also
+  // corrects a division or letter saved wrong.
+  const stored = Array.isArray(state.groups) ? state.groups : [];
+  const covers = (ids) => kept.every((id) => ids.includes(id));
+  const at = Number.isInteger(state.groupIndex) ? state.groupIndex : -1;
+  let gi = at >= 0 && at < GROUPS.length && groupShapeOk(stored[at], at)
+    && stored[at].clubIds.includes(state.clubId) && covers(stored[at].clubIds) ? at : -1;
+  if (gi < 0) {
+    gi = stored.findIndex((g, i) => groupShapeOk(g, i) && g.tier === state.division
+      && g.clubIds.includes(state.clubId) && covers(g.clubIds));
+  }
+  let ids;
+  if (gi >= 0) {
+    ids = stored[gi].clubIds.slice();
+  } else {
+    gi = clubToGroup[state.clubId] || 0;
+    const canonical = GROUPS[gi].clubIds;
+    if (covers(canonical)) {
+      ids = canonical.slice();
+    } else {
+      // History first, then the canonical group, then the same tier's other
+      // canonical groups, then any known club — never past 18.
+      ids = kept.slice();
+      for (const id of canonical) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (!ids.includes(id)) ids.push(id);
+      }
+      for (const g of GROUPS) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (g.tier !== GROUPS[gi].tier) continue;
+        for (const id of g.clubIds) {
+          if (ids.length >= DIVISION_SIZE) break;
+          if (!ids.includes(id)) ids.push(id);
+        }
+      }
+      for (const id of COASTAL_IDS) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (!ids.includes(id)) ids.push(id);
+      }
+    }
+  }
+
+  // The pyramid as it will be saved: this group rebuilt, every other group
+  // kept when it is whole, refilled from its canonical slot when it is not.
+  const groups = GROUPS.map((g, i) => {
+    if (i === gi) return { tier: g.tier, group: g.group, clubIds: ids };
+    if (groupShapeOk(stored[i], i)) {
+      return { tier: stored[i].tier, group: stored[i].group, clubIds: stored[i].clubIds.slice() };
+    }
+    return { tier: g.tier, group: g.group, clubIds: g.clubIds.slice() };
+  });
+
+  // Every club of the group needs a squad the engine can play with; one
+  // missing or malformed is built fresh from the season seed, exactly the
+  // squad it was always going to have. Existing squads are untouched.
+  const squadsIn = state.squads && typeof state.squads === 'object' && !Array.isArray(state.squads)
+    ? state.squads : {};
+  const squads = { ...squadsIn };
+  const tier = groups[gi].tier;
+  for (const id of ids) {
+    if (!squadUsable(squads[id])) {
+      squads[id] = buildSquad(seed, CLUB_INDEX[id], CLUB_BY_ID[id].rep, tier);
+    }
+  }
+  const rolesIn = state.roles && typeof state.roles === 'object' && !Array.isArray(state.roles)
+    ? state.roles : {};
+  const roles = { ...rolesIn };
+  for (const id of ids) {
+    for (const p of squads[id]) {
+      if (!roles[p.id]) roles[p.id] = defaultRole(p.pos);
+    }
+  }
+
+  // The season continues from a fresh schedule that skips the pairings
+  // already played.
+  let fixtures;
+  if (played === 0) {
+    fixtures = buildFixtures(seed, ids);
+  } else {
+    // Only the pairing as it was played is skipped: the reverse leg is the
+    // return fixture, still to be played.
+    const playedPairs = new Set(results.map((r) => r.home.id + '|' + r.away.id));
+    fixtures = [];
+    for (let d = 1; d <= played; d++) fixtures.push(byDay.get(d));
+    let remaining = buildFixtures(seed, ids).flat()
+      .filter((f) => !playedPairs.has(f.home + '|' + f.away));
+    while (fixtures.length < MATCHDAYS && remaining.length) {
+      const day = []; const left = [];
+      for (const f of remaining) {
+        const clash = day.some((p) => p.home === f.home || p.home === f.away
+          || p.away === f.home || p.away === f.away);
+        if (day.length < half && !clash) day.push(f);
+        else left.push(f);
+      }
+      if (!day.length) break;
+      fixtures.push(day);
+      remaining = left;
+    }
+    // A tail the pool cannot fill stands empty: it plays no matches and the
+    // season still finishes.
+    while (fixtures.length < MATCHDAYS) fixtures.push([]);
+  }
+  // A report of a day the repair dropped describes a match this career no
+  // longer counts as played, so it goes with the results it came from.
+  const report = state.lastReport;
+  const reportKept = !!report && played === state.matchday
+    && results.some((r) => r.matchday === report.matchday);
+  return { ...state, matchday: played, division: groups[gi].tier, group: groups[gi].group,
+    groups, groupIndex: gi, squads, roles, fixtures, results,
+    lastReport: reportKept ? report : null };
+}
+
 // A career saved by an earlier version of the app, made ready for today's club
 // screen: only what is missing or unusable is filled in, from the career's own
 // squad. A valid career comes back equal; null means it cannot be shown. It
 // never touches the version, the divisions, the season, the seed, the results
-// or the squads.
+// or the squads — except that a broken group setup is rebuilt first, which may
+// rewrite the groups and the unplayed fixtures (see repairGroupSetup).
 export function repairCareer(state) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
   const club = CLUB_BY_ID[state.clubId];
   if (!club) return null;
-  if (!state.squads || !Array.isArray(state.squads[state.clubId])) return null;
-  if (!Array.isArray(state.fixtures) || !Array.isArray(state.results)) return null;
-  // A three-tier career must know its group, and be in it.
+  if (!Array.isArray(state.results)) return null;
+  if (state.version < 3 && !Array.isArray(state.fixtures)) return null;
+  // A three-tier career whose group setup is broken is rebuilt here; only
+  // damage beyond repair still fails. A whole setup passes through untouched.
   if (state.version >= 3) {
-    const group = Array.isArray(state.groups) ? state.groups[state.groupIndex] : null;
-    if (!group || !Array.isArray(group.clubIds) || !group.clubIds.includes(state.clubId)) return null;
+    const settled = repairGroupSetup(state);
+    if (!settled) return null;
+    state = settled;
   }
+  if (!state.squads || !Array.isArray(state.squads[state.clubId])) return null;
 
   const squad = state.squads[state.clubId];
   const roles = state.roles && typeof state.roles === 'object' && !Array.isArray(state.roles)

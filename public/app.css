@@ -78,6 +78,33 @@ button.chip[aria-expanded="true"] {
 }
 .league-note[hidden] { display: none; }
 
+/* The group letter beside the club's name, in the header above every tab. */
+.group-tag {
+  display: inline-block;
+  vertical-align: 6px;
+  margin-left: 8px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: rgb(var(--surface));
+  color: rgb(var(--pitch-ink));
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.group-tag[hidden] { display: none; }
+
+/* The setting-up note, under the table while the group is rebuilt. Its bold
+   lead sits on its own line, like the section labels. */
+.setup-note b {
+  display: block;
+  color: rgb(var(--fg));
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+.setup-note[hidden] { display: none; }
+
 /* Start a new career is the plain button under Start next season. */
 .next .btn-secondary { width: 100%; margin-top: 10px; }
 
@@ -190,6 +217,7 @@ button.chip[aria-expanded="true"] {
 .sk-btn { width: 100%; height: 48px; display: block; margin-top: 14px; border-radius: 8px; }
 .sk-line { width: 100px; height: 12px; }
 .sk-pos { width: 28px; height: 14px; }
+.sk-cell { width: 24px; height: 14px; }
 .sk-fit { width: 44px; height: 6px; }
 .sk-ovr { width: 22px; height: 14px; }
 #loading-squad .nm { display: flex; flex-direction: column; gap: 6px; }
