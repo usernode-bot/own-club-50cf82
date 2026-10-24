@@ -2754,7 +2754,7 @@ export function tableZone(state, rank) {
   if (tier === 2) {
     const size = divisionClubIds(state).length;
     if (rank <= 2) return 'promotion';
-    if (rank >= size - 1) return 'relegation';
+    if (rank > size - 6) return 'relegation';
     return null;
   }
   return rank <= 2 ? 'promotion' : null;

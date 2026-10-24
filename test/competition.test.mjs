@@ -60,7 +60,7 @@ function v1State(seed) {
 test('table zones follow each tier\'s rules', () => {
   const cases = {
     1: (rank) => (rank >= 11 ? 'relegation' : null),
-    2: (rank) => (rank <= 2 ? 'promotion' : rank >= 17 ? 'relegation' : null),
+    2: (rank) => (rank <= 2 ? 'promotion' : rank >= 13 ? 'relegation' : null),
     3: (rank) => (rank <= 2 ? 'promotion' : null),
   };
   for (const tier of [1, 2, 3]) {
