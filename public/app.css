@@ -40,6 +40,10 @@ button.chip[aria-expanded="true"] {
 /* The division and group chips on New career, as equal buttons. */
 .divrow { display: flex; gap: 6px; }
 #group-section { margin-top: 12px; }
+/* Division 2's four groups in one row, Division 3's twelve in two rows of
+   six, so each chip stays at least 44 px wide on a 360 px phone. */
+#group-row { display: grid; grid-template-columns: repeat(4, 1fr); }
+#group-row[data-cols="6"] { grid-template-columns: repeat(6, 1fr); }
 .divrow .chip {
   flex: 1;
   min-width: 0;

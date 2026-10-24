@@ -443,10 +443,25 @@ function renderNew() {
   const prices = shop.prices || { 1: 300, 2: 200, 3: 100 };
   const price = prices[pickedDivision] || shop.price;
   const inDivision = SHOP_GROUPS.filter((g) => g.tier === pickedDivision);
-  // Division 1 is one group of 18; Divisions 2 and 3 have four groups.
+  // Division 1 is one group of 18; Division 2 has four groups and Division 3
+  // twelve, as the pyramid says.
   const groups = inDivision.map((g) => ({ group: g.group, clubIds: g.clubIds, free: g.clubIds.filter((id) => !taken.has(id)) }));
   const freeTotal = groups.reduce((n, g) => n + g.free.length, 0);
   const freeAll = SHOP_GROUPS.reduce((n, g) => n + g.clubIds.filter((id) => !taken.has(id)).length, 0);
+
+  // A group picked in another division is not in this one: start at its first.
+  if (pickedDivision !== 1 && !groups.some((g) => g.group === pickedGroup)) {
+    pickedGroup = groups[0] ? groups[0].group : 'A';
+  }
+  // The Group buttons come from the pyramid: four in Division 2, twelve in
+  // Division 3, in rows of four and six.
+  const groupRow = $('group-row');
+  groupRow.dataset.cols = pickedDivision === 3 ? '6' : '4';
+  groupRow.innerHTML = pickedDivision === 1 ? '' : groups.map((g) => (
+    '<button class="chip" type="button" data-group="' + esc(g.group) + '" aria-pressed="'
+      + String(g.group === pickedGroup) + '" aria-label="Division ' + pickedDivision
+      + ' Group ' + esc(g.group) + '">' + esc(g.group) + '</button>'
+  )).join('');
 
   for (const btn of $('division-row').querySelectorAll('[data-division]')) {
     btn.setAttribute('aria-pressed', String(Number(btn.dataset.division) === pickedDivision));
@@ -458,9 +473,6 @@ function renderNew() {
   $('group-section').hidden = pickedDivision === 1;
   $('group-explain').textContent = groupsNote(pickedDivision);
   $('group-note').textContent = freeTotal === 0 ? '' : (group ? group.free.length : 0) + ' of 18 free in Group ' + pickedGroup;
-  for (const btn of $('group-row').querySelectorAll('[data-group]')) {
-    btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
-  }
 
   $('wallet-balance').textContent = usdc(shop.balance == null ? shop.startingBalance : shop.balance);
   const sold = lastSale ? CLUB_BY_ID[lastSale.clubId] : null;
