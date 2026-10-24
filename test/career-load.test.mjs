@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   CLUBS, CLUB_BY_ID, COASTAL_IDS, GROUPS,
   buildInitialState, buildFixtures, buildSquad, buildDemoState,
-  repairCareer, validateLineup, autoLineup, defaultRole,
+  repairCareer, groupSetupError, validateLineup, autoLineup, defaultRole,
   playMatchday, leagueTable, seasonOutcome, startNextSeason,
 } from '../public/engine.js';
 
@@ -144,13 +144,20 @@ test('repairCareer rejects what cannot be shown', () => {
   delete noResults.results;
   assert.equal(repairCareer(noResults), null);
 
-  // A three-tier career whose groups are broken, or which is not in its group.
+  // A three-tier career whose group setup is broken is rebuilt now, keeping
+  // every result already played (test/group-setup.test.mjs has the details).
   const brokenGroups = buildInitialState('harbourside', 'Test manager', 42);
   brokenGroups.groups = 'x';
-  assert.equal(repairCareer(brokenGroups), null);
+  const regrouped = repairCareer(brokenGroups);
+  assert.ok(regrouped);
+  assert.equal(groupSetupError(regrouped), null);
+  assert.equal(regrouped.groups[regrouped.groupIndex].clubIds.length, 18);
   const wrongGroup = buildInitialState('harbourside', 'Test manager', 42);
   wrongGroup.groupIndex = 5;
-  assert.equal(repairCareer(wrongGroup), null);
+  const replaced = repairCareer(wrongGroup);
+  assert.ok(replaced);
+  assert.equal(groupSetupError(replaced), null);
+  assert.equal(replaced.groupIndex, 0);
 });
 
 test('a version 1 career opens and plays', () => {

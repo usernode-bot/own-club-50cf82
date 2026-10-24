@@ -211,7 +211,7 @@
          More) and a sidebar on a wider window. -->
     <div class="app club-app" id="view-club" hidden>
       <nav class="tabnav" id="tabnav" aria-label="Club">
-        <div class="tab-club" id="tab-club-head"><span class="badge" id="tab-badge"></span><span id="tab-name"></span></div>
+        <div class="tab-club" id="tab-club-head"><span class="badge" id="tab-badge"></span><span id="tab-name"></span><span class="code-pill" id="tab-code" aria-hidden="true" hidden></span></div>
         <a class="tab" href="#home" data-tab="home" aria-current="page">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg><span>Home</span>
         </a>
@@ -254,12 +254,25 @@
       <div class="club-main">
         <div class="top">
           <div class="sm" id="club-md"></div>
-          <h1 id="club-name"></h1>
+          <div class="title-row"><h1><span id="club-name"></span><span class="group-tag" id="club-group" hidden></span></h1><span class="code-pill" id="club-code" aria-hidden="true" hidden></span></div>
           <div class="sm" id="club-pos"></div>
         </div>
 
         <!-- Home -->
         <div class="panel" id="tab-home">
+          <!-- The league group is being rebuilt by the server. -->
+          <div class="next" id="setup-card" hidden>
+            <div class="season-head">
+              <h2 class="season-title">Setting up your group</h2>
+              <p class="season-text">Checking your group of 18 and its 34 matchdays. Your results are kept.</p>
+            </div>
+            <ul class="list">
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+            </ul>
+          </div>
+
           <div class="next" id="next-card">
             <div class="row">
               <div class="team"><span class="badge" id="next-home-badge"></span><span id="next-home-name"></span></div>
@@ -334,6 +347,7 @@
             <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
             <div class="legend" id="table-legend" hidden></div>
             <ul class="list tbl" id="table-list"></ul>
+            <p class="league-note setup-note" id="setup-note" hidden><b>Setting up your group</b>The table comes back with your results kept.</p>
             <p class="league-note" id="league-note" hidden></p>
           </div>
           <div class="sec">

@@ -79,7 +79,7 @@ test('the Coastal League is three tiers and 162 clubs in nine groups', () => {
   // The ten original clubs keep their order and their data, all in Division 1.
   assert.deepEqual(CLUBS.slice(0, 10).map((c) => c.id), COASTAL_IDS);
   assert.deepEqual(CLUBS[0], {
-    id: 'harbourside', name: 'Harbourside FC', short: 'HF', color: 'rgb(var(--pitch))',
+    id: 'harbourside', name: 'Harbourside FC', short: 'HF', city: 'Harbourside', code: 'HAR', kit: 16,
     rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay',
   });
   for (const id of COASTAL_IDS) {

@@ -89,7 +89,7 @@ If a rule below this line conflicts with the hosted conventions, the
 hosted conventions win. This file is **app-specific** — write down
 things about *this* app that belong in the repo: product intent,
 data-model quirks, style preferences, opt-in policies (e.g. which
-tables you've marked private), etc.
+tables you've marked private), licensing rules, etc.
 
 ---
 
@@ -425,3 +425,55 @@ Re-theme by changing the token values there, keeping every text pair at
   no Division 4. The shop lists every division's clubs at its tier price
   (`TIER_PRICE`), and a manager owns one club at a time. Selling a club, owning more than one and real USDC come
   later; the purchase is stored so selling can be added.
+
+## Licensing and legal
+
+`AGENTS.md` at the root carries a summary of this section for tools that read
+that file; this section is authoritative if the two ever disagree, and the two
+should be fixed in the same change. Public prose (README, in-app copy) stays
+fictional too, as the rest of this section requires.
+
+1. **Invented names only.** Every club, player, manager, coach, staff member,
+   sponsor, ground and competition name in the game is invented, and new ones
+   stay invented. The pools that generate every name in the game live in
+   `public/engine.js` and are what an extending agent keeps clean:
+   `COASTAL_CLUBS` (the ten original clubs, their grounds and badge colours),
+   `PLACE_POOL`, `CLUB_SUFFIXES` and `GROUND_WORDS` (the 152 generated clubs),
+   `FIRST_NAMES` and `LAST_NAMES` (players, staff and managers),
+   `SPONSOR_NAMES`, `PEAK_NAMES`, `STAFF_ROLES`, `FACILITIES` and
+   `LEAGUE_NAME`. A name is not safe merely because it is not spelled
+   identically to a real one: a famous surname paired with a fitting first
+   name, a real club's nickname ("The Reds"), a real club's name with one word
+   swapped, or a real player's full name all count as real. When a generated
+   or hand-picked combo collides with a famous real name, change one part.
+   Some `PLACE_POOL` entries coincide with small real settlements (Jarrow,
+   Ivybridge, Mossley, Millbrook, …) — geographic names are facts, not
+   trademarks, and stay.
+2. **No real marks or looks.** Badges stay initials on a plain colour; never
+   draw, fetch or approximate a real club's crest or kit, a brand's logo, or
+   one real club's distinctive colour identity.
+3. **Generated data only.** Squads, attributes, results and ratings come from
+   the seeded generator (`buildSquad`, `ageingFor`, the pyramid seed). Never
+   load a real player database, real fixtures, photos or third-party data
+   APIs; never scrape.
+4. **Mock money stays mock.** Dummy USDC and Club credits are play
+   currencies; no real payment, wallet or crypto integration, ever. The
+   Finance tab's "Staging mock" tag stays.
+5. **Permissive inputs only.** Any new dependency, vendored file, font, icon
+   set or data file must carry a permissive licence (MIT, Apache-2.0, BSD,
+   ISC) and have its source and licence recorded — the platform's
+   vendored-file convention covers vendored runtime files, and new npm
+   packages should be mainstream and permissively licensed. Never paste code
+   of unknown origin. Icons stay hand-drawn inline SVG on the platform's
+   line-icon grid.
+6. **Original mechanics.** Design features fresh; do not port code, data or a
+   named patented mechanic from a commercial game.
+7. **When a request asks for the real thing** (a real club, player,
+   competition or brand), do not refuse the intent — build the invented
+   equivalent in the same style as the rest of the game, and say in the
+   change notes why the real name was not used.
+8. **The audit.** On 2026-10-24 the whole tree was grepped for major real
+   club, player, manager, league and brand names and the pools above were read
+   in full: no real-world names anywhere, so the baseline is clean. Re-check
+   the pools when extending them; the greps to repeat are any list of major
+   real football names and brands.
