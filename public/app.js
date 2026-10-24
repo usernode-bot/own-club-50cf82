@@ -1478,7 +1478,8 @@ function renderMatch() {
   if (!sides || !recorded) {
     if (matchView) matchView.close();
     matchOpenFor = null;
-    $('match-call').hidden = true;
+    $('match-call').classList.add('is-empty');
+    $('match-log').innerHTML = '';
     $('match-error').hidden = false;
     return;
   }
@@ -1518,11 +1519,18 @@ function renderMatch() {
       stepBack: $('match-step-back'),
       speeds: $('match-speeds'),
       scrub: $('match-scrub'),
+      log: $('match-log'),
+      logSec: $('match-log-sec'),
+      logToggle: $('match-log-toggle'),
+      live: $('match-live'),
+      motion: $('match-motion'),
     });
   }
   // A re-render while the match is playing (a quiet refresh) keeps it going.
   if (matchOpenFor !== md) {
     matchOpenFor = md;
+    // The log holds the match's moments, newest first, in the report's rows.
+    $('match-log').innerHTML = buildTimeline(report, CLUB_BY_ID).slice().reverse().map(feedRow).join('');
     matchView.open({
       report,
       sides,
@@ -2428,7 +2436,7 @@ const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-
 function feedRow(e) {
   const who = e.player ? ', ' + esc(e.player) : '';
   const code = e.code ? ' <span class="code">' + esc(e.code) + '</span>' : '';
-  return '<li class="list-row"><span class="min">' + e.minute + "'</span>"
+  return '<li class="list-row" data-minute="' + e.minute + '"><span class="min">' + e.minute + "'</span>"
     + '<span class="ev"><b>' + esc(e.label) + '</b>' + who + code
     + '<small>' + esc(e.text) + '</small></span></li>';
 }
