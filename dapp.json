@@ -144,6 +144,12 @@
       "impact": [
         "public/**"
       ]
+    },
+    {
+      "name": "Demo competition names each club's manager",
+      "path": "/?demo=1#competition",
+      "expectText": "Manager Demo Manager",
+      "expectSelector": "#table-list .list-row .t small"
     }
   ]
 }

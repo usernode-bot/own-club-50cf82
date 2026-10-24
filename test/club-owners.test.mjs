@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   freeShopClubs, shopGroups, purchaseError, saveCheck, clubTier, saleValue, openingBalance, GROUPS,
+  managerLine, groupsNote, CLUBS, DIVISION_SIZE,
 } from '../public/engine.js';
 
 // The server's sale values, as server.js holds them.
@@ -106,4 +107,41 @@ test('a sale credits the wallet the person keeps across careers', () => {
   assert.equal(openingBalance(null, 1000) + saleValue(v3State(3), SALE_VALUE), 1100);
   // The store's own balance is the one used when there is one.
   assert.equal(openingBalance(1200, 1000), 1200);
+});
+
+test('the league table names the manager of an owned club and calls the rest bots', () => {
+  assert.equal(managerLine('a', { a: 'Sam' }, 'me', 'Alex'), 'Manager Sam');
+  assert.equal(managerLine('b', { a: 'Sam' }, 'me', 'Alex'), 'Run by a bot');
+});
+
+test('the manager of the own club is named even when the map leaves it out', () => {
+  // The demo season's own club is not in club_owners, so the map has nothing
+  // for it; the page's own manager name is what the row says.
+  assert.equal(managerLine('harbourside', {}, 'harbourside', 'Demo Manager'), 'Manager Demo Manager');
+  assert.equal(managerLine('harbourside', { harbourside: 'Other' }, 'harbourside', 'Demo Manager'), 'Manager Demo Manager');
+  // Without a name of its own, the stored one is used, then the bot line.
+  assert.equal(managerLine('x', { x: 'Sam' }, 'x', ''), 'Manager Sam');
+  assert.equal(managerLine('x', {}, 'x', ''), 'Run by a bot');
+});
+
+test('a club a person owns is never called a bot, and a nameless one says Manager', () => {
+  assert.equal(managerLine('a', undefined, 'me', 'Alex'), 'Run by a bot');
+  assert.equal(managerLine('a', null, 'me', 'Alex'), 'Run by a bot');
+  assert.equal(managerLine('a', 'Sam', 'me', 'Alex'), 'Run by a bot');
+  // An owned club with no stored name, as a row from before the column.
+  assert.equal(managerLine('a', { a: '' }, 'me', 'Alex'), 'Manager');
+});
+
+test('the four-groups note matches the pyramid, and Division 1 has none', () => {
+  assert.equal(groupsNote(2), 'Division 2 has four groups of 18: the Coastal League holds 162 clubs.');
+  assert.equal(groupsNote(3), 'Division 3 has four groups of 18: the Coastal League holds 162 clubs.');
+  assert.equal(groupsNote(1), '');
+  assert.equal(groupsNote(4), '');
+  assert.equal(groupsNote(undefined), '');
+  // The sentence is the pyramid's own numbers.
+  assert.equal(GROUPS.filter((g) => g.tier === 3).length, 4);
+  assert.equal(GROUPS.filter((g) => g.tier === 2).length, 4);
+  assert.equal(GROUPS.every((g) => g.clubIds.length === DIVISION_SIZE), true);
+  assert.equal(CLUBS.length, 162);
+  assert.match(groupsNote(3), /holds 162 clubs/);
 });

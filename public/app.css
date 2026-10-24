@@ -58,6 +58,26 @@ button.chip[aria-expanded="true"] {
   background: rgb(var(--raised));
 }
 
+/* Who runs a club, under its name in the league table. The same small grey
+   line a Squad row keeps under a player's name. */
+.tbl .t small {
+  display: block;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--muted));
+  font-weight: 400;
+}
+
+/* Why the league has the groups it has, under the league table and under the
+   group buttons on New career. */
+.league-note {
+  margin: 8px 4px 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgb(var(--muted));
+}
+.league-note[hidden] { display: none; }
+
 /* Start a new career is the plain button under Start next season. */
 .next .btn-secondary { width: 100%; margin-top: 10px; }
 

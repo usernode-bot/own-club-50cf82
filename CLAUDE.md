@@ -125,14 +125,19 @@ slot instant into `plays` and saving. An unusable lineup is replaced by
 null until Start next season. `public/app.js` shows the countdown and refreshes
 quietly when a kick-off passes.
 
-One manager per Division 3 club: the public `club_owners` table
-(`club_id` primary key, `user_id`) records who bought a club. `GET /api/career`
-sends taken ids with the shop, `POST` claims a club in the same transaction
-that saves the career (409 `owned` if taken, 409 `has_club` while a career
-exists), and a sale (`DELETE`) frees it. Careers that predate the table are
-grandfathered on boot, so nobody loses a club; a club several managers already
-share stays with all of them. Staging seeds two fake owners in Division 3 Group
-A.
+One manager per club: the public `club_owners` table (`club_id` primary key,
+`user_id`, `manager_name`) records who bought a club and the display name they
+gave. `GET /api/career` sends the taken ids with the shop and an `owners` map
+of club id to manager name (never a `user_id`), `POST` claims a club with that
+name in the same transaction that saves the career (409 `owned` if taken, 409
+`has_club` while a career exists), and a sale (`DELETE`) frees it. Careers that
+predate the table are grandfathered on boot, so nobody loses a club; a club
+several managers already share stays with all of them. A row from before the
+name column is filled from its manager's `careers` row on boot, so nobody has
+to buy again. `managerLine` in `engine.js` turns the map into the grey line
+under a club's name in the Competition table ("Manager <name>", or "Run by a
+bot"), and the shop's taken rows say "Run by <name>". Staging seeds two fake
+owners in Division 3 Group A, "Staging Demo Manager" and "Staging Demo Rival".
 
 Selling is how a career ends. `DELETE /api/career` pays the club's sale value
 into the person's wallet (`wallets`, one row per person) in the same
@@ -329,6 +334,14 @@ change follows it, and updates it when a request changes the look on purpose.
   border; the current tab is pitch green, on a raised background in the
   sidebar, never amber. The header with the club, matchday and position sits
   above every tab.
+- **Competition:** every league-table row keeps the club's name as its title
+  and carries the same small grey line a Squad row has under it: "Manager
+  <name>" for a club a person runs (your own row included), "Run by a bot" for
+  one nobody does. The shop's taken rows agree, saying "Run by <name>". Under
+  the table (and under the Group buttons on New career, for Divisions 2 and 3)
+  one grey line says "Division N has four groups of 18: the Coastal League
+  holds 162 clubs.", from `groupsNote` in `engine.js`; it is absent for
+  Division 1 and for a career from before the three tiers.
 - **Signature element:** the pitch diagram: a drawn pitch with your formation
   as white player tokens you drag to swap, the goalkeeper in amber. Small line
   icons mark each kind of moment in the report (a ball, a card, a swap arrow,

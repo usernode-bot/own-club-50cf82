@@ -17,7 +17,7 @@ import {
   MATCHDAY_SALES, matchdaySales,
   wageBill, playerWage, stadiumSeats, homeCrowd, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
-  growthOutlook,
+  growthOutlook, managerLine, groupsNote,
 } from './engine.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
@@ -64,6 +64,9 @@ let lastSale = null;
 // The person's linked Homeroom wallet, sent with each load for a signed-in
 // person. Undefined for a guest looking at the demo; never stored or sent back.
 let homeroomWallet = undefined;
+// Which clubs a real person runs, as clubId -> manager name, from the server.
+// Only the name is shown; the page never sees an account id.
+let owners = {};
 
 const TABS = ['home', 'squad', 'tactics', 'competition', 'club', 'finance', 'transfers'];
 // On a phone the bar keeps the first four tabs and folds these into More.
@@ -106,7 +109,11 @@ function closeMore() {
 async function refreshShop() {
   try {
     const { status, data } = await api('GET');
-    if (status === 200 && data && data.shop) { shop = data.shop; renderNew(); }
+    if (status === 200 && data && data.shop) {
+      shop = data.shop;
+      owners = data.owners && typeof data.owners === 'object' ? data.owners : {};
+      renderNew();
+    }
   } catch (_) { /* the error already says the club is taken */ }
 }
 
@@ -206,6 +213,8 @@ async function load() {
   // The linked Homeroom wallet, sent for a signed-in person and absent for a
   // guest looking at the demo.
   if (answer && answer.data) homeroomWallet = answer.data.homeroomWallet;
+  owners = answer && answer.data && answer.data.owners && typeof answer.data.owners === 'object'
+    ? answer.data.owners : {};
   autoPlayed = answer && answer.data && Number(answer.data.autoPlayed) > 0 ? Number(answer.data.autoPlayed) : 0;
 
   if (!cause && answer) {
@@ -277,6 +286,13 @@ function stars(n) {
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
 
+// Who runs a taken club in the shop, so it agrees with the league table. A
+// club with no stored name keeps the old line rather than claiming a bot.
+function takenLine(id) {
+  const name = owners && typeof owners === 'object' ? owners[id] : '';
+  return typeof name === 'string' && name ? 'Run by ' + name : 'Another manager runs this club';
+}
+
 function renderNew() {
   $('manager-name').value = $('manager-name').value || '';
   const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
@@ -296,6 +312,7 @@ function renderNew() {
     ? usdc(price) + ' a club, ' + freeTotal + ' of 18 free'
     : usdc(price) + ' a club';
   $('group-section').hidden = pickedDivision === 1;
+  $('group-explain').textContent = groupsNote(pickedDivision);
   $('group-note').textContent = freeTotal === 0 ? '' : (group ? group.free.length : 0) + ' of 18 free in Group ' + pickedGroup;
   for (const btn of $('group-row').querySelectorAll('[data-group]')) {
     btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
@@ -333,7 +350,7 @@ function renderNew() {
       return `
     <li class="list-row club-row taken-row" aria-disabled="true">
       <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>Another manager runs this club</small></span>
+      <span class="nm">${esc(c.name)}<small>${esc(takenLine(c.id))}</small></span>
       <span class="taken">Taken</span>
       <span class="tick" aria-hidden="true"></span>
     </li>`;
@@ -607,10 +624,16 @@ function renderClub() {
   $('table-list').innerHTML = table.map((r) => `
     <li class="list-row${r.id === career.clubId ? ' me' : ''}">
       <span class="n">${r.rank}</span>
-      <span class="t">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}</span>
+      <span class="t">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}<small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
       <span class="g">${r.gd > 0 ? '+' : ''}${r.gd}</span>
       <span class="p">${r.points}</span>
     </li>`).join('');
+
+  // Why the league has the groups it has, under the table. Division 1 is one
+  // group, and a career from before the three tiers has no note.
+  const note = career.version >= 3 ? groupsNote(clubTier(career)) : '';
+  $('league-note').textContent = note;
+  $('league-note').hidden = !note;
 
   $('fixtures-season').textContent = career.season;
   const remainder = Math.max(0, career.fixtures.length - career.matchday);
@@ -2147,6 +2170,7 @@ async function refresh() {
         refreshFailed = false;
         if (data.shop) shop = data.shop;
         homeroomWallet = data.homeroomWallet;
+        owners = data.owners && typeof data.owners === 'object' ? data.owners : {};
         render();
         return;
       }
