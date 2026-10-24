@@ -186,6 +186,37 @@ button.chip[aria-expanded="true"] {
 .row-btn { cursor: pointer; }
 .club-row .badge { flex: none; }
 .club-row.me { background: rgb(var(--raised)); }
+/* The shop's club code sits in the small grey line with the squad size, so
+   the name column gets the room the chip used to take. */
+.club-row .nm small .code-pill { display: inline-flex; vertical-align: -4px; }
+
+/* On a phone the name and its grey line take the row's remaining width: the
+   name shares the first line with the price and tick, and the details run
+   the full width underneath on one line. */
+@media (max-width: 479px) {
+  .club-row,
+  .club-row.taken-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    column-gap: 8px;
+    align-items: center;
+  }
+  .club-row { grid-template-areas: "badge title price tick" "badge det det det"; }
+  .club-row.taken-row { grid-template-areas: "badge title taken tick" "badge det det det"; }
+  .club-row .badge { grid-area: badge; }
+  .club-row .nm { display: contents; }
+  .club-row .nm .row-title { grid-area: title; min-width: 0; }
+  .club-row .nm small {
+    grid-area: det;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .club-row .price { grid-area: price; }
+  .club-row .taken { grid-area: taken; }
+  .club-row .tick { grid-area: tick; }
+}
 
 /* A club's badge in its two kit colours: the primary field carries the white
    monogram, the lighter secondary shows as the lower wedge. --ka and --kb

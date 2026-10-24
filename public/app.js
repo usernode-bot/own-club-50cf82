@@ -196,16 +196,10 @@ function render() {
   if (screen === 'report' && career && career.lastReport) renderReport();
 }
 
-// Why a career did not load, in one line under the message. The codes in
-// brackets name the exact failure in a report.
+// Why a career did not load, in one line under the message.
 const LOAD_CAUSE = {
   signin: 'Your Homeroom sign-in has run out. Close Own Club and open it again from Homeroom.',
-  server: (data, status) => {
-    const parts = [(data && data.error) || 'HTTP ' + status];
-    if (data && typeof data.code === 'string' && data.code) parts.push('database ' + data.code);
-    if (data && typeof data.requestId === 'string' && data.requestId) parts.push('ref ' + data.requestId);
-    return 'The server could not read your career (' + parts.join(', ') + '). Try again in a moment.';
-  },
+  server: 'The server could not read your career. Try again in a moment.',
   network: 'Own Club could not reach the server. Check your connection, then press Retry.',
   shown: 'Your saved career was read but could not be shown on this screen (career_unreadable).',
 };
@@ -247,7 +241,7 @@ async function load() {
     }
     if (answer.status === 401) cause = LOAD_CAUSE.signin;
     else if (answer.status !== 200 || !answer.data || !answer.data.career) {
-      cause = LOAD_CAUSE.server(answer.data, answer.status);
+      cause = LOAD_CAUSE.server;
     }
   }
 
@@ -354,12 +348,12 @@ async function repairGroup() {
           return;
         }
       }
-      giveUp(LOAD_CAUSE.server(data, status));
+      giveUp(LOAD_CAUSE.server);
       return;
     }
     if (status === 401) giveUp(LOAD_CAUSE.signin);
     else if (data && typeof data.message === 'string' && data.message) giveUp(data.message);
-    else if (status > 0) giveUp(LOAD_CAUSE.server(data, status));
+    else if (status > 0) giveUp(LOAD_CAUSE.server);
     else giveUp(LOAD_CAUSE.network);
   } catch (_) {
     if (settled) return;
@@ -531,8 +525,7 @@ function renderNew() {
       return `
     <li class="list-row club-row taken-row" aria-disabled="true">
       ${badgeHtml(c)}
-      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${esc(takenLine(c.id))}</small></span>
-      ${codePill(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${esc(takenLine(c.id))} ${codePill(c)}</small></span>
       <span class="taken">Taken</span>
       <span class="tick" aria-hidden="true"></span>
     </li>`;
@@ -540,8 +533,7 @@ function renderNew() {
     return `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
       ${badgeHtml(c)}
-      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]} · ${esc(c.city)} · ${esc(groupName(GROUPS[clubToGroup[c.id]].tier))}</small></span>
-      ${codePill(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]} ${codePill(c)} · ${esc(c.city)} · ${esc(groupName(GROUPS[clubToGroup[c.id]].tier))}</small></span>
       <span class="price">${usdc(price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`;
@@ -1745,7 +1737,7 @@ function openMenu(kind) {
   const m = MENUS[kind];
   $('menu-list').innerHTML = m.values.map((v) => `
     <li><button class="list-row menu-row" type="button" data-value="${esc(v)}" aria-pressed="${career.tactics[m.key] === v}">
-      <span class="nm">${esc(v)}</span><span class="tick">${career.tactics[m.key] === v ? '✓' : ''}</span>
+      <span class="nm">${esc(v)}</span><span class="tick">${career.tactics[m.key] === v ? CHECK_SVG : ''}</span>
     </button></li>`).join('');
   $('menu').hidden = false;
   for (const k in MENUS) $(MENUS[k].chip).setAttribute('aria-expanded', String(k === kind));
