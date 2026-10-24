@@ -47,6 +47,47 @@
     --card-r: 200 35 35;      /* a red card */
     --card-r-ink: 200 35 35;  /* a form chip's L */
     --star: 180 83 9;         /* a reputation star, dark enough on white */
+
+    /* ── Club kit colours ─────────────────────────────────────────────────
+     * A club carries a kit index (engine.js), never a colour: --kit-N is the
+     * badge's primary field, --kit-Ns its lighter secondary wedge. Each
+     * primary is dark enough for the white monogram at 4.5:1 or more (the
+     * identity tests compute this from these values). Index 16 is
+     * Harbourside's: the pitch token itself. */
+    --kit-0: 90 70 50;        /* --kit-0s: the tan wedge */
+    --kit-0s: 168 133 95;
+    --kit-1: 122 47 58;
+    --kit-1s: 195 114 132;
+    --kit-2: 47 93 98;
+    --kit-2s: 108 160 165;
+    --kit-3: 75 63 114;
+    --kit-3s: 154 140 196;
+    --kit-4: 107 74 31;
+    --kit-4s: 191 152 84;
+    --kit-5: 45 83 64;
+    --kit-5s: 110 160 134;
+    --kit-6: 122 90 30;
+    --kit-6s: 198 161 88;
+    --kit-7: 39 75 120;
+    --kit-7s: 108 148 197;
+    --kit-8: 92 45 74;
+    --kit-8s: 172 118 152;
+    --kit-9: 58 74 42;
+    --kit-9s: 141 158 106;
+    --kit-10: 111 58 36;
+    --kit-10s: 191 124 96;
+    --kit-11: 51 77 92;
+    --kit-11s: 118 156 176;
+    --kit-12: 106 47 90;
+    --kit-12s: 178 116 160;
+    --kit-13: 63 71 112;
+    --kit-13s: 130 142 193;
+    --kit-14: 89 66 28;
+    --kit-14s: 186 152 100;
+    --kit-15: 43 90 79;
+    --kit-15s: 110 158 142;
+    --kit-16: var(--pitch);
+    --kit-16s: 122 196 158;
   }
   .dark {
     --ground: 14 22 17;
@@ -67,6 +108,43 @@
     --card-r: 239 68 68;
     --card-r-ink: 185 28 28;
     --star: 245 158 11;
+    /* The kit colours read the same in the dark look: they are dark, rich
+       fields for white monograms in both, and the badge's dark-look edge
+       (app.css) keeps them off the dark card. */
+    --kit-0: 90 70 50;
+    --kit-0s: 168 133 95;
+    --kit-1: 122 47 58;
+    --kit-1s: 195 114 132;
+    --kit-2: 47 93 98;
+    --kit-2s: 108 160 165;
+    --kit-3: 75 63 114;
+    --kit-3s: 154 140 196;
+    --kit-4: 107 74 31;
+    --kit-4s: 191 152 84;
+    --kit-5: 45 83 64;
+    --kit-5s: 110 160 134;
+    --kit-6: 122 90 30;
+    --kit-6s: 198 161 88;
+    --kit-7: 39 75 120;
+    --kit-7s: 108 148 197;
+    --kit-8: 92 45 74;
+    --kit-8s: 172 118 152;
+    --kit-9: 58 74 42;
+    --kit-9s: 141 158 106;
+    --kit-10: 111 58 36;
+    --kit-10s: 191 124 96;
+    --kit-11: 51 77 92;
+    --kit-11s: 118 156 176;
+    --kit-12: 106 47 90;
+    --kit-12s: 178 116 160;
+    --kit-13: 63 71 112;
+    --kit-13s: 130 142 193;
+    --kit-14: 89 66 28;
+    --kit-14s: 186 152 100;
+    --kit-15: 43 90 79;
+    --kit-15s: 110 158 142;
+    --kit-16: var(--pitch);
+    --kit-16s: 122 196 158;
   }
   /* el.hidden = true hides an element even when a class gives it a display
      (flex, the components below). */

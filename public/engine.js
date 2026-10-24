@@ -11,16 +11,16 @@
 // quality of the squad it is dealt. The pyramid itself is built below, after
 // the formations, because a generated club is dealt one of them.
 const COASTAL_CLUBS = [
-  { id: 'harbourside', name: 'Harbourside FC', short: 'HF', color: 'rgb(var(--pitch))', rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay' },
-  { id: 'redvale', name: 'Redvale Athletic', short: 'RA', color: '#7a3b8f', rep: 5, formation: '4-2-3-1', objective: 'Win the league', ground: 'Redvale Park' },
-  { id: 'kingsmoor', name: 'Kingsmoor United', short: 'KU', color: '#1e4fa3', rep: 5, formation: '4-3-3', objective: 'Win the league', ground: 'Kingsmoor Road' },
-  { id: 'northmoor', name: 'Northmoor Town', short: 'NT', color: '#146b5a', rep: 4, formation: '4-4-2', objective: 'Finish in the top half', ground: 'Moor Lane' },
-  { id: 'baymouth', name: 'Baymouth Rovers', short: 'BR', color: '#a03d1c', rep: 3, formation: '4-4-2', objective: 'Finish in the top half', ground: 'The Harbour End' },
-  { id: 'saltmarsh', name: 'Saltmarsh City', short: 'SM', color: '#4a3a8a', rep: 3, formation: '3-5-2', objective: 'Finish in the top half', ground: 'Marsh Field' },
-  { id: 'cliffton', name: 'Cliffton Wanderers', short: 'CW', color: '#2f4858', rep: 3, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Cliff Top' },
-  { id: 'marrow', name: 'Marrow Bay', short: 'MB', color: '#7c2d5d', rep: 2, formation: '4-3-3', objective: 'Avoid finishing bottom', ground: 'Bay Side' },
-  { id: 'gullport', name: 'Gullport United', short: 'GU', color: '#3f5a1d', rep: 2, formation: '4-4-2', objective: 'Avoid finishing bottom', ground: 'The Nest' },
-  { id: 'kestrel', name: 'Kestrel Park', short: 'KP', color: '#8a4a1f', rep: 1, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Kestrel Lane' },
+  { id: 'harbourside', name: 'Harbourside FC', short: 'HF', city: 'Harbourside', kit: 16, rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay' },
+  { id: 'redvale', name: 'Redvale Athletic', short: 'RA', city: 'Redvale', kit: 12, rep: 5, formation: '4-2-3-1', objective: 'Win the league', ground: 'Redvale Park' },
+  { id: 'kingsmoor', name: 'Kingsmoor United', short: 'KU', city: 'Kingsmoor', kit: 7, rep: 5, formation: '4-3-3', objective: 'Win the league', ground: 'Kingsmoor Road' },
+  { id: 'northmoor', name: 'Northmoor Town', short: 'NT', city: 'Northmoor', kit: 15, rep: 4, formation: '4-4-2', objective: 'Finish in the top half', ground: 'Moor Lane' },
+  { id: 'baymouth', name: 'Baymouth Rovers', short: 'BR', city: 'Baymouth', kit: 10, rep: 3, formation: '4-4-2', objective: 'Finish in the top half', ground: 'The Harbour End' },
+  { id: 'saltmarsh', name: 'Saltmarsh City', short: 'SM', city: 'Saltmarsh', kit: 3, rep: 3, formation: '3-5-2', objective: 'Finish in the top half', ground: 'Marsh Field' },
+  { id: 'cliffton', name: 'Cliffton Wanderers', short: 'CW', city: 'Cliffton', kit: 11, rep: 3, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Cliff Top' },
+  { id: 'marrow', name: 'Marrow Bay', short: 'MB', city: 'Marrow', kit: 8, rep: 2, formation: '4-3-3', objective: 'Avoid finishing bottom', ground: 'Bay Side' },
+  { id: 'gullport', name: 'Gullport United', short: 'GU', city: 'Gullport', kit: 9, rep: 2, formation: '4-4-2', objective: 'Avoid finishing bottom', ground: 'The Nest' },
+  { id: 'kestrel', name: 'Kestrel Park', short: 'KP', city: 'Kestrel', kit: 4, rep: 1, formation: '5-3-2', objective: 'Avoid finishing bottom', ground: 'Kestrel Lane' },
 ];
 
 // ── Formations, mentalities, pressing, roles ─────────────────────────────
@@ -78,19 +78,22 @@ export const FORMATIONS = {
 export const FORMATION_NAMES = Object.keys(FORMATIONS);
 
 // ── The pyramid ──────────────────────────────────────────────────────────
-// The Coastal League has three tiers and 162 clubs. Division 1 is one group
-// of 18; Divisions 2 and 3 have four groups each, A to D. The ten original
-// clubs form most of Division 1; the other 152 are generated from a fixed
-// seed, so every career meets the same clubs by the same names. A club's tier
-// sets the strength of its squad (see attrRange): Division 1 is the strongest.
+// The Coastal League has three tiers and 306 clubs. Division 1 is one group
+// of 18; Division 2 has four groups, A to D, and Division 3 has twelve, A to
+// L. The ten original clubs form most of Division 1; the other 296 are
+// generated from a fixed seed, so every career meets the same clubs by the
+// same names. A club's tier sets the strength of its squad (see attrRange):
+// Division 1 is the strongest.
 export const LEAGUE_NAME = 'The Coastal League';
 export const TIER_COUNT = 3;
-export const GROUP_LETTERS = ['A', 'B', 'C', 'D'];
+export const GROUP_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+// How many groups each tier has. Division 1's one group has no letter.
+export const GROUP_COUNTS = { 1: 1, 2: 4, 3: 12 };
 export const DIVISION_SIZE = 18;
 export const MATCHDAYS = (DIVISION_SIZE - 1) * 2;
 // The eight flat divisions a version 2 career was saved in.
 export const LEGACY_DIVISION_COUNT = 8;
-export const CLUB_COUNT = 162;
+export const CLUB_COUNT = 306;
 
 const PYRAMID_SEED = 50731;
 const PYRAMID_CLUBS = CLUB_COUNT - COASTAL_CLUBS.length;
@@ -105,12 +108,99 @@ const PLACE_POOL = [
   'Uppermill', 'Wrenfield', 'Yewdale', 'Barrowden',
 ];
 const CLUB_SUFFIXES = ['FC', 'Athletic', 'Town', 'United', 'Rovers', 'City', 'Wanderers'];
-const GROUND_WORDS = ['Road', 'Lane', 'Park', 'Field', 'End', 'Green', 'Way', 'Quay'];
-// Dark enough for the white initials on the badge in both looks.
-const BADGE_COLORS = [
-  '#5a4632', '#7a2f3a', '#2f5d62', '#4b3f72', '#6b4a1f', '#2d5340', '#7a5a1e', '#274b78',
-  '#5c2d4a', '#3a4a2a', '#6f3a24', '#334d5c', '#6a2f5a', '#3f4770', '#59421c', '#2b5a4f',
+// The naming grammar every club follows: an invented city stem plus one
+// generic suffix. These twelve are the league's full suffix palette; the
+// shipped clubs use the seven in CLUB_SUFFIXES and keep the names they were
+// saved with — a club's id is its name's slug, so renaming one would move
+// every career, listing and owner row that points at it. If the set is ever
+// regenerated, use the full palette and grow app.js's displayName regex to
+// match.
+export const CLUB_NAME_SUFFIXES = ['Athletic', 'United', 'City', 'Town', 'Sporting', 'Rovers', 'Wanderers', 'Albion', 'Union', 'FC', 'SC', 'AC'];
+const GROUND_WORDS = ['Road', 'Lane', 'Park', 'Field', 'End', 'Green', 'Way', 'Quay', 'Ground', 'Arena'];
+
+// Real football stays out of the game. A club whose normalised name matches
+// the club list is never generated, and the tests hold every name, stadium
+// and code against them. A few stems happen to be small real towns; the
+// invented suffixes keep those clubs fictional.
+export const REAL_CLUB_DENYLIST = [
+  // Premier League and EFL, in their common forms.
+  'Arsenal', 'Arsenal FC', 'Aston Villa', 'AFC Bournemouth', 'Bournemouth', 'Brentford FC', 'Brentford',
+  'Brighton and Hove Albion', 'Burnley FC', 'Burnley', 'Chelsea FC', 'Chelsea', 'Crystal Palace FC',
+  'Everton FC', 'Everton', 'Fulham FC', 'Leeds United', 'Liverpool FC', 'Liverpool', 'Manchester City',
+  'Manchester United', 'Newcastle United', 'Nottingham Forest', 'Sheffield United', 'Sunderland AFC',
+  'Sunderland', 'Tottenham Hotspur', 'West Ham United', 'Wolverhampton Wanderers', 'Wolves',
+  'Leicester City', 'Ipswich Town', 'Southampton FC', 'Luton Town', 'Hull City', 'Middlesbrough FC',
+  'Middlesbrough', 'Norwich City', 'Swansea City', 'Watford FC', 'West Bromwich Albion', 'Stoke City',
+  'Derby County', 'Preston North End', 'Blackburn Rovers', 'Bristol City', 'Millwall FC', 'Millwall',
+  'Queens Park Rangers', 'QPR', 'Coventry City', 'Sheffield Wednesday', 'Charlton Athletic',
+  'Bolton Wanderers', 'Wigan Athletic', 'Reading FC', 'Huddersfield Town', 'Blackpool FC', 'Port Vale',
+  'Rotherham United', 'Oxford United', 'Doncaster Rovers', 'Barnsley FC', 'Wrexham AFC', 'Stockport County',
+  'Leyton Orient', 'Stevenage FC', 'Lincoln City', 'Wycombe Wanderers', 'Peterborough United',
+  'Gillingham FC', 'Crewe Alexandra', 'Shrewsbury Town', 'Fleetwood Town', 'Accrington Stanley',
+  'Swindon Town', 'Grimsby Town', 'Carlisle United', 'Barrow AFC', 'Tranmere Rovers', 'Oldham Athletic',
+  'Hartlepool United', 'York City', 'Halifax Town', 'Aldershot Town', 'Boston United',
+  // Scottish and Welsh football's famous names.
+  'Celtic FC', 'Celtic', 'Rangers FC', 'Rangers', 'Aberdeen FC', 'Heart of Midlothian', 'Hibernian FC',
+  'Dundee United', 'Motherwell FC', 'Kilmarnock FC', 'St Mirren', 'Dundee FC', 'Cardiff City',
+  'Newport County', 'Albion Rovers',
+  // The major European clubs.
+  'Real Madrid', 'FC Barcelona', 'Barcelona', 'Atletico Madrid', 'Athletic Bilbao', 'Real Sociedad',
+  'Real Betis', 'Sevilla FC', 'Valencia CF', 'Villarreal CF', 'Bayern Munich', 'Borussia Dortmund',
+  'RB Leipzig', 'Bayer Leverkusen', 'Eintracht Frankfurt', 'Borussia Monchengladbach', 'Paris Saint-Germain',
+  'Olympique Lyonnais', 'Olympique de Marseille', 'AS Monaco', 'Juventus', 'AC Milan', 'Inter Milan',
+  'SSC Napoli', 'AS Roma', 'SS Lazio', 'ACF Fiorentina', 'Atalanta BC', 'AFC Ajax', 'PSV Eindhoven',
+  'Feyenoord', 'SL Benfica', 'FC Porto', 'Sporting CP', 'Galatasaray', 'Fenerbahce SK', 'Besiktas JK',
+  'Olympiacos FC', 'Panathinaikos FC', 'Red Star Belgrade', 'Club Brugge', 'RSC Anderlecht',
+  'FC Basel', 'Red Bull Salzburg', 'Celtic Glasgow',
 ];
+// Stadium names real football is known by; a generated ground never matches.
+export const REAL_STADIUM_DENYLIST = [
+  'Old Trafford', 'Anfield', 'Goodison Park', 'Emirates Stadium', 'Etihad Stadium', 'Stamford Bridge',
+  'Tottenham Hotspur Stadium', 'London Stadium', 'Wembley Stadium', 'Villa Park', 'St James Park',
+  'Elland Road', 'Hillsborough Stadium', 'Bramall Lane', 'King Power Stadium', 'Amex Stadium',
+  'Camp Nou', 'Santiago Bernabeu', 'Metropolitano Stadium', 'Allianz Arena', 'Signal Iduna Park',
+  'San Siro', 'Stadio Giuseppe Meazza', 'Juventus Stadium', 'Parc des Princes', 'Estadio da Luz',
+  'Estadio do Dragao', 'Celtic Park', 'Ibrox Stadium', 'Estadio Azteca', 'Maracana',
+];
+
+// Case, accents and spacing never hide a match: "Paris Saint-Germain" and
+// "paris  saint–germain" land on the same normalised name.
+export function normalizeClubName(name) {
+  return String(name)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// A club's three-letter code, unique across the whole pyramid: the stem's
+// first three letters, then its first three consonants, then the stem's first
+// two letters plus the suffix's initial, then letters A to Z, then a final
+// sweep that always terminates. Pure string work, no rng draw, so it cannot
+// move a single card in any stream.
+function clubCode(name, used) {
+  const [stem, suffix = ''] = name.split(' ');
+  const up = stem.toUpperCase().replace(/[^A-Z]/g, '');
+  const consonants = up.replace(/[AEIOU]/g, '');
+  const candidates = [];
+  if (up.length >= 3) candidates.push(up.slice(0, 3));
+  if (consonants.length >= 3) candidates.push(consonants.slice(0, 3));
+  if (up.length >= 2 && suffix) candidates.push(up.slice(0, 2) + suffix[0].toUpperCase());
+  if (up.length >= 2) {
+    for (let i = 0; i < 26; i++) candidates.push(up.slice(0, 2) + String.fromCharCode(65 + i));
+    for (const a of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+      for (const b of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') candidates.push(up[0] + a + b);
+    }
+  }
+  for (const c of candidates) if (!used.has(c)) return c;
+  return up.slice(0, 3);
+}
+
+// Kit colours live in the stylesheet as tokens (styles/tailwind-input.css,
+// --kit-0 to --kit-16 with a -s secondary each): a club carries its index,
+// never a colour, so re-theming stays a stylesheet edit. Index 16 is
+// Harbourside's, the pitch token itself.
 // The reputation a generated club is dealt, by its place in its division. The
 // whole pattern drops a rung in the bottom half of the pyramid.
 const GENERATED_REPS = [3, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2];
@@ -135,6 +225,30 @@ function uniqueShort(name, used) {
   return p.slice(0, 2);
 }
 
+// One stadium word per club that shares a stem: a drawn word stays unless an
+// earlier club of the same stem already took it, in which case the club takes
+// the first free word in a hash order of its own. Runs after the generation
+// draws, so no stream moves and no formation changes.
+function uniqueGrounds(clubs) {
+  const taken = new Map();
+  for (const c of clubs) {
+    const stem = c.name.split(' ')[0];
+    const word = c.ground.slice(stem.length + 1);
+    const used = taken.get(stem) || new Set();
+    if (!used.has(word)) {
+      used.add(word);
+      taken.set(stem, used);
+      continue;
+    }
+    const free = GROUND_WORDS
+      .slice()
+      .sort((a, b) => hash(PYRAMID_SEED, 'stadium', stem, a) - hash(PYRAMID_SEED, 'stadium', stem, b))
+      .find((w) => !used.has(w));
+    c.ground = stem + ' ' + free;
+    used.add(free);
+  }
+}
+
 function generateClubs() {
   const rng = mulberry32(hash(PYRAMID_SEED, 'clubs'));
   const combos = [];
@@ -145,18 +259,20 @@ function generateClubs() {
   }
   const names = new Set(COASTAL_CLUBS.map((c) => c.name));
   const shorts = new Set(COASTAL_CLUBS.map((c) => c.short));
+  const denied = new Set(REAL_CLUB_DENYLIST.map(normalizeClubName));
   const out = [];
   for (const { place, suffix } of combos) {
     if (out.length === PYRAMID_CLUBS) break;
     const name = place + ' ' + suffix;
     if (names.has(name)) continue;
+    if (denied.has(normalizeClubName(name))) continue;
     names.add(name);
     const short = uniqueShort(name, shorts);
     shorts.add(short);
     const n = out.length;
     // The reputation block, one per 18 generated clubs: the first club of
-    // each block is the strongest. The whole pattern drops a rung from the
-    // sixth block down, which is Division 3.
+    // each block is the strongest. The whole pattern drops a rung from block
+    // 5 down, so every Division 3 club (blocks 6 to 17) is a little weaker.
     const block = n < 8 ? 1 : 2 + Math.floor((n - 8) / DIVISION_SIZE);
     const pos = n < 8 ? n : (n - 8) % DIVISION_SIZE;
     const rep = Math.max(1, GENERATED_REPS[pos] - (block >= 5 ? 1 : 0));
@@ -164,17 +280,27 @@ function generateClubs() {
       id: slugify(name),
       name,
       short,
-      color: BADGE_COLORS[n % BADGE_COLORS.length],
+      city: place,
+      kit: n % 16,
       rep,
       formation: FORMATION_NAMES[Math.floor(rng() * FORMATION_NAMES.length)],
       objective: objectiveForRep(rep),
       ground: place + ' ' + GROUND_WORDS[Math.floor(rng() * GROUND_WORDS.length)],
     });
   }
+  uniqueGrounds(out);
   return out;
 }
 
-export const CLUBS = COASTAL_CLUBS.concat(generateClubs());
+// Codes are claimed in CLUBS order, the ten original clubs first, so a
+// generated club that would draw the same three letters falls down the ladder.
+const ALL_CLUBS = COASTAL_CLUBS.concat(generateClubs());
+const usedCodes = new Set();
+for (const c of ALL_CLUBS) {
+  c.code = clubCode(c.name, usedCodes);
+  usedCodes.add(c.code);
+}
+export const CLUBS = ALL_CLUBS;
 export const CLUB_BY_ID = Object.fromEntries(CLUBS.map((c) => [c.id, c]));
 const CLUB_INDEX = Object.fromEntries(CLUBS.map((c, i) => [c.id, i]));
 export const COASTAL_IDS = COASTAL_CLUBS.map((c) => c.id);
@@ -184,19 +310,46 @@ export function groupName(tier, group) {
   return 'Division ' + tier + (group ? ' Group ' + group : '');
 }
 
-// The nine groups of the pyramid in order: Division 1, then Division 2 A to
-// D and Division 3 A to D. A club's place in the CLUBS list decides its
-// starting group: every 18 clubs is one group.
+// The seventeen groups of the pyramid in order: Division 1, then Division 2
+// A to D, then Division 3 A to L. A club's place in the CLUBS list decides
+// its starting group: every 18 clubs is one group.
 export const GROUPS = [];
-for (let i = 0; i < 1 + GROUP_LETTERS.length * 2; i++) {
-  const tier = i === 0 ? 1 : 1 + Math.ceil(i / GROUP_LETTERS.length);
-  const group = i === 0 ? null : GROUP_LETTERS[(i - 1) % GROUP_LETTERS.length];
-  GROUPS.push({ tier, group, name: groupName(tier, group), clubIds: [] });
+for (let tier = 1; tier <= TIER_COUNT; tier++) {
+  for (let k = 0; k < GROUP_COUNTS[tier]; k++) {
+    const group = GROUP_COUNTS[tier] === 1 && tier === 1 ? null : GROUP_LETTERS[k];
+    GROUPS.push({ tier, group, name: groupName(tier, group), clubIds: [] });
+  }
 }
 CLUBS.forEach((c, i) => GROUPS[Math.floor(i / DIVISION_SIZE)].clubIds.push(c.id));
 export const clubToGroup = Object.fromEntries(
   GROUPS.flatMap((g, i) => g.clubIds.map((id) => [id, i]))
 );
+
+// Where a group sits in the pyramid's promotion and relegation. The GROUPS
+// index of the first Division 2 group and of the first Division 3 group.
+const D2_FIRST = 1;
+const D3_FIRST = 1 + GROUP_COUNTS[2];
+
+// The three Division 3 groups under a Division 2 group, in letter order:
+// A, B and C under Division 2 A, and so on. The argument is a GROUPS index.
+export function feederIndices(d2Index) {
+  const k = d2Index - D2_FIRST;
+  return [0, 1, 2].map((j) => D3_FIRST + k * 3 + j);
+}
+
+// The Division 2 group above a Division 3 group, as a GROUPS index.
+export function parentIndex(d3Index) {
+  return D2_FIRST + Math.floor((d3Index - D3_FIRST) / 3);
+}
+
+// Which of a Division 2 group's three feeders a relegated club joins, by its
+// finish: 18th and 17th go to the first, 16th and 15th to the second, 14th
+// and 13th to the third.
+export function relegationFeeder(rank) {
+  if (rank >= 17) return 0;
+  if (rank >= 15) return 1;
+  return 2;
+}
 
 // Every club in the pyramid is for sale; the server holds the price by tier.
 // Why a purchase is refused, or null when it can go ahead.
@@ -1320,22 +1473,295 @@ export function fixLineup(state) {
   return state.lineup;
 }
 
+// ── Group setup: check and repair ────────────────────────────────────────
+// A career's league group must hold its 18 clubs and a full 34-matchday
+// fixture list. A saved career that lost part of it (a short club list, a
+// truncated fixture list) is rebuilt here, keeping every result already
+// played. A whole setup is never touched: a healthy career comes back from
+// these functions exactly as it went in.
+
+// The stored group in slot `index` has the shape today's club screen reads:
+// its tier and letter match the pyramid's slot, and it holds DIVISION_SIZE
+// unique, known club ids. Which clubs they are is the group's own business —
+// promotions move clubs between slots at a rollover.
+function groupShapeOk(g, index) {
+  const want = GROUPS[index];
+  if (!want || !g || typeof g !== 'object' || Array.isArray(g)) return false;
+  if (g.tier !== want.tier || g.group !== want.group) return false;
+  if (!Array.isArray(g.clubIds) || g.clubIds.length !== DIVISION_SIZE) return false;
+  const seen = new Set();
+  for (const id of g.clubIds) {
+    if (!CLUB_BY_ID[id] || seen.has(id)) return false;
+    seen.add(id);
+  }
+  return true;
+}
+
+// A saved squad the match engine can play with.
+function squadUsable(squad) {
+  return Array.isArray(squad) && squad.length >= SQUAD_MIN && squad.length <= 60
+    && squad.every((p) => p && typeof p === 'object'
+      && typeof p.id === 'string' && typeof p.name === 'string'
+      && POS_GROUP[p.pos] && Number.isInteger(p.overall));
+}
+
+// A saved result the league table can count.
+function resultUsable(r) {
+  return !!r && typeof r === 'object' && !Array.isArray(r)
+    && Number.isInteger(r.matchday) && r.matchday >= 1 && r.matchday <= MATCHDAYS
+    && !!CLUB_BY_ID[r.home && r.home.id] && !!CLUB_BY_ID[r.away && r.away.id]
+    && Number.isInteger(r.homeGoals) && r.homeGoals >= 0
+    && Number.isInteger(r.awayGoals) && r.awayGoals >= 0;
+}
+
+// Why a career's league setup is not whole, or null when it is. Only a
+// three-tier career is checked; careers from before it keep their own
+// behaviour. The first failure wins.
+export function groupSetupError(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return 'state';
+  if (!(state.version >= 3)) return null;
+  if (!CLUB_BY_ID[state.clubId]) return 'club';
+  if (!Array.isArray(state.groups) || state.groups.length !== GROUPS.length
+    || !state.groups.every((g, i) => groupShapeOk(g, i))) return 'groups';
+  const at = state.groupIndex;
+  if (!Number.isInteger(at) || at < 0 || at >= state.groups.length) return 'groupIndex';
+  const own = state.groups[at];
+  if (own.tier !== state.division || own.group !== state.group
+    || !own.clubIds.includes(state.clubId)) return 'groupIndex';
+  if (!Number.isInteger(state.matchday) || state.matchday < 0
+    || state.matchday > MATCHDAYS) return 'matchday';
+  const inGroup = new Set(own.clubIds);
+  const half = DIVISION_SIZE / 2;
+  if (!Array.isArray(state.fixtures) || state.fixtures.length !== MATCHDAYS) return 'fixtures';
+  for (const day of state.fixtures) {
+    if (!Array.isArray(day) || day.length !== half) return 'fixtures';
+    const seen = new Set();
+    for (const pair of day) {
+      if (!pair || typeof pair !== 'object' || Array.isArray(pair)) return 'fixtures';
+      if (!inGroup.has(pair.home) || !inGroup.has(pair.away) || pair.home === pair.away) return 'fixtures';
+      if (seen.has(pair.home) || seen.has(pair.away)) return 'fixtures';
+      seen.add(pair.home);
+      seen.add(pair.away);
+    }
+    if (seen.size !== DIVISION_SIZE) return 'fixtures';
+  }
+  if (!Array.isArray(state.results)) return 'results';
+  const perDay = new Map();
+  for (const r of state.results) {
+    if (!resultUsable(r)) return 'results';
+    if (!inGroup.has(r.home.id) || !inGroup.has(r.away.id)) return 'membership';
+    perDay.set(r.matchday, (perDay.get(r.matchday) || 0) + 1);
+  }
+  // The played matchdays and the results must agree: a career partway through
+  // a season carries a full day's results for every matchday it played, and
+  // none beyond it. A matchday claimed with no results behind it is damage
+  // the repair replays, not a day the table can show.
+  for (let d = 1; d <= MATCHDAYS; d++) {
+    const n = perDay.get(d) || 0;
+    if (d <= state.matchday ? n !== half : n !== 0) return 'results';
+  }
+  return null;
+}
+
+// Rebuild a broken group setup, keeping every result already played. A state
+// that passes groupSetupError comes back as the same object, untouched;
+// null means the damage is beyond repair. Everything is deterministic from
+// the career's own season seed, so the same saved state always rebuilds the
+// same fixtures.
+export function repairGroupSetup(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
+  if (!groupSetupError(state)) return state;
+  const seed = seasonSeed(state);
+
+  // Each matchday's pairings, read back from its own results in stored order.
+  // A day takes its first half results that do not double-book a club, so a
+  // damaged record beyond a full day's worth is simply not chosen.
+  const byDay = new Map();
+  const chosen = new Set();
+  const half = DIVISION_SIZE / 2;
+  if (Array.isArray(state.results)) {
+    for (const r of state.results) {
+      if (!resultUsable(r)) continue;
+      if (!byDay.has(r.matchday)) byDay.set(r.matchday, []);
+      const day = byDay.get(r.matchday);
+      if (day.length < half && !day.some((p) => p.home === r.home.id || p.home === r.away.id
+        || p.away === r.home.id || p.away === r.away.id)) {
+        day.push({ home: r.home.id, away: r.away.id });
+        chosen.add(r);
+      }
+    }
+  }
+  // How far the season really went: the last matchday whose results are all
+  // there. A day with a record missing replays rather than showing a played
+  // matchday with an empty half.
+  let played = 0;
+  while (played < MATCHDAYS && (byDay.get(played + 1) || []).length === half) played++;
+  // The results the rebuilt career keeps, in the order they were saved: the
+  // pairings the played days chose, and nothing from a day beyond them. What
+  // a damaged day dropped does not come back.
+  const results = Array.isArray(state.results)
+    ? state.results.filter((r) => chosen.has(r) && r.matchday <= played) : [];
+
+  // Every club the kept history names, the manager's own first: the
+  // membership the rebuilt group must hold. More than DIVISION_SIZE of them
+  // is damage nothing can absorb.
+  const kept = [state.clubId];
+  const seen = new Set([state.clubId]);
+  for (const r of results) {
+    for (const side of [r.home, r.away]) {
+      if (!seen.has(side.id)) { seen.add(side.id); kept.push(side.id); }
+    }
+  }
+  if (kept.length > DIVISION_SIZE) return null;
+
+  // Where the club plays: the stored group it sits in when that group is
+  // whole and the kept results agree with it; else any whole stored group of
+  // its division holding it; else the canonical pyramid slot, which also
+  // corrects a division or letter saved wrong.
+  const stored = Array.isArray(state.groups) ? state.groups : [];
+  const covers = (ids) => kept.every((id) => ids.includes(id));
+  const at = Number.isInteger(state.groupIndex) ? state.groupIndex : -1;
+  let gi = at >= 0 && at < GROUPS.length && groupShapeOk(stored[at], at)
+    && stored[at].clubIds.includes(state.clubId) && covers(stored[at].clubIds) ? at : -1;
+  if (gi < 0) {
+    gi = stored.findIndex((g, i) => groupShapeOk(g, i) && g.tier === state.division
+      && g.clubIds.includes(state.clubId) && covers(g.clubIds));
+  }
+  let ids;
+  if (gi >= 0) {
+    ids = stored[gi].clubIds.slice();
+  } else {
+    gi = clubToGroup[state.clubId] || 0;
+    const canonical = GROUPS[gi].clubIds;
+    if (covers(canonical)) {
+      ids = canonical.slice();
+    } else {
+      // History first, then the canonical group, then the same tier's other
+      // canonical groups, then any known club — never past 18.
+      ids = kept.slice();
+      for (const id of canonical) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (!ids.includes(id)) ids.push(id);
+      }
+      for (const g of GROUPS) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (g.tier !== GROUPS[gi].tier) continue;
+        for (const id of g.clubIds) {
+          if (ids.length >= DIVISION_SIZE) break;
+          if (!ids.includes(id)) ids.push(id);
+        }
+      }
+      for (const id of COASTAL_IDS) {
+        if (ids.length >= DIVISION_SIZE) break;
+        if (!ids.includes(id)) ids.push(id);
+      }
+    }
+  }
+
+  // The pyramid as it will be saved: this group rebuilt, every other group
+  // kept when it is whole, refilled from its canonical slot when it is not.
+  const groups = GROUPS.map((g, i) => {
+    if (i === gi) return { tier: g.tier, group: g.group, clubIds: ids };
+    if (groupShapeOk(stored[i], i)) {
+      return { tier: stored[i].tier, group: stored[i].group, clubIds: stored[i].clubIds.slice() };
+    }
+    return { tier: g.tier, group: g.group, clubIds: g.clubIds.slice() };
+  });
+
+  // Every club of the group needs a squad the engine can play with; one
+  // missing or malformed is built fresh from the season seed, exactly the
+  // squad it was always going to have. Existing squads are untouched.
+  const squadsIn = state.squads && typeof state.squads === 'object' && !Array.isArray(state.squads)
+    ? state.squads : {};
+  const squads = { ...squadsIn };
+  const tier = groups[gi].tier;
+  for (const id of ids) {
+    if (!squadUsable(squads[id])) {
+      squads[id] = buildSquad(seed, CLUB_INDEX[id], CLUB_BY_ID[id].rep, tier);
+    }
+  }
+  const rolesIn = state.roles && typeof state.roles === 'object' && !Array.isArray(state.roles)
+    ? state.roles : {};
+  const roles = { ...rolesIn };
+  for (const id of ids) {
+    for (const p of squads[id]) {
+      if (!roles[p.id]) roles[p.id] = defaultRole(p.pos);
+    }
+  }
+
+  // The season continues from a fresh schedule that skips the pairings
+  // already played.
+  let fixtures;
+  if (played === 0) {
+    fixtures = buildFixtures(seed, ids);
+  } else {
+    // Only the pairing as it was played is skipped: the reverse leg is the
+    // return fixture, still to be played.
+    const playedPairs = new Set(results.map((r) => r.home.id + '|' + r.away.id));
+    fixtures = [];
+    for (let d = 1; d <= played; d++) fixtures.push(byDay.get(d));
+    let remaining = buildFixtures(seed, ids).flat()
+      .filter((f) => !playedPairs.has(f.home + '|' + f.away));
+    while (fixtures.length < MATCHDAYS && remaining.length) {
+      const day = []; const left = [];
+      for (const f of remaining) {
+        const clash = day.some((p) => p.home === f.home || p.home === f.away
+          || p.away === f.home || p.away === f.away);
+        if (day.length < half && !clash) day.push(f);
+        else left.push(f);
+      }
+      if (!day.length) break;
+      fixtures.push(day);
+      remaining = left;
+    }
+    // A tail the pool cannot fill stands empty: it plays no matches and the
+    // season still finishes.
+    while (fixtures.length < MATCHDAYS) fixtures.push([]);
+  }
+  // A report of a day the repair dropped describes a match this career no
+  // longer counts as played, so it goes with the results it came from.
+  const report = state.lastReport;
+  const reportKept = !!report && played === state.matchday
+    && results.some((r) => r.matchday === report.matchday);
+  return { ...state, matchday: played, division: groups[gi].tier, group: groups[gi].group,
+    groups, groupIndex: gi, squads, roles, fixtures, results,
+    lastReport: reportKept ? report : null };
+}
+
+// A career's groups, brought up to today's pyramid. A career saved before
+// Division 3 grew to twelve groups keeps all nine of its own groups exactly as
+// they are, reshuffled by earlier seasons or not, and gains copies of the
+// eight new Division 3 groups, which hold only the 144 new clubs. So every
+// saved club stays where it is and no club appears twice.
+export function pyramidGroups(state) {
+  const stored = state && Array.isArray(state.groups) ? state.groups : [];
+  const groups = stored.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds.slice() }));
+  for (let i = groups.length; i < GROUPS.length; i++) {
+    groups.push({ tier: GROUPS[i].tier, group: GROUPS[i].group, clubIds: GROUPS[i].clubIds.slice() });
+  }
+  return groups;
+}
+
 // A career saved by an earlier version of the app, made ready for today's club
 // screen: only what is missing or unusable is filled in, from the career's own
 // squad. A valid career comes back equal; null means it cannot be shown. It
 // never touches the version, the divisions, the season, the seed, the results
-// or the squads.
+// or the squads — except that a broken group setup is rebuilt first, which may
+// rewrite the groups and the unplayed fixtures (see repairGroupSetup).
 export function repairCareer(state) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
   const club = CLUB_BY_ID[state.clubId];
   if (!club) return null;
-  if (!state.squads || !Array.isArray(state.squads[state.clubId])) return null;
-  if (!Array.isArray(state.fixtures) || !Array.isArray(state.results)) return null;
-  // A three-tier career must know its group, and be in it.
+  if (!Array.isArray(state.results)) return null;
+  if (state.version < 3 && !Array.isArray(state.fixtures)) return null;
+  // A three-tier career whose group setup is broken is rebuilt here; only
+  // damage beyond repair still fails. A whole setup passes through untouched.
   if (state.version >= 3) {
-    const group = Array.isArray(state.groups) ? state.groups[state.groupIndex] : null;
-    if (!group || !Array.isArray(group.clubIds) || !group.clubIds.includes(state.clubId)) return null;
+    const settled = repairGroupSetup(state);
+    if (!settled) return null;
+    state = settled;
   }
+  if (!state.squads || !Array.isArray(state.squads[state.clubId])) return null;
 
   const squad = state.squads[state.clubId];
   const roles = state.roles && typeof state.roles === 'object' && !Array.isArray(state.roles)
@@ -1392,6 +1818,9 @@ export function repairCareer(state) {
     staff: staffFields(state),
     youth: youthFields(state),
   };
+  // A three-tier career saved before Division 3 grew keeps its groups and
+  // gains the new ones.
+  if (state.version >= 3) out.groups = pyramidGroups(state);
   if (typeof state.nextMatchAt === 'string' && !Number.isNaN(Date.parse(state.nextMatchAt))) {
     out.nextMatchAt = state.nextMatchAt;
   } else if (state.nextMatchAt === null) {
@@ -1491,6 +1920,26 @@ export function leagueTable(state) {
   return list;
 }
 
+// The ten players in the group who have scored most this season. Season goals
+// live on each player in `state.squads`, so nothing extra is stored. Ties go
+// to the name, and a player on no goals is left out.
+export function topScorers(state, limit = 10) {
+  const out = [];
+  if (!state) return out;
+  const squads = state.squads || {};
+  for (const id of divisionClubIds(state)) {
+    const club = CLUB_BY_ID[id];
+    if (!club) continue;
+    for (const p of squads[id] || []) {
+      const goals = Number(p && p.goals);
+      if (!(goals > 0)) continue;
+      out.push({ id: p.id, name: p.name, pos: p.pos, clubId: id, clubName: club.name, goals });
+    }
+  }
+  out.sort((a, b) => b.goals - a.goals || String(a.name).localeCompare(String(b.name)));
+  return out.slice(0, limit);
+}
+
 export function formOf(state, clubId, count = 5) {
   const played = [];
   for (const r of state.results) {
@@ -1529,10 +1978,31 @@ export function objectiveMet(rank, objective, size = DIVISION_SIZE) {
 }
 
 // ── Preparing a side for the simulation ──────────────────────────────────
-function teamFor(state, clubId) {
+function lineupUsable(squad, lineup) {
+  if (!Array.isArray(lineup) || lineup.length !== 11 || new Set(lineup).size !== 11) return false;
+  const ids = new Set((squad || []).map((p) => p.id));
+  return lineup.every((id) => ids.has(id));
+}
+
+function teamFor(state, clubId, managers) {
   const club = CLUB_BY_ID[clubId];
   const squad = state.squads[clubId];
   const isUser = clubId === state.clubId;
+  const managed = managers && managers[clubId];
+  if (!isUser && managed) {
+    const tactics = managed.tactics && FORMATIONS[managed.tactics.formation]
+      ? {
+        formation: managed.tactics.formation,
+        mentality: MENTALITIES[managed.tactics.mentality] ? managed.tactics.mentality : 'Balanced',
+        pressing: PRESSING[managed.tactics.pressing] ? managed.tactics.pressing : 'Medium',
+      }
+      : { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' };
+    const roles = managed.roles && typeof managed.roles === 'object' ? managed.roles : {};
+    const lineup = lineupUsable(squad, managed.lineup)
+      ? managed.lineup.slice()
+      : autoLineup(squad, tactics.formation, roles);
+    return { club, squad, lineup, tactics, roles };
+  }
   const tactics = isUser ? state.tactics : { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' };
   const roles = isUser ? state.roles || {} : {};
   const lineup = isUser ? state.lineup : autoLineup(squad, tactics.formation, roles);
@@ -1840,8 +2310,8 @@ export function simulateMatch(home, away, seed) {
 
   const report = {
     matchday: null,
-    home: { id: home.club.id, name: home.club.name, short: home.club.short, color: home.club.color },
-    away: { id: away.club.id, name: away.club.name, short: away.club.short, color: away.club.color },
+    home: { id: home.club.id, name: home.club.name, short: home.club.short },
+    away: { id: away.club.id, name: away.club.name, short: away.club.short },
     homeGoals,
     awayGoals,
     moments,
@@ -1899,35 +2369,10 @@ export function applyReport(state, report) {
   if (state.clubId === report.home.id || state.clubId === report.away.id) fixLineup(state);
 }
 
-export function playMatchday(state) {
-  const md = state.matchday;
-  if (md >= state.fixtures.length) return [];
-  const reports = [];
-  state.fixtures[md].forEach((f, i) => {
-    const home = teamFor(state, f.home);
-    const away = teamFor(state, f.away);
-    const report = simulateMatch(home, away, matchSeed(seasonSeed(state), md, i));
-    report.matchday = md + 1;
-    report.fixtureIndex = i;
-    reports.push(report);
-  });
-  for (const report of reports) applyReport(state, report);
-  for (const r of reports) {
-    state.results.push({
-      matchday: r.matchday,
-      home: r.home,
-      away: r.away,
-      homeGoals: r.homeGoals,
-      awayGoals: r.awayGoals,
-    });
-  }
-  const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
-  state.lastReport = own;
-  // Only the manager's own fixture earns or pays Club credits, from the
-  // manager's side: the result, the home gate and what the home crowd spends
-  // at the shop, food stand and hotel, less ground upkeep, maintenance, player
-  // wages and staff wages, each paid only as far as the balance reaches.
-  if (own) {
+// Settle one club's matchday: result credits, home gate and sales, upkeep,
+// maintenance and wages, fans, the finance history and the academy. Shared by
+// the solo career (its own fixture) and the shared league (all 18 clubs).
+export function settleClubMatch(state, own, md) {
     const atHome = own.home.id === state.clubId;
     const goalsFor = atHome ? own.homeGoals : own.awayGoals;
     const goalsAgainst = atHome ? own.awayGoals : own.homeGoals;
@@ -2010,7 +2455,37 @@ export function playMatchday(state) {
     }, ...m.financeHistory].slice(0, FINANCE_HISTORY_MAX);
     // The academy takes in young players after every matchday.
     academyIntake(state, md + 1);
+}
+
+export function playMatchday(state) {
+  const md = state.matchday;
+  if (md >= state.fixtures.length) return [];
+  const reports = [];
+  state.fixtures[md].forEach((f, i) => {
+    const home = teamFor(state, f.home);
+    const away = teamFor(state, f.away);
+    const report = simulateMatch(home, away, matchSeed(seasonSeed(state), md, i));
+    report.matchday = md + 1;
+    report.fixtureIndex = i;
+    reports.push(report);
+  });
+  for (const report of reports) applyReport(state, report);
+  for (const r of reports) {
+    state.results.push({
+      matchday: r.matchday,
+      home: r.home,
+      away: r.away,
+      homeGoals: r.homeGoals,
+      awayGoals: r.awayGoals,
+    });
   }
+  const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
+  state.lastReport = own;
+  // Only the manager's own fixture earns or pays Club credits, from the
+  // manager's side: the result, the home gate and what the home crowd spends
+  // at the shop, food stand and hotel, less ground upkeep, maintenance, player
+  // wages and staff wages, each paid only as far as the balance reaches.
+  if (own) settleClubMatch(state, own, md);
   state.matchday = md + 1;
   state.finished = state.matchday >= state.fixtures.length;
   return reports;
@@ -2360,11 +2835,12 @@ export function managerLine(clubId, owners, ownClubId, ownName) {
   return 'Run by a bot';
 }
 
-const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
 
-// Why a division has the groups it has. Division 1 is one group of 18, and
-// Divisions 2 and 3 hold four each, which with 162 clubs is all the league can
-// fill. The counts come from the pyramid, so the sentence cannot drift from it.
+// Why a division has the groups it has. Division 1 is one group of 18,
+// Division 2 holds four and Division 3 twelve, which with 306 clubs is all
+// the league can fill. The counts come from the pyramid, so the sentence
+// cannot drift from it.
 export function groupsNote(tier) {
   if (!Number.isInteger(tier) || tier < 2 || tier > TIER_COUNT) return '';
   const count = GROUPS.filter((g) => g.tier === tier).length;
@@ -2373,7 +2849,7 @@ export function groupsNote(tier) {
     + ': the Coastal League holds ' + CLUBS.length + ' clubs.';
 }
 
-// The New career screen's shop: all nine groups, each club with its live
+// The New career screen's shop: all seventeen groups, each club with its live
 // squad average and whether another manager runs it.
 export function shopGroups(taken) {
   const set = new Set(Array.isArray(taken) ? taken : []);
@@ -2458,10 +2934,28 @@ export function clubSummary(seed, club, division = 1) {
   return { avg: Math.round(avg) };
 }
 
+// The place a rank moves to at the end of the season: 'promotion',
+// 'relegation' or null. It mirrors nextPlacement's rules, so the table's
+// strips and the rollover agree. A career from before the three tiers has none.
+export function tableZone(state, rank) {
+  if (!(state && state.version >= 3 && Array.isArray(state.groups)
+    && state.groups[state.groupIndex])) return null;
+  const tier = state.division;
+  if (tier === 1) return rank >= 11 ? 'relegation' : null;
+  if (tier === 2) {
+    const size = divisionClubIds(state).length;
+    if (rank <= 2) return 'promotion';
+    if (rank > size - 6) return 'relegation';
+    return null;
+  }
+  return rank <= 2 ? 'promotion' : null;
+}
+
 // Where a finished season leaves the manager: how they finished, and the tier
 // and group they play in next. In the three-tier league the bottom 8 of
 // Division 1 go down; the top 2 of each Division 2 and Division 3 group go up,
-// the bottom 2 of each Division 2 group go down, and nobody leaves Division 3.
+// the bottom 6 of each Division 2 group go down into its three Division 3
+// groups, and nobody leaves Division 3.
 export function nextPlacement(state) {
   const table = leagueTable(state);
   const size = divisionClubIds(state).length;
@@ -2474,16 +2968,23 @@ export function nextPlacement(state) {
     if (tier === 1) {
       if (rank === 1) return { kind: 'champions', rank, size, tier: 1, group: null };
       if (rank >= 11) {
-        return { kind: 'relegated', rank, size, tier: 2, group: GROUP_LETTERS[(rank - 11) % GROUP_LETTERS.length] };
+        return { kind: 'relegated', rank, size, tier: 2, group: GROUP_LETTERS[(rank - 11) % GROUP_COUNTS[2]] };
       }
       return { kind: 'stayed', rank, size, tier: 1, group: null };
     }
     if (tier === 2) {
       if (rank <= 2) return { kind: 'promoted', rank, size, tier: 1, group: null };
-      if (rank >= size - 1) return { kind: 'relegated', rank, size, tier: 3, group: letter };
+      if (rank > size - 6) {
+        // 18th and 17th go to the first feeder, 16th and 15th to the second,
+        // 14th and 13th to the third.
+        const feeder = feederIndices(state.groupIndex)[relegationFeeder(rank)];
+        return { kind: 'relegated', rank, size, tier: 3, group: GROUPS[feeder].group };
+      }
       return { kind: 'stayed', rank, size, tier: 2, group: letter };
     }
-    if (rank <= 2) return { kind: 'promoted', rank, size, tier: 2, group: letter };
+    if (rank <= 2) {
+      return { kind: 'promoted', rank, size, tier: 2, group: GROUPS[parentIndex(state.groupIndex)].group };
+    }
     return { kind: 'stayed', rank, size, tier: 3, group: letter };
   }
 
@@ -2572,29 +3073,37 @@ export function startNextSeason(state) {
   let groups;
   let groupIndex;
   if (isV3) {
-    groups = state.groups.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds.slice() }));
+    groups = pyramidGroups(state);
     const seed = seasonSeed(state);
     const tables = groups.map((g, i) => (i === state.groupIndex
       ? leagueTable(state)
       : simulateGroup(seed, i, g.tier, g.clubIds)));
+    const d2Count = GROUP_COUNTS[2];
     // Division 1 loses its bottom 8, two into each Division 2 group in order
     // of finish, and gains the top 2 of each Division 2 group.
     const relegated = tables[0].slice(10, 18).map((r) => r.id);
     groups[0].clubIds = groups[0].clubIds.filter((id) => !relegated.includes(id));
-    relegated.forEach((id, k) => { groups[1 + (k % GROUP_LETTERS.length)].clubIds.push(id); });
-    for (let gi = 1; gi <= GROUP_LETTERS.length; gi++) {
+    relegated.forEach((id, k) => { groups[D2_FIRST + (k % d2Count)].clubIds.push(id); });
+    for (let gi = D2_FIRST; gi < D2_FIRST + d2Count; gi++) {
       const up = tables[gi].slice(0, 2).map((r) => r.id);
       groups[gi].clubIds = groups[gi].clubIds.filter((id) => !up.includes(id));
       groups[0].clubIds.push(...up);
     }
-    // Each Division 2 group's bottom 2 swap with the same-letter Division 3
-    // group's top 2. Nobody leaves Division 3.
-    for (let gi = 1; gi <= GROUP_LETTERS.length; gi++) {
-      const down = tables[gi].slice(-2).map((r) => r.id);
-      const up = tables[gi + GROUP_LETTERS.length].slice(0, 2).map((r) => r.id);
-      groups[gi].clubIds = groups[gi].clubIds.filter((id) => !down.includes(id)).concat(up);
-      groups[gi + GROUP_LETTERS.length].clubIds = groups[gi + GROUP_LETTERS.length].clubIds
-        .filter((id) => !up.includes(id)).concat(down);
+    // Each Division 2 group's bottom 6 go down into its three Division 3
+    // groups, two each in finish order, and it takes in the top 2 of each of
+    // them. Nobody leaves Division 3.
+    for (let gi = D2_FIRST; gi < D2_FIRST + d2Count; gi++) {
+      const feeders = feederIndices(gi);
+      const down = tables[gi].slice(-6).map((r) => r.id);
+      groups[gi].clubIds = groups[gi].clubIds.filter((id) => !down.includes(id));
+      down.forEach((id, k) => {
+        groups[feeders[relegationFeeder(13 + k)]].clubIds.push(id);
+      });
+      for (const f of feeders) {
+        const up = tables[f].slice(0, 2).map((r) => r.id);
+        groups[f].clubIds = groups[f].clubIds.filter((id) => !up.includes(id));
+        groups[gi].clubIds.push(...up);
+      }
     }
     groupIndex = groups.findIndex((g) => g.clubIds.includes(state.clubId));
     if (groupIndex < 0) groupIndex = 0;
@@ -2756,4 +3265,349 @@ export function findDemoSeed(max = 400) {
     if (me && me.rank === 3 && me.played === 17) return { seed, points: me.points, table: table.map((r) => [r.rank, r.name, r.points]) };
   }
   return null;
+}
+
+// ── The shared league ────────────────────────────────────────────────────
+// One Coastal League every manager plays in together. The server keeps one
+// row per group and plays every due kick-off for all 17 groups, so two
+// managers in the same group read the same table, fixture list and report.
+export const LEAGUE_SEED = 771201;
+export const LEAGUE_ZONE = 'Europe/London';
+
+// A club nobody has taken over yet: no Club credits, no staff, no prospects,
+// the division's starting fans and a sponsor for the season.
+export function leagueClubEntry(seed, season, tier) {
+  return {
+    credits: 0,
+    fans: FAN_SEED[tier] || FAN_SEED[3],
+    facilities: facilityLevels({}),
+    staff: staffFields({}),
+    youth: [],
+    finance: { season, gate: 0, upkeep: 0, homeGames: 0, maintenance: 0, wages: 0, staffWages: 0, shop: 0, food: 0, hotel: 0 },
+    financeHistory: [],
+    sponsor: sponsorFor(seed, season, tier),
+    lastSponsor: null,
+    lastReport: null,
+  };
+}
+
+// One group's row. `carried` is the squads and club entries the previous
+// season leaves for these clubs, keyed by club id.
+export function buildLeagueGroup(seed, season, index, group, carried) {
+  const ids = group.clubIds.slice();
+  const ss = seasonSeed({ seed, season });
+  const squads = {};
+  const clubs = {};
+  for (const id of ids) {
+    const old = carried && carried[id];
+    squads[id] = old && Array.isArray(old.squad)
+      ? old.squad
+      : buildSquad(ss, CLUB_INDEX[id], CLUB_BY_ID[id].rep, group.tier);
+    clubs[id] = old && old.entry ? old.entry : leagueClubEntry(seed, season, group.tier);
+  }
+  return {
+    season,
+    tier: group.tier,
+    group: group.group,
+    clubIds: ids,
+    squads,
+    fixtures: buildFixtures(hash(ss, 'group', index), ids),
+    results: [],
+    matchday: 0,
+    finished: false,
+    clubs,
+  };
+}
+
+// The descriptors for the 17 groups, in GROUPS order.
+export function leagueGroups() {
+  return GROUPS.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds.slice() }));
+}
+
+// Season 1 of the shared league, matchday 0, waiting for the server to stamp
+// its first kick-off.
+export function buildLeague(seed = LEAGUE_SEED) {
+  return {
+    season: 1,
+    seed,
+    groups: leagueGroups(),
+    matchday: 0,
+    phase: 'playing',
+    nextMatchAt: null,
+    plays: [],
+  };
+}
+
+function leagueClubView(group, index, league, clubId, managers) {
+  const entry = group.clubs[clubId] || leagueClubEntry(league.seed, league.season, group.tier);
+  const mgr = managers && managers[clubId];
+  const club = CLUB_BY_ID[clubId];
+  let tactics = { formation: club.formation, mentality: 'Balanced', pressing: 'Medium' };
+  let roles = {};
+  if (mgr && mgr.tactics && FORMATIONS[mgr.tactics.formation]) {
+    tactics = {
+      formation: mgr.tactics.formation,
+      mentality: MENTALITIES[mgr.tactics.mentality] ? mgr.tactics.mentality : 'Balanced',
+      pressing: PRESSING[mgr.tactics.pressing] ? mgr.tactics.pressing : 'Medium',
+    };
+  }
+  if (mgr && mgr.roles && typeof mgr.roles === 'object') roles = mgr.roles;
+  const lineup = mgr && lineupUsable(group.squads[clubId], mgr.lineup)
+    ? mgr.lineup.slice()
+    : autoLineup(group.squads[clubId], tactics.formation, roles);
+  return {
+    version: 3,
+    season: league.season,
+    seed: league.seed,
+    division: group.tier,
+    group: group.group,
+    groups: league.groups,
+    groupIndex: index,
+    clubId,
+    managerName: mgr && typeof mgr.manager_name === 'string' ? mgr.manager_name : '',
+    squads: group.squads,
+    fixtures: group.fixtures,
+    results: group.results,
+    matchday: group.matchday,
+    finished: group.finished,
+    tactics,
+    roles,
+    lineup,
+    plays: league.plays || [],
+    credits: entry.credits,
+    fans: entry.fans,
+    facilities: entry.facilities,
+    staff: entry.staff,
+    youth: entry.youth,
+    finance: entry.finance,
+    financeHistory: entry.financeHistory,
+    sponsor: entry.sponsor,
+    lastSponsor: entry.lastSponsor,
+    lastReport: entry.lastReport,
+  };
+}
+
+// Play one group's next matchday: every fixture, both sides' player effects,
+// and each club's own money, fans, finance history and academy intake. A
+// manager's saved lineup, tactics and roles are used for their club; any
+// other, or an unusable lineup, gets the bot's best eleven. Returns the
+// lineups that had to be rebuilt so the server can store them.
+export function playLeagueMatchday(group, index, league, managers) {
+  const rebuilt = {};
+  if (group.matchday >= group.fixtures.length) return rebuilt;
+  const md = group.matchday;
+  const ss = seasonSeed({ seed: league.seed, season: league.season });
+  const reports = [];
+  group.fixtures[md].forEach((f, i) => {
+    const home = teamFor(group, f.home, managers);
+    const away = teamFor(group, f.away, managers);
+    const report = simulateMatch(home, away, matchSeed(ss, md, i));
+    report.matchday = md + 1;
+    report.fixtureIndex = i;
+    reports.push(report);
+  });
+  const neutral = { squads: group.squads, clubId: null, tactics: { formation: '4-4-2' }, roles: {} };
+  for (const r of reports) applyReport(neutral, r);
+  for (const clubId of group.clubIds) {
+    const mgr = managers && managers[clubId];
+    if (mgr && !lineupUsable(group.squads[clubId], mgr.lineup)) {
+      rebuilt[clubId] = teamFor(group, clubId, managers).lineup;
+    }
+  }
+  for (const id of group.clubIds) {
+    const view = leagueClubView(group, index, league, id, managers);
+    const own = reports.find((r) => r.home.id === id || r.away.id === id) || null;
+    view.lastReport = own;
+    if (own) settleClubMatch(view, own, md);
+    const entry = group.clubs[id];
+    entry.credits = view.credits;
+    entry.fans = view.fans;
+    entry.facilities = view.facilities;
+    entry.staff = view.staff;
+    entry.youth = view.youth;
+    entry.finance = view.finance;
+    entry.financeHistory = view.financeHistory;
+    entry.sponsor = view.sponsor;
+    entry.lastSponsor = view.lastSponsor;
+    entry.lastReport = view.lastReport;
+  }
+  for (const r of reports) {
+    group.results.push({
+      matchday: r.matchday,
+      home: r.home,
+      away: r.away,
+      homeGoals: r.homeGoals,
+      awayGoals: r.awayGoals,
+    });
+  }
+  group.matchday = md + 1;
+  group.finished = group.matchday >= group.fixtures.length;
+  return rebuilt;
+}
+
+// Promotion and relegation, from the 17 final tables, unchanged from the
+// solo rollover. Returns the next season's group descriptors.
+export function movePyramid(groups, tables) {
+  const next = groups.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds.slice() }));
+  const d1 = 0;
+  const d2First = 1;
+  const d2Count = GROUP_COUNTS[2];
+  // Division 1 loses its bottom 8, two into each Division 2 group in order of
+  // finish, and gains the top 2 of each Division 2 group.
+  const relegated = tables[d1].slice(10, 18).map((r) => r.id);
+  next[d1].clubIds = next[d1].clubIds.filter((id) => !relegated.includes(id));
+  relegated.forEach((id, k) => { next[d2First + (k % d2Count)].clubIds.push(id); });
+  for (let gi = d2First; gi < d2First + d2Count; gi++) {
+    const up = tables[gi].slice(0, 2).map((r) => r.id);
+    next[gi].clubIds = next[gi].clubIds.filter((id) => !up.includes(id));
+    next[d1].clubIds.push(...up);
+  }
+  // Each Division 2 group's bottom 6 go down into its three Division 3
+  // groups, two each in finish order, and it takes in the top 2 of each of
+  // them. Nobody leaves Division 3.
+  for (let gi = d2First; gi < d2First + d2Count; gi++) {
+    const feeders = feederIndices(gi);
+    const down = tables[gi].slice(-6).map((r) => r.id);
+    next[gi].clubIds = next[gi].clubIds.filter((id) => !down.includes(id));
+    down.forEach((id, k) => {
+      next[feeders[relegationFeeder(13 + k)]].clubIds.push(id);
+    });
+    for (const f of feeders) {
+      const up = tables[f].slice(0, 2).map((r) => r.id);
+      next[f].clubIds = next[f].clubIds.filter((id) => !up.includes(id));
+      next[gi].clubIds.push(...up);
+    }
+  }
+  return next;
+}
+
+// A club's squad the summer leaves it: a year older, with a graduate in the
+// place of every retiree.
+export function carryClubSquad(state, season, tier) {
+  const aged = ageingFor(state);
+  const leaving = new Set(aged.retiring.map((r) => r.id));
+  const academy = facilityLevels(state).academy;
+  const players = aged.players.filter((p) => !leaving.has(p.id)).map(playerForNewSeason);
+  aged.retiring.forEach((r, i) => {
+    players.push(playerForNewSeason(academyGraduate(state.seed, season, i, r.pos, academy, tier)));
+  });
+  return players;
+}
+
+// The next season: promotion and relegation once, every club's squad aged and
+// carried, its money settled, and its facilities, staff and prospects kept.
+export function nextLeagueSeason(league, groups) {
+  const descriptors = groups.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds.slice() }));
+  const tables = groups.map((g, i) => leagueTable({
+    version: 3,
+    season: league.season,
+    seed: league.seed,
+    division: g.tier,
+    group: g.group,
+    groups: descriptors,
+    groupIndex: i,
+    clubIds: g.clubIds,
+    squads: g.squads,
+    fixtures: g.fixtures,
+    results: g.results,
+    matchday: g.matchday,
+    finished: g.finished,
+    clubId: null,
+  }));
+  const moved = movePyramid(descriptors, tables);
+  const season = league.season + 1;
+  return moved.map((d, i) => {
+    const carried = {};
+    for (const id of d.clubIds) {
+      const oldIndex = groups.findIndex((g) => g.clubIds.includes(id));
+      const old = groups[oldIndex >= 0 ? oldIndex : 0];
+      if (!old || !old.clubIds.includes(id)) continue;
+      const view = leagueClubView(old, oldIndex, league, id, null);
+      const money = seasonEndMoney(view);
+      carried[id] = {
+        squad: carryClubSquad(view, season, d.tier),
+        entry: {
+          credits: money.credits,
+          fans: Math.min(money.fans, FAN_CAP[d.tier] || FAN_CAP[3]),
+          facilities: view.facilities,
+          staff: view.staff,
+          youth: view.youth,
+          finance: money.finance,
+          financeHistory: [],
+          sponsor: money.sponsor,
+          lastSponsor: money.lastSponsor,
+          lastReport: null,
+        },
+      };
+    }
+    return buildLeagueGroup(league.seed, season, i, d, carried);
+  });
+}
+
+// Every kick-off that has passed, for the whole league, in order. The first
+// slot after the last matchday rolls the season over; the first matchday of
+// the new season plays at the slot after that.
+export function playDueLeague(league, groups, managers, now) {
+  const at = now instanceof Date ? now : new Date(now);
+  let played = 0;
+  let rollover = null;
+  const rebuilt = {};
+  while (league.nextMatchAt && Date.parse(league.nextMatchAt) <= at.getTime()) {
+    const slot = new Date(league.nextMatchAt);
+    league.plays = (Array.isArray(league.plays) ? league.plays : []).concat(slot.toISOString()).slice(-MATCHES_PER_DAY);
+    if (league.phase === 'summer') {
+      const rolled = nextLeagueSeason(league, groups);
+      groups.splice(0, groups.length, ...rolled);
+      league.season += 1;
+      league.groups = rolled.map((g) => ({ tier: g.tier, group: g.group, clubIds: g.clubIds }));
+      league.matchday = 0;
+      league.phase = 'playing';
+      rollover = { season: league.season };
+      league.nextMatchAt = slotAfter(slot, LEAGUE_ZONE).toISOString();
+      continue;
+    }
+    for (let i = 0; i < groups.length; i++) {
+      Object.assign(rebuilt, playLeagueMatchday(groups[i], i, league, managers));
+    }
+    league.matchday = (league.matchday || 0) + 1;
+    if (league.matchday >= MATCHDAYS) {
+      league.matchday = MATCHDAYS;
+      league.phase = 'summer';
+    }
+    league.nextMatchAt = slotAfter(slot, LEAGUE_ZONE).toISOString();
+    played++;
+  }
+  return { played, rollover, rebuilt };
+}
+
+// What a shared-league manager's page reads: the same career-shaped state the
+// tabs already render, built from the group and the manager's own tactics.
+export function clubView(league, group, index, clubId, manager) {
+  const managers = manager ? { [clubId]: manager } : {};
+  const view = leagueClubView(group, index, league, clubId, managers);
+  view.mode = 'shared';
+  view.timeZone = LEAGUE_ZONE;
+  view.nextMatchAt = league.phase === 'summer' ? null : league.nextMatchAt;
+  view.nextSeasonAt = league.phase === 'summer' ? league.nextMatchAt : null;
+  return view;
+}
+
+// Split a club view back into the club entry and its squad, so the engine's
+// club actions (facilities, staff, academy, sales) work on a shared club.
+export function clubFromView(view) {
+  return {
+    squad: view.squads[view.clubId],
+    entry: {
+      credits: view.credits,
+      fans: view.fans,
+      facilities: view.facilities,
+      staff: view.staff,
+      youth: view.youth,
+      finance: view.finance,
+      financeHistory: view.financeHistory,
+      sponsor: view.sponsor,
+      lastSponsor: view.lastSponsor,
+      lastReport: view.lastReport,
+    },
+  };
 }

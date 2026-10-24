@@ -22,20 +22,21 @@ function v3State(division) {
 
 test('freeShopClubs drops taken clubs from every group in the pyramid', () => {
   const groups = freeShopClubs([]);
-  assert.equal(groups.length, 9);
+  assert.equal(groups.length, 17);
   assert.equal(groups[0].clubIds.length, 18);
-  assert.equal(groups.reduce((n, g) => n + g.free.length, 0), 162);
-  const taken = [groups[0].clubIds[0], groups[0].clubIds[1], groups[8].clubIds[0]];
+  assert.equal(groups.reduce((n, g) => n + g.free.length, 0), 306);
+  const taken = [groups[0].clubIds[0], groups[0].clubIds[1], groups[16].clubIds[0]];
   const after = freeShopClubs(taken);
   assert.equal(after[0].free.length, 16);
-  assert.equal(after[8].free.length, 17);
+  assert.equal(after[16].free.length, 17);
   assert.equal(after[0].clubIds.length, 18);
   const shop = shopGroups(taken);
-  assert.equal(shop.length, 9);
+  assert.equal(shop.length, 17);
   assert.equal(shop[0].tier, 1);
-  assert.equal(shop[8].tier, 3);
+  assert.equal(shop[16].tier, 3);
+  assert.equal(shop[16].group, 'L');
   assert.equal(shop[0].clubs[0].taken, true);
-  assert.equal(shop[8].clubs[1].taken, false);
+  assert.equal(shop[16].clubs[1].taken, false);
 });
 
 test('purchaseError accepts a free club in any division and refuses a short wallet', () => {
@@ -132,16 +133,16 @@ test('a club a person owns is never called a bot, and a nameless one says Manage
   assert.equal(managerLine('a', { a: '' }, 'me', 'Alex'), 'Manager');
 });
 
-test('the four-groups note matches the pyramid, and Division 1 has none', () => {
-  assert.equal(groupsNote(2), 'Division 2 has four groups of 18: the Coastal League holds 162 clubs.');
-  assert.equal(groupsNote(3), 'Division 3 has four groups of 18: the Coastal League holds 162 clubs.');
+test('the groups note matches the pyramid, and Division 1 has none', () => {
+  assert.equal(groupsNote(2), 'Division 2 has four groups of 18: the Coastal League holds 306 clubs.');
+  assert.equal(groupsNote(3), 'Division 3 has twelve groups of 18: the Coastal League holds 306 clubs.');
   assert.equal(groupsNote(1), '');
   assert.equal(groupsNote(4), '');
   assert.equal(groupsNote(undefined), '');
   // The sentence is the pyramid's own numbers.
-  assert.equal(GROUPS.filter((g) => g.tier === 3).length, 4);
+  assert.equal(GROUPS.filter((g) => g.tier === 3).length, 12);
   assert.equal(GROUPS.filter((g) => g.tier === 2).length, 4);
   assert.equal(GROUPS.every((g) => g.clubIds.length === DIVISION_SIZE), true);
-  assert.equal(CLUBS.length, 162);
-  assert.match(groupsNote(3), /holds 162 clubs/);
+  assert.equal(CLUBS.length, 306);
+  assert.match(groupsNote(3), /holds 306 clubs/);
 });

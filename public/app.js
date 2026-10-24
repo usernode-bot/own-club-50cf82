@@ -6,20 +6,25 @@
 import {
   CLUBS, CLUB_BY_ID, LEAGUE_NAME, FORMATIONS, FORMATION_NAMES,
   MENTALITY_NAMES, PRESSING_NAMES, ROLES, POS_GROUP,
-  GROUPS, TIER_COUNT, clubToGroup, groupName,
+  GROUPS, GROUP_LETTERS, TIER_COUNT, clubToGroup, groupName,
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
   matchdayHistory,
-  repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
+  repairCareer, groupSetupError, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
   moneyFields, seasonMoney, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
   STAFF_ROLES, staffFields, staffWagesDue, MAINTENANCE, maintenanceDue,
   MATCHDAY_SALES, matchdaySales,
   wageBill, playerWage, stadiumSeats, homeCrowd, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
-  growthOutlook, managerLine, groupsNote,
+  growthOutlook, managerLine, groupsNote, tableZone, topScorers,
 } from './engine.js';
+import { buildTimeline, matchCrowd, creditsLine } from './match-feed.js';
+import {
+  MARKET_SORTS, POSITION_FILTERS, MIN_OVERALL_STEPS, MAX_PRICE_STEPS,
+  DEFAULT_MARKET_VIEW, valueHint, filterListings, sortListings, activeFilterCount,
+} from './market-view.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -46,7 +51,7 @@ let screen = 'loading';
 // What the shop says a club costs and how much a new wallet holds. The server
 // sends these with every load; the defaults only stand in until it does.
 let shop = { price: 100, startingBalance: 1000, currency: 'Dummy USDC' };
-const SHOP_GROUPS = GROUPS;
+let SHOP_GROUPS = GROUPS;
 let pickedDivision = TIER_COUNT;
 let pickedGroup = 'A';
 let pickedClub = GROUPS.filter((g) => g.tier === TIER_COUNT)[0].clubIds[0];
@@ -59,6 +64,12 @@ let autoPlayed = 0;
 let tab = 'home';
 let reportFrom = 'home';
 let refreshFailed = false;
+// The club's league group is being rebuilt by the server: the setting-up
+// screen shows until the repair comes back, or it gives up after two seconds
+// to an error with a Retry.
+let groupSettingUp = false;
+// The last repair attempt failed, so Retry runs the repair again, not a load.
+let groupRetry = false;
 // The sale just made, so the New career screen can say where the money came
 // from. Cleared once a new club is bought.
 let lastSale = null;
@@ -68,6 +79,8 @@ let homeroomWallet = undefined;
 // Which clubs a real person runs, as clubId -> manager name, from the server.
 // Only the name is shown; the page never sees an account id.
 let owners = {};
+// The shared league as it stands: season, matchday, phase and the next kick-off.
+let league = null;
 
 const TABS = ['home', 'squad', 'tactics', 'competition', 'club', 'finance', 'transfers'];
 // On a phone the bar keeps the first four tabs and folds these into More.
@@ -87,8 +100,10 @@ function showTab(next) {
   if (OVERFLOW_TABS.includes(tab)) more.setAttribute('data-current', '');
   else more.removeAttribute('data-current');
   closeMore();
-  if (tab === 'tactics' && career) drawPitch();
-  if (tab === 'transfers' && career) {
+  // While the group is being rebuilt the saved career is not playable yet, so
+  // the pitch and the market wait for the repair.
+  if (tab === 'tactics' && career && !groupSettingUp) drawPitch();
+  if (tab === 'transfers' && career && !groupSettingUp) {
     renderMarket();
     loadMarket();
   }
@@ -113,6 +128,7 @@ async function refreshShop() {
     if (status === 200 && data && data.shop) {
       shop = data.shop;
       owners = data.owners && typeof data.owners === 'object' ? data.owners : {};
+      league = data.league || league;
       renderNew();
     }
   } catch (_) { /* the error already says the club is taken */ }
@@ -150,6 +166,10 @@ async function api(method, body, path) {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    // Never read a saved answer from the browser's cache: a group repair,
+    // a save on another device or a just-played matchday must all be seen
+    // the moment they land.
+    cache: 'no-store',
   });
   let data = null;
   try { data = await res.json(); } catch (_) {}
@@ -211,6 +231,7 @@ async function load() {
   }
 
   if (answer && answer.data && answer.data.shop) shop = answer.data.shop;
+  if (answer && answer.data) league = answer.data.league || null;
   // The linked Homeroom wallet, sent for a signed-in person and absent for a
   // guest looking at the demo.
   if (answer && answer.data) homeroomWallet = answer.data.homeroomWallet;
@@ -231,6 +252,16 @@ async function load() {
   }
 
   if (!cause) {
+    // A career whose league group is broken is rebuilt by the server before
+    // anything else: the page never repairs it itself, because a save spreads
+    // whatever the page holds.
+    const stored = answer.data.career;
+    if (answer.data.groupBroken || groupSetupError(stored)) {
+      career = stored;
+      version = answer.data.version;
+      await repairGroup();
+      return;
+    }
     const repaired = repairCareer(answer.data.career);
     if (!repaired) {
       cause = LOAD_CAUSE.shown;
@@ -253,10 +284,132 @@ async function load() {
   }
 
   loadError = cause;
+  // The error view is shared with the repair failure, which names its own
+  // trouble here.
+  $('error-title').textContent = 'Your career did not load';
   $('error-text').textContent = 'Your career could not be read from the server. Your last saved matchday is kept.';
   setLoadCause(cause);
   screen = 'error';
   render();
+}
+
+// ── Setting up the group ─────────────────────────────────────────────────
+// A career whose league group lost its shape (a short club list, a truncated
+// fixture list) is rebuilt by the server, keeping every result already played.
+// The page only asks for the repair and shows what is happening; it never
+// repairs the career itself, because a save spreads whatever the page holds.
+
+async function repairGroup() {
+  groupSettingUp = true;
+  groupRetry = false;
+  screen = 'club';
+  tab = 'home';
+  render();
+
+  // Give the repair a short cap, so a stuck request ends in an error with a
+  // Retry rather than a screen that waits for ever.
+  let settled = false;
+  const cap = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    giveUp('Setting up your group took too long. Press Retry to try again.');
+  }, 2000);
+
+  function giveUp(cause) {
+    clearTimeout(cap);
+    groupSettingUp = false;
+    groupRetry = true;
+    loadError = cause;
+    $('error-title').textContent = 'Your group could not be set up';
+    $('error-text').textContent = 'Your league could not be set up from its saved results. Nothing you have played has been lost.';
+    setLoadCause(cause);
+    screen = 'error';
+    render();
+  }
+
+  try {
+    const { status, data } = await api('POST', null, '/api/career/group-repair');
+    if (settled) return;
+    settled = true;
+    clearTimeout(cap);
+    if (status === 200 && data && data.career) {
+      const repaired = repairCareer(data.career);
+      if (repaired && !groupSetupError(repaired)) {
+        career = repaired;
+        version = data.version;
+        autoPlayed = Number(data.autoPlayed) > 0 ? Number(data.autoPlayed) : 0;
+        owners = data.owners && typeof data.owners === 'object' ? data.owners : {};
+        groupSettingUp = false;
+        screen = 'club';
+        tab = hashTab();
+        try {
+          render();
+          // A career saved before the zone was stored gets one now, once.
+          if (!career.timeZone) { ensureZone(); save(); }
+          return;
+        } catch (err) {
+          console.error('career render failed', err);
+          career = null;
+          giveUp(LOAD_CAUSE.shown);
+          return;
+        }
+      }
+      giveUp(LOAD_CAUSE.server(data, status));
+      return;
+    }
+    if (status === 401) giveUp(LOAD_CAUSE.signin);
+    else if (data && typeof data.message === 'string' && data.message) giveUp(data.message);
+    else if (status > 0) giveUp(LOAD_CAUSE.server(data, status));
+    else giveUp(LOAD_CAUSE.network);
+  } catch (_) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(cap);
+    giveUp(LOAD_CAUSE.network);
+  }
+}
+
+// The group letter beside the club's name, in the header above every tab.
+// Division 1 has one group, so it shows none.
+function fillGroupPill() {
+  const el = $('club-group');
+  if (!el) return;
+  const show = career && career.version >= 3 && career.division > 1
+    && GROUP_LETTERS.includes(career.group);
+  el.textContent = show ? 'Group ' + career.group : '';
+  el.hidden = !show;
+}
+
+// The setting-up screen: the header says what is happening, the Home card and
+// the Competition table hold loading rows in their own shape, and everything
+// that reads the broken fixtures waits.
+function renderSettingUp() {
+  const club = CLUB_BY_ID[career.clubId];
+  $('club-md').textContent = 'Setting up your group';
+  $('club-name').textContent = club ? club.name : '';
+  $('club-pos').textContent = placeName(career);
+  fillGroupPill();
+  const badge = $('tab-badge');
+  if (badge && club) badge.outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
+  const tabName = $('tab-name');
+  if (tabName) tabName.textContent = club ? club.name : '';
+
+  $('setup-card').hidden = false;
+  $('next-card').hidden = true;
+  $('season-card').hidden = true;
+  $('last-sec').hidden = true;
+  $('home-actions').hidden = true;
+  const rows = [];
+  for (let i = 0; i < 6; i++) {
+    rows.push(`<li class="list-row"><span class="n"><span class="skeleton sk-pos"></span></span>
+      <span class="t"><span class="skeleton sk-line"></span><small><span class="skeleton sk-sm"></span></small></span>
+      <span class="g"><span class="skeleton sk-cell"></span></span>
+      <span class="p"><span class="skeleton sk-cell"></span></span></li>`);
+  }
+  $('table-list').innerHTML = rows.join('');
+  $('club-form').innerHTML = '';
+  $('league-note').hidden = true;
+  $('setup-note').hidden = false;
 }
 
 // ── New career ───────────────────────────────────────────────────────────
@@ -296,14 +449,44 @@ function takenLine(id) {
 
 function renderNew() {
   $('manager-name').value = $('manager-name').value || '';
+  $('new-title').textContent = 'Buy a club';
+  if (league) {
+    const nextMd = Math.min(34, (league.matchday || 0) + 1);
+    $('new-sub').textContent = league.phase === 'summer'
+      ? 'One shared league: season ' + league.season + ' complete'
+      : 'One shared league: season ' + league.season + ', matchday ' + nextMd + ' of 34';
+    const note = $('shared-note');
+    note.hidden = false;
+    note.textContent = league.phase === 'summer'
+      ? 'Every club here plays in one shared league, at the same moment for everyone: 12 am, 6 am, 12 pm and 6 pm London time. The new season starts at the next kick-off, and the points every club has stay.'
+      : 'Every club here plays in one shared league, at the same moment for everyone: 12 am, 6 am, 12 pm and 6 pm London time. You take over at matchday ' + nextMd + ' of 34, and the points your club already has stay.';
+  } else {
+    $('new-sub').textContent = 'Three tiers, 306 clubs, 34 matchdays';
+    $('shared-note').hidden = true;
+  }
   const taken = new Set(Array.isArray(shop.taken) ? shop.taken : []);
   const prices = shop.prices || { 1: 300, 2: 200, 3: 100 };
   const price = prices[pickedDivision] || shop.price;
   const inDivision = SHOP_GROUPS.filter((g) => g.tier === pickedDivision);
-  // Division 1 is one group of 18; Divisions 2 and 3 have four groups.
+  // Division 1 is one group of 18; Division 2 has four groups and Division 3
+  // twelve, as the pyramid says.
   const groups = inDivision.map((g) => ({ group: g.group, clubIds: g.clubIds, free: g.clubIds.filter((id) => !taken.has(id)) }));
   const freeTotal = groups.reduce((n, g) => n + g.free.length, 0);
   const freeAll = SHOP_GROUPS.reduce((n, g) => n + g.clubIds.filter((id) => !taken.has(id)).length, 0);
+
+  // A group picked in another division is not in this one: start at its first.
+  if (pickedDivision !== 1 && !groups.some((g) => g.group === pickedGroup)) {
+    pickedGroup = groups[0] ? groups[0].group : 'A';
+  }
+  // The Group buttons come from the pyramid: four in Division 2, twelve in
+  // Division 3, in rows of four and six.
+  const groupRow = $('group-row');
+  groupRow.dataset.cols = pickedDivision === 3 ? '6' : '4';
+  groupRow.innerHTML = pickedDivision === 1 ? '' : groups.map((g) => (
+    '<button class="chip" type="button" data-group="' + esc(g.group) + '" aria-pressed="'
+      + String(g.group === pickedGroup) + '" aria-label="Division ' + pickedDivision
+      + ' Group ' + esc(g.group) + '">' + esc(g.group) + '</button>'
+  )).join('');
 
   for (const btn of $('division-row').querySelectorAll('[data-division]')) {
     btn.setAttribute('aria-pressed', String(Number(btn.dataset.division) === pickedDivision));
@@ -315,9 +498,6 @@ function renderNew() {
   $('group-section').hidden = pickedDivision === 1;
   $('group-explain').textContent = groupsNote(pickedDivision);
   $('group-note').textContent = freeTotal === 0 ? '' : (group ? group.free.length : 0) + ' of 18 free in Group ' + pickedGroup;
-  for (const btn of $('group-row').querySelectorAll('[data-group]')) {
-    btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
-  }
 
   $('wallet-balance').textContent = usdc(shop.balance == null ? shop.startingBalance : shop.balance);
   const sold = lastSale ? CLUB_BY_ID[lastSale.clubId] : null;
@@ -350,16 +530,18 @@ function renderNew() {
     if (isTaken) {
       return `
     <li class="list-row club-row taken-row" aria-disabled="true">
-      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${esc(takenLine(c.id))}</small></span>
+      ${badgeHtml(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${esc(takenLine(c.id))}</small></span>
+      ${codePill(c)}
       <span class="taken">Taken</span>
       <span class="tick" aria-hidden="true"></span>
     </li>`;
     }
     return `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
-      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, run by a bot</small></span>
+      ${badgeHtml(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]} · ${esc(c.city)} · ${esc(groupName(GROUPS[clubToGroup[c.id]].tier))}</small></span>
+      ${codePill(c)}
       <span class="price">${usdc(price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`;
@@ -435,7 +617,12 @@ async function startCareer() {
 
 // ── Club screen ──────────────────────────────────────────────────────────
 function badgeHtml(club) {
-  return '<span class="badge" style="background:' + club.color + '">' + esc(club.short) + '</span>';
+  return '<span class="badge" style="--ka:var(--kit-' + club.kit + ');--kb:var(--kit-' + club.kit + 's)">' + esc(club.short) + '</span>';
+}
+
+// The club's three-letter code: decorative, the name carries the meaning.
+function codePill(club) {
+  return '<span class="code-pill" aria-hidden="true">' + esc(club.code) + '</span>';
 }
 
 function playerStatus(p, starters) {
@@ -498,6 +685,7 @@ function fixtureDate(date, zone) {
 }
 
 function renderClub() {
+  if (groupSettingUp) return renderSettingUp();
   const table = leagueTable(career);
   const me = table.find((r) => r.id === career.clubId);
   const club = CLUB_BY_ID[career.clubId];
@@ -505,6 +693,7 @@ function renderClub() {
   const next = nextFixture(career);
   const pyramid = career.version >= 2;
   const place = placeName(career);
+  const shared = career.mode === 'shared';
 
   if (pyramid) {
     $('club-md').textContent = career.finished
@@ -514,9 +703,19 @@ function renderClub() {
     $('club-md').textContent = career.finished ? 'Season complete' : 'Matchday ' + (career.matchday + 1) + ' of ' + total;
   }
   $('club-name').textContent = club.name;
+  fillGroupPill();
   $('club-pos').textContent = ordinal(me.rank) + ' in ' + place;
+  $('club-code').textContent = club.code;
+  $('club-code').hidden = false;
+  $('setup-card').hidden = true;
+  $('setup-note').hidden = true;
+  $('home-actions').hidden = false;
+  $('shared-sec').hidden = shared || DEMO;
+  $('next-season').hidden = shared;
   $('tab-badge').outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
   $('tab-name').textContent = club.name;
+  $('tab-code').textContent = club.code;
+  $('tab-code').hidden = false;
 
   if (next && !career.finished) {
     $('next-card').hidden = false;
@@ -530,6 +729,9 @@ function renderClub() {
     $('next-venue').textContent = next.venue;
     $('next-label').textContent = 'Next match';
     $('kickoff-when').textContent = kickoffText(career.nextMatchAt, career.timeZone, nowDate());
+    $('kickoff-note').textContent = shared
+      ? 'Every club in the Coastal League plays at the same moment: 12 am, 6 am, 12 pm and 6 pm London time, with your saved lineup and tactics.'
+      : 'Matches play by themselves at 12 am, 6 am, 12 pm and 6 pm your time, with your saved lineup and tactics.';
   } else {
     $('next-card').hidden = true;
     $('season-card').hidden = false;
@@ -557,6 +759,11 @@ function renderClub() {
         + '. The academy brings in one young player for each.');
     }
     if (outcome.joinsNewLeague) bits.push('Next season the Coastal League becomes three tiers, and your club starts in ' + to + '.');
+    if (shared) {
+      bits.push(career.nextSeasonAt
+        ? 'Season ' + (career.season + 1) + ' starts by itself at ' + fixtureDate(new Date(career.nextSeasonAt), 'Europe/London') + ', with promotion and relegation for every club.'
+        : 'The next season starts by itself at the next kick-off, with promotion and relegation for every club.');
+    }
     $('season-title').textContent = 'You finished ' + ordinal(me.rank) + ' in ' + place;
     $('season-text').textContent = bits.join(' ');
   }
@@ -621,14 +828,31 @@ function renderClub() {
     $('last-sec').hidden = true;
   }
 
-  $('club-form').innerHTML = formOf(career, career.clubId).map((r) => `<i class="${r.toLowerCase()}">${r}</i>`).join('');
-  $('table-list').innerHTML = table.map((r) => `
-    <li class="list-row${r.id === career.clubId ? ' me' : ''}">
+  const chips = (clubId) => formOf(career, clubId).map((r) => `<i class="${r.toLowerCase()}">${r}</i>`).join('');
+  $('club-form').innerHTML = chips(career.clubId);
+
+  // Promotion and relegation places, coloured down the left edge of the row,
+  // with a legend that names only the places this division uses.
+  const zones = new Set(table.map((r) => tableZone(career, r.rank)).filter(Boolean));
+  $('table-legend').innerHTML = [['up', 'promotion', 'Promotion'], ['down', 'relegation', 'Relegation']]
+    .filter(([, key]) => zones.has(key))
+    .map(([cls, , word]) => `<span><i class="${cls}"></i>${word}</span>`).join('');
+  $('table-legend').hidden = zones.size === 0;
+
+  const head = table.length
+    ? `<li class="list-row head" aria-hidden="true"><span class="n"></span><span class="t">Club</span><span class="form">Form</span><span class="g">GD</span><span class="p">Pts</span></li>`
+    : '';
+  $('table-list').innerHTML = head + table.map((r) => {
+    const zone = tableZone(career, r.rank);
+    return `<li class="list-row${r.id === career.clubId ? ' me' : ''}${zone ? ' zone-' + (zone === 'promotion' ? 'up' : 'down') : ''}">
       <span class="n">${r.rank}</span>
-      <span class="t">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}<small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
+      ${codePill(CLUB_BY_ID[r.id])}
+      <span class="t"><span class="row-title">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}</span><small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
+      <span class="form">${chips(r.id)}</span>
       <span class="g">${r.gd > 0 ? '+' : ''}${r.gd}</span>
       <span class="p">${r.points}</span>
-    </li>`).join('');
+    </li>`;
+  }).join('');
 
   // Why the league has the groups it has, under the table. Division 1 is one
   // group, and a career from before the three tiers has no note.
@@ -637,6 +861,17 @@ function renderClub() {
   $('league-note').hidden = !note;
 
   renderHistory();
+
+  // The group's leading scorers, from the goals already saved on each player.
+  const scorers = topScorers(career);
+  $('scorers-list').innerHTML = scorers.map((p) => `
+    <li class="list-row${p.clubId === career.clubId ? ' me' : ''}">
+      <span class="pos">${esc(p.pos)}</span>
+      <span class="nm">${esc(p.name)}<small>${esc(p.clubName)}</small></span>
+      <span class="price">${p.goals}</span>
+    </li>`).join('');
+  $('scorers-list').hidden = scorers.length === 0;
+  $('scorers-empty').hidden = scorers.length > 0;
 
   renderFinance();
 
@@ -650,6 +885,10 @@ function renderClub() {
   if (DEMO) {
     $('confirm-text').textContent = 'Sell ' + club.name
       + '? This is the staging demo season, so no wallet is credited.';
+  } else if (career.mode === 'shared') {
+    $('confirm-text').textContent = 'Sell ' + club.name + forPrice
+      + '? The ' + usdc(price) + ' goes into your wallet. ' + club.name
+      + ' stays in the shared league with its squad, results, Club credits and facilities, and a bot runs it from the next kick-off.';
   } else {
     $('confirm-text').textContent = 'Sell ' + club.name + forPrice
       + '? This career and its results end, and the ' + usdc(price)
@@ -1180,6 +1419,10 @@ function openReport(from) {
   const label = reportFrom === 'competition' ? 'Back to Competition' : 'Back to Home';
   $('report-back-label').textContent = label;
   $('report-close').textContent = label;
+  stopFeed();
+  const events = buildTimeline(career.lastReport, CLUB_BY_ID);
+  feed = { events, shown: reducedMotion() ? events.length : 1, timer: null };
+  announce('');
   screen = 'report';
   render();
   window.scrollTo(0, 0);
@@ -1211,6 +1454,51 @@ async function nextSeason() {
   }
 }
 $('next-season').addEventListener('click', nextSeason);
+
+// Joining the shared league with a solo save: the save is kept, and the club
+// is taken over as it stands in the shared league.
+let joinBusy = false;
+function openJoin() {
+  if (!career) return;
+  const club = CLUB_BY_ID[career.clubId];
+  $('join-confirm-text').textContent = 'Join the shared league with ' + club.name + '? You take over ' + club.name
+    + ' as it stands there: ' + placeName(career) + ', matchday ' + ((league && league.matchday) || 0) + ' of 34, with that squad, those results and its Club credits. This save stops playing and is kept, not deleted. Your Dummy USDC does not change.';
+  $('join-confirm').hidden = false;
+  $('join-error').hidden = true;
+}
+$('join-shared').addEventListener('click', openJoin);
+$('join-no').addEventListener('click', () => { $('join-confirm').hidden = true; });
+$('join-yes').addEventListener('click', async () => {
+  if (!career || joinBusy) return;
+  joinBusy = true;
+  const btn = $('join-yes');
+  btn.disabled = true;
+  try {
+    const { status, data } = await api('POST', {}, '/api/career/join');
+    if (status === 200 && data && data.career) {
+      career = data.career;
+      version = data.version;
+      league = data.league || league;
+      $('join-confirm').hidden = true;
+      render();
+      window.scrollTo(0, 0);
+      return;
+    }
+    const clubName = CLUB_BY_ID[career.clubId] ? CLUB_BY_ID[career.clubId].name : 'Your club';
+    const text = status === 409 && data && data.error === 'owned'
+      ? 'Another manager runs ' + clubName + ' in the shared league. Sell this club to buy another.'
+      : clubName + ' could not join the shared league. Your save is unchanged.';
+    $('join-error-text').textContent = text;
+    $('join-error').hidden = false;
+    if (status === 409 && data && data.error === 'owned') $('join-confirm').hidden = true;
+  } catch (err) {
+    $('join-error-text').textContent = 'Your club could not join the shared league. Your save is unchanged.';
+    $('join-error').hidden = false;
+  } finally {
+    joinBusy = false;
+    btn.disabled = false;
+  }
+});
 
 // ── The pitch, drawn on a canvas ─────────────────────────────────────────
 const canvas = $('pitch-canvas');
@@ -1581,6 +1869,10 @@ $('sheet-bench').addEventListener('click', (e) => {
 
 // ── The transfer market ──────────────────────────────────────────────────
 let market = { listings: [], mine: [], loading: false, error: false, loaded: false };
+// How the market is narrowed and ordered, and the players kept in mind. Page
+// state only: never saved to the career or to the browser's storage.
+const marketView = { ...DEFAULT_MARKET_VIEW };
+const shortlist = { listings: new Set(), players: new Set() };
 let marketBusy = null;
 let marketErrorText = '';
 let sheetTransfer = { mode: 'rows', busy: false, error: '' };
@@ -1593,12 +1885,79 @@ const LEAVE_TEXT = {
 
 function money(n) { return num(n); }
 
+// The star that keeps a listing or one of your own players in mind for the
+// session. A 44 px button with the app's own line star, filled when on.
+function starButton(attr, id, on, name) {
+  const icon = on
+    ? '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>';
+  return '<button class="star-btn" type="button" ' + attr + '="' + esc(id) + '" aria-pressed="' + on
+    + '" aria-label="Shortlist ' + esc(name) + '">' + icon + '</button>';
+}
+
 function marketRow(l) {
-  return `<li class="list-row">
+  const hint = valueHint(l.player, l.price);
+  const starred = shortlist.listings.has(l.id);
+  const err = signError(career, l.player, l.price);
+  let end;
+  let why = '';
+  if (DEMO) {
+    end = '<span class="need">Demo</span>';
+  } else if (err === 'full') {
+    end = '<button class="btn-secondary small blocked" type="button" disabled aria-describedby="why-' + l.id + '">Squad full</button>';
+    why = 'Your squad is full at ' + SQUAD_MAX + ' players. Sell or release one to sign.';
+  } else if (err === 'credits') {
+    const short = Math.max(1, signCost(career, l.player, l.price) - (career.credits || 0));
+    end = '<button class="btn-secondary small blocked" type="button" disabled aria-describedby="why-' + l.id + '">' + num(short) + ' needed</button>';
+    why = 'You need ' + num(short) + ' more Club credits: the price plus one matchday of wages and upkeep.';
+  } else {
+    const busy = marketBusy === 'b' + l.id;
+    end = '<button class="btn-secondary small" type="button" data-buy="' + l.id + '"' + (marketBusy ? ' disabled' : '') + '>'
+      + (busy ? 'Buying...' : 'Buy for ' + num(l.price)) + '</button>';
+  }
+  return `<li class="list-row mkt-row">
     <span class="pos">${esc(l.player.pos)}</span>
-    <span class="nm">${esc(l.player.name)}<small>Age ${l.player.age}, ${l.player.overall} overall, wage ${l.player.wage}. ${esc(displayName(l.club))}</small></span>
-    <span data-listing-end="${l.id}"></span>
+    <span class="nm">${esc(l.player.name)}<small>Age ${l.player.age}, ${l.player.overall} overall, wage ${num(l.player.wage)}. ${esc(displayName(l.club))}</small><small class="hint"><b${hint.kind === 'bargain' ? ' class="bargain"' : ''}>${hint.label}.</b> ${esc(hint.reason)}</small>${why ? '<small id="why-' + l.id + '">' + esc(why) + '</small>' : ''}</span>
+    <span class="mkt-acts">${starButton('data-star', l.id, starred, l.player.name)}${end}</span>
   </li>`;
+}
+
+// The sort and filter controls hold a fixed list of choices; the view state
+// says which one is chosen.
+function fillMarketControls() {
+  $('market-sort').innerHTML = MARKET_SORTS.map((s) => '<option value="' + s.value + '">' + esc(s.label) + '</option>').join('');
+  $('filter-pos').innerHTML = POSITION_FILTERS.map((p) => '<option value="' + esc(p.value) + '">' + esc(p.label) + '</option>').join('');
+  $('filter-ovr').innerHTML = '<option value="0">Any overall</option>'
+    + MIN_OVERALL_STEPS.map((n) => '<option value="' + n + '">' + n + '+ overall</option>').join('');
+  $('filter-price').innerHTML = '<option value="0">Any price</option>'
+    + MAX_PRICE_STEPS.map((n) => '<option value="' + n + '">Up to ' + num(n) + '</option>').join('');
+}
+
+function syncMarketControls(filters, starredOnMarket) {
+  $('market-sort').value = marketView.sort;
+  $('filter-pos').value = marketView.pos;
+  $('filter-ovr').value = String(marketView.minOverall);
+  $('filter-price').value = String(marketView.maxPrice);
+  $('filter-pos').dataset.on = String(!!marketView.pos);
+  $('filter-ovr').dataset.on = String(!!marketView.minOverall);
+  $('filter-price').dataset.on = String(!!marketView.maxPrice);
+  const short = $('filter-short');
+  short.setAttribute('aria-pressed', String(!!marketView.shortlistOnly));
+  short.dataset.on = String(!!marketView.shortlistOnly);
+  short.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>Shortlist'
+    + (starredOnMarket ? ' ' + starredOnMarket : '');
+  $('market-status').hidden = !(filters > 0 || marketView.sort !== DEFAULT_MARKET_VIEW.sort);
+  $('market-active').textContent = filters === 0 ? 'No filters on'
+    : filters + (filters === 1 ? ' filter on' : ' filters on');
+  $('market-empty-clear').hidden = filters === 0;
+}
+
+// Clear all turns every filter off and the sort back to Newest listing; Clear
+// filters keeps the sort. Neither touches a star.
+function clearMarketView(withSort) {
+  const sort = withSort ? DEFAULT_MARKET_VIEW.sort : marketView.sort;
+  Object.assign(marketView, DEFAULT_MARKET_VIEW, { sort });
+  renderMarket();
 }
 
 function renderMarket() {
@@ -1611,40 +1970,44 @@ function renderMarket() {
   const mine = market.mine || [];
   $('listing-sec').hidden = !mine.length;
   $('listing-count').textContent = mine.length + (mine.length === 1 ? ' player' : ' players');
-  $('listing-list').innerHTML = mine.map((l) => `<li class="list-row">
+  $('listing-list').innerHTML = mine.map((l) => `<li class="list-row mkt-row">
     <span class="pos">${esc(l.player.pos)}</span>
     <span class="nm">${esc(l.player.name)}<small>Asking ${num(l.price)} Club credits</small></span>
-    <button class="btn-secondary small" type="button" data-withdraw="${l.id}"${marketBusy ? ' disabled' : ''}>${marketBusy === 'w' + l.id ? 'Withdrawing...' : 'Withdraw'}</button>
+    <span class="mkt-acts"><span class="you-tag">You</span><button class="btn-secondary small" type="button" data-withdraw="${l.id}"${marketBusy ? ' disabled' : ''}>${marketBusy === 'w' + l.id ? 'Withdrawing...' : 'Withdraw'}</button></span>
   </li>`).join('');
 
-  $('market-loading').hidden = userHidden();
-  function userHidden() { return !(market.loading && !market.loaded); }
-  $('market-error').hidden = !market.error;
-  $('market-empty').hidden = !(market.loaded && !market.error && !(market.listings || []).length);
   const listings = market.listings || [];
-  $('market-count').textContent = market.loaded && !market.error
-    ? listings.length + (listings.length === 1 ? ' player' : ' players') : '';
-  $('market-list').innerHTML = listings.map((l) => marketRow(l)).join('');
+  const loadedOk = market.loaded && !market.error;
+  const filters = activeFilterCount(marketView);
+  const starredOnMarket = listings.filter((l) => shortlist.listings.has(l.id)).length;
+  const shown = sortListings(filterListings(listings, marketView, shortlist.listings), marketView.sort);
+  const empty = loadedOk && !listings.length;
+  const noMatch = loadedOk && listings.length > 0 && !shown.length;
+
+  $('market-loading').hidden = !(market.loading && !market.loaded);
+  $('market-error').hidden = !market.error;
+  $('market-empty').hidden = !empty;
+  $('market-nomatch').hidden = !noMatch;
+  $('market-controls').hidden = !(loadedOk && (listings.length > 0 || filters > 0));
+  if (loadedOk) syncMarketControls(filters, starredOnMarket);
+
+  $('market-count').textContent = loadedOk
+    ? (filters
+      ? shown.length + ' of ' + listings.length
+      : String(listings.length)) + (listings.length === 1 ? ' player' : ' players')
+    : '';
+  $('market-list').innerHTML = shown.map((l) => marketRow(l)).join('');
+
+  if (noMatch) {
+    const starredNone = marketView.shortlistOnly && filters === 1 && !starredOnMarket;
+    $('market-nomatch-text').textContent = starredNone
+      ? 'Star a player on the market to add them to your shortlist.'
+      : listings.length + (listings.length === 1 ? ' player is' : ' players are')
+        + ' on the market. Clear the filters to see them all.';
+  }
+
   if (market.error && marketErrorText) {
     $('market-error').querySelector('.state-text').textContent = marketErrorText;
-  }
-  // The end of each row: Buy, what is needed, or Squad full.
-  for (const l of listings) {
-    const slot = $('market-list').querySelector('[data-listing-end="' + l.id + '"]');
-    if (!slot) continue;
-    const err = signError(career, l.player, l.price);
-    if (DEMO) {
-      slot.innerHTML = '<span class="need">Demo</span>';
-    } else if (err === 'full') {
-      slot.innerHTML = '<span class="need">Squad full</span>';
-    } else if (err === 'credits') {
-      const short = Math.max(1, signCost(career, l.player, l.price) - (career.credits || 0));
-      slot.innerHTML = '<span class="need">' + num(short) + ' needed</span>';
-    } else {
-      const busy = marketBusy === 'b' + l.id;
-      slot.innerHTML = '<button class="btn-secondary small" type="button" data-buy="' + l.id + '"' + (marketBusy ? ' disabled' : '') + '>'
-        + (busy ? 'Buying...' : 'Buy for ' + num(l.price)) + '</button>';
-    }
   }
 }
 
@@ -1801,7 +2164,9 @@ function renderSheetTransfer(p) {
     </li>`;
     return;
   }
+  const starred = shortlist.players.has(p.id);
   box.innerHTML = `
+    <li class="list-row"><span class="nm">Shortlist<small>${starred ? 'Starred for this session.' : 'Star ' + name + ' to keep them in mind this session.'}</small></span>${starButton('data-sheet-star', p.id, starred, p.name)}</li>
     <li class="list-row"><span class="nm">List on market<small>${DEMO ? 'The demo season cannot list players.' : 'Other managers can buy ' + name + ' at your asking price.'}</small></span><button class="btn-secondary small" type="button" data-sheet-act="list"${dis || DEMO ? ' disabled' : ''}>List</button></li>
     <li class="list-row"><span class="nm">Sell to the league<small>${escapeSmall(blocked || 'Paid now. ' + name + ' leaves your squad.')}</small></span><button class="btn-secondary small" type="button" data-sheet-act="sell"${dis ? ' disabled' : ''}>Sell for ${num(systemSaleValue(p))}</button></li>
     <li class="list-row"><span class="nm">Release<small>${escapeSmall(blocked || 'Leaves for nothing, and you stop paying the wage.')}</small></span><button class="btn-secondary small" type="button" data-sheet-act="release"${dis ? ' disabled' : ''}>Release</button></li>`;
@@ -1885,13 +2250,45 @@ async function sheetTransferAction(mode) {
 }
 
 $('sheet-transfer').addEventListener('click', (e) => {
+  const star = e.target.closest('[data-sheet-star]');
+  if (star) {
+    const id = star.dataset.sheetStar;
+    if (shortlist.players.has(id)) shortlist.players.delete(id);
+    else shortlist.players.add(id);
+    const p = findPlayer(id);
+    if (p) renderSheetTransfer(p);
+    const again = $('sheet-transfer').querySelector('[data-sheet-star]');
+    if (again) again.focus();
+    return;
+  }
   const btn = e.target.closest('[data-sheet-act]');
   if (btn && !btn.disabled) sheetTransferAction(btn.dataset.sheetAct);
 });
 $('market-list').addEventListener('click', (e) => {
+  const star = e.target.closest('[data-star]');
+  if (star) {
+    const id = Number(star.dataset.star);
+    if (shortlist.listings.has(id)) shortlist.listings.delete(id);
+    else shortlist.listings.add(id);
+    renderMarket();
+    const again = $('market-list').querySelector('[data-star="' + id + '"]');
+    if (again) again.focus();
+    return;
+  }
   const btn = e.target.closest('[data-buy]');
   if (btn && !btn.disabled) buyListing(Number(btn.dataset.buy));
 });
+$('market-sort').addEventListener('change', (e) => { marketView.sort = e.target.value; renderMarket(); });
+$('filter-pos').addEventListener('change', (e) => { marketView.pos = e.target.value; renderMarket(); });
+$('filter-ovr').addEventListener('change', (e) => { marketView.minOverall = Number(e.target.value) || 0; renderMarket(); });
+$('filter-price').addEventListener('change', (e) => { marketView.maxPrice = Number(e.target.value) || 0; renderMarket(); });
+$('filter-short').addEventListener('click', () => {
+  marketView.shortlistOnly = !marketView.shortlistOnly;
+  renderMarket();
+});
+$('market-clear').addEventListener('click', () => clearMarketView(true));
+$('market-empty-clear').addEventListener('click', () => clearMarketView(false));
+$('market-nomatch-clear').addEventListener('click', () => clearMarketView(false));
 $('listing-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-withdraw]');
   if (btn && !btn.disabled) withdrawListing(Number(btn.dataset.withdraw));
@@ -1899,22 +2296,78 @@ $('listing-list').addEventListener('click', (e) => {
 $('market-retry').addEventListener('click', () => { loadMarket(); });
 
 // ── Match report ─────────────────────────────────────────────────────────
-const ICONS = {
-  goal: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg>',
-  yellow: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(var(--card-y))"/></svg>',
-  red: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(var(--card-r))"/></svg>',
-  sub: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3"/></svg>',
-  injury: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6v5h5v6h-5v5H9v-5H4V9h5z"/></svg>',
-};
+// The match you can watch: the saved report as a timeline, revealed one event
+// at a time. Play and Skip to full time end on the same list, because both
+// read this one timeline.
+let feed = { events: [], shown: 0, timer: null };
 
-function momentText(m, own) {
-  const who = own ? '' : m.teamName.replace(/ (FC|Athletic|Town|United|Rovers|City|Wanderers)$/, '') + ': ';
-  if (m.type === 'goal') return { main: 'Goal, ' + who + m.playerName, sub: m.assistName ? 'Assist: ' + m.assistName : '' };
-  if (m.type === 'yellow') return { main: 'Yellow card, ' + who + m.playerName, sub: m.detail || '' };
-  if (m.type === 'red') return { main: 'Red card, ' + who + m.playerName, sub: m.detail || '' };
-  if (m.type === 'injury') return { main: 'Injury, ' + who + m.playerName, sub: m.detail || '' };
-  if (m.type === 'sub') return { main: 'Sub: ' + m.playerName + ' on for ' + m.playerOutName, sub: own ? (m.detail || '') : m.teamName };
-  return { main: m.type, sub: '' };
+const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+function feedRow(e) {
+  const who = e.player ? ', ' + esc(e.player) : '';
+  const code = e.code ? ' <span class="code">' + esc(e.code) + '</span>' : '';
+  return '<li class="list-row"><span class="min">' + e.minute + "'</span>"
+    + '<span class="ev"><b>' + esc(e.label) + '</b>' + who + code
+    + '<small>' + esc(e.text) + '</small></span></li>';
+}
+
+function announce(text) {
+  const el = $('report-live');
+  if (el) el.textContent = text || '';
+}
+
+function stopFeed() {
+  if (feed.timer) clearInterval(feed.timer);
+  feed.timer = null;
+}
+
+function feedPause() {
+  stopFeed();
+  $('feed-play').textContent = 'Play';
+}
+
+// One event a second. Only the newest row is added, so a busy match costs one
+// DOM append per event and never re-renders the whole report.
+function feedStep() {
+  if (!feed.events.length || screen !== 'report') { stopFeed(); return; }
+  if (feed.shown < feed.events.length) {
+    feed.shown += 1;
+    const e = feed.events[feed.shown - 1];
+    $('report-moments').insertAdjacentHTML('beforeend', feedRow(e));
+    $('report-md').textContent = 'Matchday ' + career.lastReport.matchday + ', ' + e.minute + "'";
+    $('report-score').textContent = e.score[0] + '–' + e.score[1];
+    announce(e.minute + "', " + e.label + (e.player ? ', ' + e.player + ', ' + e.code : '') + '. ' + e.text);
+    const rows = $('report-moments').children;
+    const last = rows[rows.length - 1];
+    if (last && last.scrollIntoView) last.scrollIntoView({ block: 'nearest' });
+  }
+  if (feed.shown >= feed.events.length) finishFeed();
+}
+
+// Both Play reaching the end and Skip come through here, so the final state is
+// exactly the same.
+function finishFeed() {
+  stopFeed();
+  feed.shown = feed.events.length;
+  const focused = document.activeElement;
+  const fromControls = focused && (focused.id === 'feed-play' || focused.id === 'feed-skip');
+  renderReport();
+  announce(feed.events[feed.events.length - 1].text);
+  if (fromControls) {
+    const row = $('report-ft-row');
+    if (row) row.focus({ preventScroll: true });
+  }
+}
+
+function feedPlay() {
+  if (!feed.events.length) return;
+  if (feed.timer) { feedPause(); return; }
+  if (reducedMotion()) return;
+  feedStep();
+  if (feed.shown < feed.events.length) {
+    feed.timer = setInterval(feedStep, 1000);
+    $('feed-play').textContent = 'Pause';
+  }
 }
 
 function statRow(label, left, right, suffix = '') {
@@ -1927,6 +2380,34 @@ function statRow(label, left, right, suffix = '') {
   </li>`;
 }
 
+// The full-time summary: the recorded score, the compact strip and one line
+// naming what the result paid, linking to the Finance tab.
+function renderFullTime(r) {
+  const s = r.stats || {};
+  const pair = (name, suffix) => {
+    const arr = Array.isArray(s[name]) ? s[name] : [0, 0];
+    return (Number(arr[0]) || 0) + (suffix || '') + '–' + (Number(arr[1]) || 0) + (suffix || '');
+  };
+  const crowd = matchCrowd(r, career, CLUB_BY_ID);
+  const ground = (CLUB_BY_ID[r.home.id] || {}).ground;
+  const at = ground ? ' at ' + ground : '';
+  const result = r.homeGoals > r.awayGoals ? r.home.name + ' win' + at + '.'
+    : r.homeGoals < r.awayGoals ? r.away.name + ' win' + at + '.'
+      : r.home.name + ' and ' + r.away.name + ' draw' + at + '.';
+  const cred = creditsLine(r.finance);
+  $('report-ft').innerHTML = `
+    <li class="list-row" id="report-ft-row" tabindex="-1">
+      <span class="ev"><span class="ft-title">${esc(r.home.short)} ${r.homeGoals}–${r.awayGoals} ${esc(r.away.short)}</span><small>${esc(result)}</small></span>
+    </li>
+    <li class="list-row ft-strip">
+      <div><b>${pair('possession', '%')}</b>Possession</div>
+      <div><b>${pair('shots')}</b>Shots</div>
+      <div><b>${pair('onTarget')}</b>On target</div>
+      <div><b>${num(crowd.attendance)}</b>${crowd.estimate ? 'Attendance (estimate)' : 'Attendance'}</div>
+    </li>
+    ${cred ? `<li class="list-row"><span class="ev">${esc(cred)}<a href="#finance" data-finance-link>Finance tab</a>.</span></li>` : ''}`;
+}
+
 function renderReport() {
   const r = career.lastReport;
   const ownHome = r.home.id === career.clubId;
@@ -1937,22 +2418,29 @@ function renderReport() {
   const ownClub = CLUB_BY_ID[own.id];
   const oppClub = CLUB_BY_ID[opp.id];
 
-  $('report-md').textContent = 'Full time, matchday ' + r.matchday;
   $('report-home-badge').outerHTML = badgeHtml(CLUB_BY_ID[r.home.id]).replace('<span ', '<span id="report-home-badge" ');
   $('report-home-name').textContent = CLUB_BY_ID[r.home.id].name;
   $('report-away-badge').outerHTML = badgeHtml(CLUB_BY_ID[r.away.id]).replace('<span ', '<span id="report-away-badge" ');
   $('report-away-name').textContent = CLUB_BY_ID[r.away.id].name;
-  $('report-score').textContent = r.homeGoals + '–' + r.awayGoals;
+  $('report-match-teams').textContent = r.home.name + ' v ' + r.away.name;
 
-  $('report-moments').innerHTML = r.moments.length ? r.moments.map((m) => {
-    const isOwn = m.side === ownSide;
-    const txt = momentText(m, isOwn);
-    return `<li class="list-row">
-      <span class="min">${m.minute}'</span>
-      <span class="ico${isOwn ? ' own' : ''}">${ICONS[m.type] || ''}</span>
-      <span class="ev${isOwn ? '' : ' away'}">${esc(txt.main)}${txt.sub ? '<small>' + esc(txt.sub) + '</small>' : ''}</span>
-    </li>`;
-  }).join('') : '<li class="list-row"><span class="nm">No goals, cards, injuries or substitutions.</span></li>';
+  // The feed: the timeline up to the reveal index. A re-render keeps the place.
+  if (!feed.events.length) feed.events = buildTimeline(r, CLUB_BY_ID);
+  const total = feed.events.length;
+  feed.shown = Math.max(1, Math.min(feed.shown || 1, total));
+  const done = feed.shown >= total;
+  const shown = feed.events[feed.shown - 1];
+  $('report-md').textContent = done
+    ? 'Full time, matchday ' + r.matchday
+    : 'Matchday ' + r.matchday + ', ' + shown.minute + "'";
+  $('report-score').textContent = shown.score[0] + '–' + shown.score[1];
+  $('report-moments').innerHTML = feed.events.slice(0, feed.shown).map(feedRow).join('');
+  $('feed-controls').hidden = done || reducedMotion();
+  $('feed-play').textContent = feed.timer ? 'Pause' : 'Play';
+  $('report-ft-sec').hidden = !done;
+  $('report-stats-sec').hidden = !done;
+  $('report-ratings-sec').hidden = !done;
+  if (done) renderFullTime(r);
 
   $('report-stats-home').textContent = ownClub.name;
   $('report-stats-away').textContent = oppClub.name;
@@ -1974,7 +2462,7 @@ function renderReport() {
   // Club finances: what this match earned and cost, for a report saved with
   // them. A report from before they existed keeps the section hidden.
   const fin = r.finance;
-  $('report-finance-sec').hidden = !fin;
+  $('report-finance-sec').hidden = !fin || $('report-ft-sec').hidden;
   if (fin) {
     const resultCredits = creditsForResult(
       fin.result === 'win' ? 1 : 0,
@@ -2045,6 +2533,7 @@ function renderReport() {
 
 function backToClub() {
   if (!career) return;
+  stopFeed();
   closeSheet();
   closeMenu();
   screen = 'club';
@@ -2057,6 +2546,20 @@ $('report-close').addEventListener('click', backToClub);
 $('report-back').addEventListener('click', backToClub);
 $('report-back').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); backToClub(); }
+});
+$('feed-play').addEventListener('click', feedPlay);
+$('feed-skip').addEventListener('click', () => { if (feed.events.length) finishFeed(); });
+// The full-time line's way into the Finance tab for this matchday.
+$('report-ft').addEventListener('click', (e) => {
+  const link = e.target.closest('[data-finance-link]');
+  if (!link) return;
+  e.preventDefault();
+  stopFeed();
+  screen = 'club';
+  tab = 'finance';
+  if (location.hash !== '#finance') location.hash = '#finance';
+  render();
+  window.scrollTo(0, 0);
 });
 
 // ── Saving ───────────────────────────────────────────────────────────────
@@ -2283,18 +2786,29 @@ document.addEventListener('keydown', (e) => {
 
 window.addEventListener('hashchange', () => {
   if (!career) return;
-  if (screen === 'report') { screen = 'club'; render(); return; }
+  if (screen === 'report') { stopFeed(); screen = 'club'; render(); return; }
   if (screen === 'club') showTab(hashTab());
 });
-$('retry-btn').addEventListener('click', load);
+$('retry-btn').addEventListener('click', () => {
+  if (groupRetry) repairGroup();
+  else load();
+});
 
 // The wait line opens by itself when a match time passes, or when the manager
 // comes back to the app.
 async function refresh() {
-  if (!career) return;
+  if (!career || groupSettingUp) return;
   try {
     const { status, data } = await api('GET');
     if (status === 200 && data && data.career) {
+      // The same check a load makes: a group that lost its shape is repaired
+      // by the server, not patched here.
+      if (data.groupBroken || groupSetupError(data.career)) {
+        career = data.career;
+        version = data.version;
+        await repairGroup();
+        return;
+      }
       const repaired = repairCareer(data.career);
       if (repaired) {
         career = repaired;
@@ -2320,10 +2834,19 @@ document.addEventListener('visibilitychange', () => {
 });
 setInterval(() => {
   if (screen !== 'club' || !career) return;
+  const shared = career.mode === 'shared';
+  if (career.nextSeasonAt && nowDate().getTime() >= Date.parse(career.nextSeasonAt)) {
+    refresh();
+    return;
+  }
   if (tab === 'home' && career.nextMatchAt) {
     $('kickoff-when').textContent = kickoffText(career.nextMatchAt, career.timeZone, nowDate());
+    $('kickoff-note').textContent = shared
+      ? 'Every club in the Coastal League plays at the same moment: 12 am, 6 am, 12 pm and 6 pm London time, with your saved lineup and tactics.'
+      : 'Matches play by themselves at 12 am, 6 am, 12 pm and 6 pm your time, with your saved lineup and tactics.';
     if (nowDate().getTime() >= Date.parse(career.nextMatchAt)) refresh();
   }
 }, 30000);
 
+fillMarketControls();
 load();
