@@ -211,7 +211,13 @@ deletes the seller's listings. `engine.js` owns the rules: `playerWage`,
 `listPlayer`, `buyPlayer`, `returnListing`, `sellToLeague`, `releasePlayer`,
 `ageingFor` and `academyGraduate`; `playMatchday` charges `wageBill` beside
 `GROUND_UPKEEP` into `finance.wage` and `startNextSeason` ages the squad and
-replaces each retiree with a graduate. `PUT /api/career` keeps the stored squad
+replaces each retiree with a graduate. The market's own view is client-only:
+`public/market-view.js` holds the sort orders, the filter steps and the value
+hint (`usualPrice` and `valueHint`: 150 credits for each overall point above
+40, times 1.25 up to age 23, 0.85 from 30 and 0.6 from 33; a bargain under 85%
+of it, steep over 125%), while `app.js` keeps the chosen sort, filters and
+shortlist in page state, never in the career or the browser's storage, so they
+last until the page is reloaded. `PUT /api/career` keeps the stored squad
 (and, on a rollover, the aged one) whatever the page sends, and rebuilds an
 unusable lineup with `autoLineup`.
 
@@ -313,8 +319,16 @@ change follows it, and updates it when a request changes the look on purpose.
   badge colour of its own, stored as data in `engine.js` (Harbourside uses the
   pitch token).
 - Market rows follow the Club tab's rows: a position chip, name and a small grey
-  line, ending in the plain secondary button (Buy, Withdraw) or a muted
-  "N needed" / "Squad full" in the same place.
+  line, a value hint line (Bargain in the fitness green, Fair and Steep plain),
+  then the star and the plain secondary Buy (or Withdraw) as one unbroken group
+  that drops below the name on a phone. A refused Buy is a greyed button on the
+  raised background reading "N needed" or "Squad full", with the reason on its
+  own small grey line, never faded. Your own listings carry a You chip before
+  Withdraw. Sort and filters sit above the list: a sort select with a visible
+  "Sort by" label and three filter selects plus the Shortlist toggle, amber
+  outlined on the raised background when on, wrapping on a phone and in one row
+  from `md` up, with "K filters on" and Clear all under them. The shortlist star
+  is never amber: it is `--star` when filled.
 - The Wallet section is one list of the same rows, Dummy USDC then Club
   credits then the read-only Homeroom wallet: the balance in `.bal`, the price
   in `.price` (bold, tabular numbers); the group chips reuse the division

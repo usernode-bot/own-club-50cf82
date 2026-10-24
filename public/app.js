@@ -19,6 +19,10 @@ import {
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
   growthOutlook, managerLine, groupsNote,
 } from './engine.js';
+import {
+  MARKET_SORTS, POSITION_FILTERS, MIN_OVERALL_STEPS, MAX_PRICE_STEPS,
+  DEFAULT_MARKET_VIEW, valueHint, filterListings, sortListings, activeFilterCount,
+} from './market-view.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -1648,6 +1652,10 @@ $('sheet-bench').addEventListener('click', (e) => {
 
 // ── The transfer market ──────────────────────────────────────────────────
 let market = { listings: [], mine: [], loading: false, error: false, loaded: false };
+// How the market is narrowed and ordered, and the players kept in mind. Page
+// state only: never saved to the career or to the browser's storage.
+const marketView = { ...DEFAULT_MARKET_VIEW };
+const shortlist = { listings: new Set(), players: new Set() };
 let marketBusy = null;
 let marketErrorText = '';
 let sheetTransfer = { mode: 'rows', busy: false, error: '' };
@@ -1660,12 +1668,79 @@ const LEAVE_TEXT = {
 
 function money(n) { return num(n); }
 
+// The star that keeps a listing or one of your own players in mind for the
+// session. A 44 px button with the app's own line star, filled when on.
+function starButton(attr, id, on, name) {
+  const icon = on
+    ? '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>';
+  return '<button class="star-btn" type="button" ' + attr + '="' + esc(id) + '" aria-pressed="' + on
+    + '" aria-label="Shortlist ' + esc(name) + '">' + icon + '</button>';
+}
+
 function marketRow(l) {
-  return `<li class="list-row">
+  const hint = valueHint(l.player, l.price);
+  const starred = shortlist.listings.has(l.id);
+  const err = signError(career, l.player, l.price);
+  let end;
+  let why = '';
+  if (DEMO) {
+    end = '<span class="need">Demo</span>';
+  } else if (err === 'full') {
+    end = '<button class="btn-secondary small blocked" type="button" disabled aria-describedby="why-' + l.id + '">Squad full</button>';
+    why = 'Your squad is full at ' + SQUAD_MAX + ' players. Sell or release one to sign.';
+  } else if (err === 'credits') {
+    const short = Math.max(1, signCost(career, l.player, l.price) - (career.credits || 0));
+    end = '<button class="btn-secondary small blocked" type="button" disabled aria-describedby="why-' + l.id + '">' + num(short) + ' needed</button>';
+    why = 'You need ' + num(short) + ' more Club credits: the price plus one matchday of wages and upkeep.';
+  } else {
+    const busy = marketBusy === 'b' + l.id;
+    end = '<button class="btn-secondary small" type="button" data-buy="' + l.id + '"' + (marketBusy ? ' disabled' : '') + '>'
+      + (busy ? 'Buying...' : 'Buy for ' + num(l.price)) + '</button>';
+  }
+  return `<li class="list-row mkt-row">
     <span class="pos">${esc(l.player.pos)}</span>
-    <span class="nm">${esc(l.player.name)}<small>Age ${l.player.age}, ${l.player.overall} overall, wage ${l.player.wage}. ${esc(displayName(l.club))}</small></span>
-    <span data-listing-end="${l.id}"></span>
+    <span class="nm">${esc(l.player.name)}<small>Age ${l.player.age}, ${l.player.overall} overall, wage ${num(l.player.wage)}. ${esc(displayName(l.club))}</small><small class="hint"><b${hint.kind === 'bargain' ? ' class="bargain"' : ''}>${hint.label}.</b> ${esc(hint.reason)}</small>${why ? '<small id="why-' + l.id + '">' + esc(why) + '</small>' : ''}</span>
+    <span class="mkt-acts">${starButton('data-star', l.id, starred, l.player.name)}${end}</span>
   </li>`;
+}
+
+// The sort and filter controls hold a fixed list of choices; the view state
+// says which one is chosen.
+function fillMarketControls() {
+  $('market-sort').innerHTML = MARKET_SORTS.map((s) => '<option value="' + s.value + '">' + esc(s.label) + '</option>').join('');
+  $('filter-pos').innerHTML = POSITION_FILTERS.map((p) => '<option value="' + esc(p.value) + '">' + esc(p.label) + '</option>').join('');
+  $('filter-ovr').innerHTML = '<option value="0">Any overall</option>'
+    + MIN_OVERALL_STEPS.map((n) => '<option value="' + n + '">' + n + '+ overall</option>').join('');
+  $('filter-price').innerHTML = '<option value="0">Any price</option>'
+    + MAX_PRICE_STEPS.map((n) => '<option value="' + n + '">Up to ' + num(n) + '</option>').join('');
+}
+
+function syncMarketControls(filters, starredOnMarket) {
+  $('market-sort').value = marketView.sort;
+  $('filter-pos').value = marketView.pos;
+  $('filter-ovr').value = String(marketView.minOverall);
+  $('filter-price').value = String(marketView.maxPrice);
+  $('filter-pos').dataset.on = String(!!marketView.pos);
+  $('filter-ovr').dataset.on = String(!!marketView.minOverall);
+  $('filter-price').dataset.on = String(!!marketView.maxPrice);
+  const short = $('filter-short');
+  short.setAttribute('aria-pressed', String(!!marketView.shortlistOnly));
+  short.dataset.on = String(!!marketView.shortlistOnly);
+  short.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>Shortlist'
+    + (starredOnMarket ? ' ' + starredOnMarket : '');
+  $('market-status').hidden = !(filters > 0 || marketView.sort !== DEFAULT_MARKET_VIEW.sort);
+  $('market-active').textContent = filters === 0 ? 'No filters on'
+    : filters + (filters === 1 ? ' filter on' : ' filters on');
+  $('market-empty-clear').hidden = filters === 0;
+}
+
+// Clear all turns every filter off and the sort back to Newest listing; Clear
+// filters keeps the sort. Neither touches a star.
+function clearMarketView(withSort) {
+  const sort = withSort ? DEFAULT_MARKET_VIEW.sort : marketView.sort;
+  Object.assign(marketView, DEFAULT_MARKET_VIEW, { sort });
+  renderMarket();
 }
 
 function renderMarket() {
@@ -1678,40 +1753,44 @@ function renderMarket() {
   const mine = market.mine || [];
   $('listing-sec').hidden = !mine.length;
   $('listing-count').textContent = mine.length + (mine.length === 1 ? ' player' : ' players');
-  $('listing-list').innerHTML = mine.map((l) => `<li class="list-row">
+  $('listing-list').innerHTML = mine.map((l) => `<li class="list-row mkt-row">
     <span class="pos">${esc(l.player.pos)}</span>
     <span class="nm">${esc(l.player.name)}<small>Asking ${num(l.price)} Club credits</small></span>
-    <button class="btn-secondary small" type="button" data-withdraw="${l.id}"${marketBusy ? ' disabled' : ''}>${marketBusy === 'w' + l.id ? 'Withdrawing...' : 'Withdraw'}</button>
+    <span class="mkt-acts"><span class="you-tag">You</span><button class="btn-secondary small" type="button" data-withdraw="${l.id}"${marketBusy ? ' disabled' : ''}>${marketBusy === 'w' + l.id ? 'Withdrawing...' : 'Withdraw'}</button></span>
   </li>`).join('');
 
-  $('market-loading').hidden = userHidden();
-  function userHidden() { return !(market.loading && !market.loaded); }
-  $('market-error').hidden = !market.error;
-  $('market-empty').hidden = !(market.loaded && !market.error && !(market.listings || []).length);
   const listings = market.listings || [];
-  $('market-count').textContent = market.loaded && !market.error
-    ? listings.length + (listings.length === 1 ? ' player' : ' players') : '';
-  $('market-list').innerHTML = listings.map((l) => marketRow(l)).join('');
+  const loadedOk = market.loaded && !market.error;
+  const filters = activeFilterCount(marketView);
+  const starredOnMarket = listings.filter((l) => shortlist.listings.has(l.id)).length;
+  const shown = sortListings(filterListings(listings, marketView, shortlist.listings), marketView.sort);
+  const empty = loadedOk && !listings.length;
+  const noMatch = loadedOk && listings.length > 0 && !shown.length;
+
+  $('market-loading').hidden = !(market.loading && !market.loaded);
+  $('market-error').hidden = !market.error;
+  $('market-empty').hidden = !empty;
+  $('market-nomatch').hidden = !noMatch;
+  $('market-controls').hidden = !(loadedOk && (listings.length > 0 || filters > 0));
+  if (loadedOk) syncMarketControls(filters, starredOnMarket);
+
+  $('market-count').textContent = loadedOk
+    ? (filters
+      ? shown.length + ' of ' + listings.length
+      : String(listings.length)) + (listings.length === 1 ? ' player' : ' players')
+    : '';
+  $('market-list').innerHTML = shown.map((l) => marketRow(l)).join('');
+
+  if (noMatch) {
+    const starredNone = marketView.shortlistOnly && filters === 1 && !starredOnMarket;
+    $('market-nomatch-text').textContent = starredNone
+      ? 'Star a player on the market to add them to your shortlist.'
+      : listings.length + (listings.length === 1 ? ' player is' : ' players are')
+        + ' on the market. Clear the filters to see them all.';
+  }
+
   if (market.error && marketErrorText) {
     $('market-error').querySelector('.state-text').textContent = marketErrorText;
-  }
-  // The end of each row: Buy, what is needed, or Squad full.
-  for (const l of listings) {
-    const slot = $('market-list').querySelector('[data-listing-end="' + l.id + '"]');
-    if (!slot) continue;
-    const err = signError(career, l.player, l.price);
-    if (DEMO) {
-      slot.innerHTML = '<span class="need">Demo</span>';
-    } else if (err === 'full') {
-      slot.innerHTML = '<span class="need">Squad full</span>';
-    } else if (err === 'credits') {
-      const short = Math.max(1, signCost(career, l.player, l.price) - (career.credits || 0));
-      slot.innerHTML = '<span class="need">' + num(short) + ' needed</span>';
-    } else {
-      const busy = marketBusy === 'b' + l.id;
-      slot.innerHTML = '<button class="btn-secondary small" type="button" data-buy="' + l.id + '"' + (marketBusy ? ' disabled' : '') + '>'
-        + (busy ? 'Buying...' : 'Buy for ' + num(l.price)) + '</button>';
-    }
   }
 }
 
@@ -1868,7 +1947,9 @@ function renderSheetTransfer(p) {
     </li>`;
     return;
   }
+  const starred = shortlist.players.has(p.id);
   box.innerHTML = `
+    <li class="list-row"><span class="nm">Shortlist<small>${starred ? 'Starred for this session.' : 'Star ' + name + ' to keep them in mind this session.'}</small></span>${starButton('data-sheet-star', p.id, starred, p.name)}</li>
     <li class="list-row"><span class="nm">List on market<small>${DEMO ? 'The demo season cannot list players.' : 'Other managers can buy ' + name + ' at your asking price.'}</small></span><button class="btn-secondary small" type="button" data-sheet-act="list"${dis || DEMO ? ' disabled' : ''}>List</button></li>
     <li class="list-row"><span class="nm">Sell to the league<small>${escapeSmall(blocked || 'Paid now. ' + name + ' leaves your squad.')}</small></span><button class="btn-secondary small" type="button" data-sheet-act="sell"${dis ? ' disabled' : ''}>Sell for ${num(systemSaleValue(p))}</button></li>
     <li class="list-row"><span class="nm">Release<small>${escapeSmall(blocked || 'Leaves for nothing, and you stop paying the wage.')}</small></span><button class="btn-secondary small" type="button" data-sheet-act="release"${dis ? ' disabled' : ''}>Release</button></li>`;
@@ -1952,13 +2033,45 @@ async function sheetTransferAction(mode) {
 }
 
 $('sheet-transfer').addEventListener('click', (e) => {
+  const star = e.target.closest('[data-sheet-star]');
+  if (star) {
+    const id = star.dataset.sheetStar;
+    if (shortlist.players.has(id)) shortlist.players.delete(id);
+    else shortlist.players.add(id);
+    const p = findPlayer(id);
+    if (p) renderSheetTransfer(p);
+    const again = $('sheet-transfer').querySelector('[data-sheet-star]');
+    if (again) again.focus();
+    return;
+  }
   const btn = e.target.closest('[data-sheet-act]');
   if (btn && !btn.disabled) sheetTransferAction(btn.dataset.sheetAct);
 });
 $('market-list').addEventListener('click', (e) => {
+  const star = e.target.closest('[data-star]');
+  if (star) {
+    const id = Number(star.dataset.star);
+    if (shortlist.listings.has(id)) shortlist.listings.delete(id);
+    else shortlist.listings.add(id);
+    renderMarket();
+    const again = $('market-list').querySelector('[data-star="' + id + '"]');
+    if (again) again.focus();
+    return;
+  }
   const btn = e.target.closest('[data-buy]');
   if (btn && !btn.disabled) buyListing(Number(btn.dataset.buy));
 });
+$('market-sort').addEventListener('change', (e) => { marketView.sort = e.target.value; renderMarket(); });
+$('filter-pos').addEventListener('change', (e) => { marketView.pos = e.target.value; renderMarket(); });
+$('filter-ovr').addEventListener('change', (e) => { marketView.minOverall = Number(e.target.value) || 0; renderMarket(); });
+$('filter-price').addEventListener('change', (e) => { marketView.maxPrice = Number(e.target.value) || 0; renderMarket(); });
+$('filter-short').addEventListener('click', () => {
+  marketView.shortlistOnly = !marketView.shortlistOnly;
+  renderMarket();
+});
+$('market-clear').addEventListener('click', () => clearMarketView(true));
+$('market-empty-clear').addEventListener('click', () => clearMarketView(false));
+$('market-nomatch-clear').addEventListener('click', () => clearMarketView(false));
 $('listing-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-withdraw]');
   if (btn && !btn.disabled) withdrawListing(Number(btn.dataset.withdraw));
@@ -2377,4 +2490,5 @@ setInterval(() => {
   }
 }, 30000);
 
+fillMarketControls();
 load();
