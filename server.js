@@ -254,25 +254,40 @@ async function boot() {
       throw wrapped;
     }
   }
-  // One manager per Division 3 club. This table holds no names, so it is
-  // public. It has no foreign key to careers: that table is private.
+  // One manager per club. It carries the manager's public display name, so
+  // the Competition tab and the shop can say who runs a club; the user_id is
+  // never sent to the page. It has no foreign key to careers: that table is
+  // private.
   await pool.query(`CREATE TABLE IF NOT EXISTS club_owners (
     club_id text PRIMARY KEY,
     user_id text NOT NULL,
+    manager_name text NOT NULL DEFAULT '',
     acquired_at timestamptz NOT NULL DEFAULT now()
   )`);
+  await pool.query("ALTER TABLE club_owners ADD COLUMN IF NOT EXISTS manager_name text NOT NULL DEFAULT ''");
   // Careers saved before this change keep their club: a club several managers
   // already share stays with all of them and is simply taken for new buyers.
-  await pool.query(`INSERT INTO club_owners (club_id, user_id, acquired_at)
-    SELECT DISTINCT ON (club_id) club_id, user_id, updated_at
+  await pool.query(`INSERT INTO club_owners (club_id, user_id, manager_name, acquired_at)
+    SELECT DISTINCT ON (club_id) club_id, user_id, manager_name, updated_at
       FROM careers WHERE NOT is_demo AND club_id <> ''
       ORDER BY club_id, updated_at
     ON CONFLICT (club_id) DO NOTHING`);
+  // A club already in the table from before names were stored takes the name
+  // from the career of the person who runs it, so nobody has to buy again.
+  await pool.query(`UPDATE club_owners o SET manager_name = c.manager_name
+      FROM careers c
+     WHERE o.manager_name = ''
+       AND c.user_id = o.user_id AND c.club_id = o.club_id AND NOT c.is_demo`);
   if (IS_STAGING) {
-    await pool.query(`INSERT INTO club_owners (club_id, user_id) VALUES
-      ('wrenfield-wanderers', 'staging-demo-owner-1'),
-      ('torcross-rovers', 'staging-demo-owner-2')
+    await pool.query(`INSERT INTO club_owners (club_id, user_id, manager_name) VALUES
+      ('wrenfield-wanderers', 'staging-demo-owner-1', 'Staging Demo Manager'),
+      ('torcross-rovers', 'staging-demo-owner-2', 'Staging Demo Rival')
       ON CONFLICT (club_id) DO NOTHING`);
+    await pool.query(`UPDATE club_owners SET manager_name = CASE user_id
+        WHEN 'staging-demo-owner-1' THEN 'Staging Demo Manager'
+        WHEN 'staging-demo-owner-2' THEN 'Staging Demo Rival'
+      END
+     WHERE manager_name = '' AND user_id IN ('staging-demo-owner-1', 'staging-demo-owner-2')`);
   }
   // The money a person keeps across careers. It holds a balance, so it is
   // staging:private. It has a user_id column, so usernode-user-data.js erases
@@ -368,9 +383,17 @@ async function catchUpAndSave(userId, demo, row, now, fallbackZone) {
   return out;
 }
 
-async function takenClubs() {
-  const { rows } = await pool.query('SELECT club_id FROM club_owners');
-  return rows.map((r) => r.club_id);
+// Which clubs are taken, and the display name of each one's manager. Only the
+// club id and the name reach the page, never the user_id.
+async function clubOwners() {
+  const { rows } = await pool.query('SELECT club_id, manager_name FROM club_owners');
+  const taken = [];
+  const owners = {};
+  for (const r of rows) {
+    taken.push(r.club_id);
+    owners[r.club_id] = typeof r.manager_name === 'string' ? r.manager_name : '';
+  }
+  return { taken, owners };
 }
 
 // ?demo=1 acts on the viewer's demo career, and only in staging.
@@ -402,12 +425,12 @@ app.get('/api/career', async (req, res) => {
         const state = demoCareer(e, req.now);
         const out = await catchUp({ state, version: 1 }, req.now, true);
         return res.json({
-          career: out.state, version: 1, demo: true, shop: SHOP, autoPlayed: out.autoPlayed,
+          career: out.state, version: 1, demo: true, shop: SHOP, autoPlayed: out.autoPlayed, owners: {},
         });
       }
       const eg = await engine();
-      const taken = await takenClubs();
-      return res.json({ career: null, version: 0, demo: false, shop: {
+      const { taken, owners } = await clubOwners();
+      return res.json({ career: null, version: 0, demo: false, owners, shop: {
         ...SHOP,
         taken,
         groups: eg.shopGroups(taken),
@@ -430,7 +453,8 @@ app.get('/api/career', async (req, res) => {
       // Every kick-off that has passed is played now, with the saved lineup
       // and tactics, and the result is stored before the page sees it.
       const out = await catchUpAndSave(req.user.id, demo, { state, version: rows[0].version }, req.now);
-      return res.json({ career: out.state, version: out.version, demo, shop: SHOP, autoPlayed: out.autoPlayed, homeroomWallet: homeroomWalletFor(req.user) });
+      const { owners } = await clubOwners();
+      return res.json({ career: out.state, version: out.version, demo, shop: SHOP, autoPlayed: out.autoPlayed, owners, homeroomWallet: homeroomWalletFor(req.user) });
     }
     if (demo) {
       const e = await engine();
@@ -446,7 +470,8 @@ app.get('/api/career', async (req, res) => {
         'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = true',
         [req.user.id]
       );
-      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP, autoPlayed: out.autoPlayed, homeroomWallet: homeroomWalletFor(req.user) });
+      const { owners } = await clubOwners();
+      return res.json({ career: again.rows[0].state, version: again.rows[0].version, demo: true, shop: SHOP, autoPlayed: out.autoPlayed, owners, homeroomWallet: homeroomWalletFor(req.user) });
     }
     // No career yet is an ordinary answer: the page shows New career, with the
     // wallet this person already has (a first-time manager gets the starting
@@ -454,11 +479,12 @@ app.get('/api/career', async (req, res) => {
     const e = await engine();
     const wallet = await queryWithRetry(pool, 'SELECT usdc FROM wallets WHERE user_id = $1', [req.user.id]);
     const stored = wallet.rows[0];
-    const taken = await takenClubs();
+    const { taken, owners } = await clubOwners();
     return res.json({
       career: null,
       version: 0,
       demo: false,
+      owners,
       shop: {
         ...SHOP,
         taken,
@@ -481,8 +507,8 @@ async function releaseClub(client, clubId, userId) {
   if (!clubId) return;
   await client.query('DELETE FROM club_owners WHERE club_id = $1 AND user_id = $2', [clubId, userId]);
   await client.query(
-    `INSERT INTO club_owners (club_id, user_id)
-     SELECT club_id, user_id FROM careers WHERE club_id = $1 AND NOT is_demo AND user_id <> $2 LIMIT 1
+    `INSERT INTO club_owners (club_id, user_id, manager_name)
+     SELECT club_id, user_id, manager_name FROM careers WHERE club_id = $1 AND NOT is_demo AND user_id <> $2 LIMIT 1
      ON CONFLICT (club_id) DO NOTHING`,
     [clubId, userId]
   );
@@ -547,8 +573,8 @@ app.post('/api/career', async (req, res) => {
         return res.status(409).json({ error: 'has_club', message: 'Sell your club before you buy another.' });
       }
       const claim = await client.query(
-        'INSERT INTO club_owners (club_id, user_id) VALUES ($1, $2) ON CONFLICT (club_id) DO NOTHING RETURNING club_id',
-        [clubId, req.user.id]
+        'INSERT INTO club_owners (club_id, user_id, manager_name) VALUES ($1, $2, $3) ON CONFLICT (club_id) DO NOTHING RETURNING club_id',
+        [clubId, req.user.id, state.managerName]
       );
       if (!claim.rows.length) {
         const owner = await client.query('SELECT user_id FROM club_owners WHERE club_id = $1', [clubId]);

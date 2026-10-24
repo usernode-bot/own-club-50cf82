@@ -2181,6 +2181,33 @@ export function freeShopClubs(taken) {
   }));
 }
 
+// Who runs a club, in the grey line under its name: the manager's own name for
+// their club, another manager's for a club they own, and "Run by a bot" for a
+// club nobody has bought. A club a person owns with no stored name reads
+// "Manager" alone, never "Run by a bot".
+export function managerLine(clubId, owners, ownClubId, ownName) {
+  if (clubId === ownClubId && typeof ownName === 'string' && ownName) return 'Manager ' + ownName;
+  if (owners && typeof owners === 'object' && !Array.isArray(owners)
+    && Object.prototype.hasOwnProperty.call(owners, clubId)) {
+    const name = owners[clubId];
+    return typeof name === 'string' && name ? 'Manager ' + name : 'Manager';
+  }
+  return 'Run by a bot';
+}
+
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+
+// Why a division has the groups it has. Division 1 is one group of 18, and
+// Divisions 2 and 3 hold four each, which with 162 clubs is all the league can
+// fill. The counts come from the pyramid, so the sentence cannot drift from it.
+export function groupsNote(tier) {
+  if (!Number.isInteger(tier) || tier < 2 || tier > TIER_COUNT) return '';
+  const count = GROUPS.filter((g) => g.tier === tier).length;
+  const word = COUNT_WORDS[count] || String(count);
+  return 'Division ' + tier + ' has ' + word + ' groups of ' + DIVISION_SIZE
+    + ': the Coastal League holds ' + CLUBS.length + ' clubs.';
+}
+
 // The New career screen's shop: all nine groups, each club with its live
 // squad average and whether another manager runs it.
 export function shopGroups(taken) {
