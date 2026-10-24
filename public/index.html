@@ -254,12 +254,25 @@
       <div class="club-main">
         <div class="top">
           <div class="sm" id="club-md"></div>
-          <div class="title-row"><h1 id="club-name"></h1><span class="code-pill" id="club-code" aria-hidden="true" hidden></span></div>
+          <div class="title-row"><h1><span id="club-name"></span><span class="group-tag" id="club-group" hidden></span></h1><span class="code-pill" id="club-code" aria-hidden="true" hidden></span></div>
           <div class="sm" id="club-pos"></div>
         </div>
 
         <!-- Home -->
         <div class="panel" id="tab-home">
+          <!-- The league group is being rebuilt by the server. -->
+          <div class="next" id="setup-card" hidden>
+            <div class="season-head">
+              <h2 class="season-title">Setting up your group</h2>
+              <p class="season-text">Checking your group of 18 and its 34 matchdays. Your results are kept.</p>
+            </div>
+            <ul class="list">
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+            </ul>
+          </div>
+
           <div class="next" id="next-card">
             <div class="row">
               <div class="team"><span class="badge" id="next-home-badge"></span><span id="next-home-name"></span></div>
@@ -333,6 +346,7 @@
           <div class="sec">
             <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
             <ul class="list tbl" id="table-list"></ul>
+            <p class="league-note setup-note" id="setup-note" hidden><b>Setting up your group</b>The table comes back with your results kept.</p>
             <p class="league-note" id="league-note" hidden></p>
           </div>
           <div class="sec">

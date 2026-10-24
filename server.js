@@ -350,6 +350,11 @@ async function catchUp(row, now, demo, fallbackZone) {
     : e.validTimeZone(state.timeZone) ? state.timeZone
       : fallbackZone && e.validTimeZone(fallbackZone) ? fallbackZone : null;
   if (!zone) return { state, version: row.version, autoPlayed: 0, changed: false, zone };
+  // A career whose league setup is broken plays nothing: the repair route
+  // rebuilds the group first, so no kick-off is ever played into a short one.
+  if (e.groupSetupError(state)) {
+    return { state, version: row.version, autoPlayed: 0, changed: false, zone, groupBroken: true };
+  }
   let changed = false;
   if (!state.finished && !state.nextMatchAt) {
     // A career with no schedule starts at the next kick-off, not at one it
@@ -454,7 +459,7 @@ app.get('/api/career', async (req, res) => {
       // and tactics, and the result is stored before the page sees it.
       const out = await catchUpAndSave(req.user.id, demo, { state, version: rows[0].version }, req.now);
       const { owners } = await clubOwners();
-      return res.json({ career: out.state, version: out.version, demo, shop: SHOP, autoPlayed: out.autoPlayed, owners, homeroomWallet: homeroomWalletFor(req.user) });
+      return res.json({ career: out.state, version: out.version, demo, shop: SHOP, autoPlayed: out.autoPlayed, owners, homeroomWallet: homeroomWalletFor(req.user), groupBroken: !!out.groupBroken });
     }
     if (demo) {
       const e = await engine();
@@ -759,6 +764,90 @@ app.post('/api/career/facility', async (req, res) => {
   } catch (err) {
     console.error('facility change failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
     return res.status(500).json({ error: 'facility_upgrade_failed' });
+  }
+});
+
+// Repairing a career whose league group lost its shape: the group, its
+// fixtures and any squads the rebuilt group needs are rebuilt from the
+// career's own season seed, keeping every result already played. The page
+// reaches this only after the load or a refresh said the group is broken;
+// a healthy career is answered as-is, without a write.
+app.post('/api/career/group-repair', async (req, res) => {
+  const demo = wantsDemo(req);
+  try {
+    const e = await engine();
+    const { rows } = await pool.query(
+      'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
+      [req.user.id, demo]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'no_career' });
+    const stored = rows[0].state;
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+      const requestId = crypto.randomUUID().slice(0, 8);
+      console.error('group repair failed [' + requestId + '] career_unreadable state is not an object');
+      return res.status(500).json({
+        error: 'group_repair_failed', requestId,
+        message: 'The saved career is unreadable.',
+      });
+    }
+    if (!e.groupSetupError(stored)) {
+      // Nothing to repair (another request may have won the race): play what
+      // is due and answer the career as it stands.
+      const out = await catchUpAndSave(req.user.id, demo, rows[0], req.now);
+      const { owners } = await clubOwners();
+      return res.json({
+        career: out.state, version: out.version, demo, autoPlayed: out.autoPlayed, owners,
+      });
+    }
+    const repaired = e.repairCareer(e.repairGroupSetup(stored));
+    if (!repaired) {
+      const requestId = crypto.randomUUID().slice(0, 8);
+      console.error('group repair failed [' + requestId + '] beyond_repair');
+      return res.status(500).json({
+        error: 'group_repair_failed', requestId,
+        message: 'The saved results cannot be fitted back into one league group (beyond_repair).',
+      });
+    }
+    const up = await catchUp({ state: repaired, version: rows[0].version }, req.now, demo);
+    if (up.groupBroken) {
+      const requestId = crypto.randomUUID().slice(0, 8);
+      console.error('group repair failed [' + requestId + '] still_broken after repair');
+      return res.status(500).json({
+        error: 'group_repair_failed', requestId,
+        message: 'Setting up your league failed. Try again.',
+      });
+    }
+    const upd = await pool.query(
+      'UPDATE careers SET state = $3, version = version + 1, updated_at = now() WHERE user_id = $1 AND is_demo = $2 AND version = $4 RETURNING version',
+      [req.user.id, demo, up.state, rows[0].version]
+    );
+    if (!upd.rows.length) {
+      // Another request won the race. If it repaired the career, that one is
+      // the answer; if not, the page can ask again.
+      const again = await pool.query(
+        'SELECT state, version FROM careers WHERE user_id = $1 AND is_demo = $2',
+        [req.user.id, demo]
+      );
+      if (again.rows.length && !e.groupSetupError(again.rows[0].state)) {
+        const out = await catchUpAndSave(req.user.id, demo, again.rows[0], req.now);
+        const { owners } = await clubOwners();
+        return res.json({
+          career: out.state, version: out.version, demo, autoPlayed: out.autoPlayed, owners,
+        });
+      }
+      return res.status(409).json({ error: 'version_mismatch' });
+    }
+    const { owners } = await clubOwners();
+    return res.json({
+      career: up.state, version: upd.rows[0].version, demo, autoPlayed: up.autoPlayed, owners,
+      groupRepaired: true,
+    });
+  } catch (err) {
+    console.error('group repair failed: ' + ((err && err.code) || '') + ' ' + (err && err.message));
+    return res.status(500).json({
+      error: 'group_repair_failed',
+      message: 'Setting up your league failed. Try again.',
+    });
   }
 });
 

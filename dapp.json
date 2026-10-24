@@ -36,6 +36,12 @@
       ]
     },
     {
+      "name": "Demo header shows the club",
+      "path": "/?demo=1",
+      "expectSelector": "#club-name",
+      "expectText": "Harbourside"
+    },
+    {
       "name": "Demo club shows Club credits",
       "path": "/?demo=1#finance",
       "expectText": "Club credits"
