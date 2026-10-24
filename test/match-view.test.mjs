@@ -145,3 +145,58 @@ test('the demo career replays its newest matchday from the saved report', () => 
   assert.equal(full.away, recorded.awayGoals);
   assert.ok(tl.moments.length === recorded.moments.length);
 });
+// ── The match view's keyboard, log and live region ──────────────────────
+
+import {
+  scrubKeyTarget, shownCount, liveAnnouncement,
+} from '../public/matchview.js';
+
+test('scrubKeyTarget moves by whole minutes', () => {
+  assert.equal(scrubKeyTarget('ArrowRight', 37.4), 38);
+  assert.equal(scrubKeyTarget('ArrowLeft', 37.4), 37);
+  assert.equal(scrubKeyTarget('PageUp', 37.4), 47);
+  assert.equal(scrubKeyTarget('PageDown', 37.4), 27);
+  assert.equal(scrubKeyTarget('Home', 37.4), 0);
+  assert.equal(scrubKeyTarget('End', 37.4), 90);
+  assert.equal(scrubKeyTarget('ArrowRight', 90), 90);
+  assert.equal(scrubKeyTarget('ArrowLeft', 0), 0);
+  assert.equal(scrubKeyTarget('PageUp', 85), 90);
+  assert.equal(scrubKeyTarget('PageDown', 5), 0);
+  assert.equal(scrubKeyTarget('a', 37.4), null);
+});
+
+test('shownCount follows the clock', () => {
+  const minutes = [0, 22, 31, 45, 90];
+  assert.equal(shownCount(minutes, -1), 0);
+  assert.equal(shownCount(minutes, 0), 1);
+  assert.equal(shownCount(minutes, 31), 3);
+  assert.equal(shownCount(minutes, 90), 5);
+  let prev = 0;
+  for (let t = -1; t <= 90; t += 0.5) {
+    const n = shownCount(minutes, t);
+    assert.ok(n >= prev, 'the log never loses a row as the clock rises');
+    prev = n;
+  }
+});
+
+test('liveAnnouncement changes only at moments', () => {
+  const report = buildDemoState(1).lastReport;
+  const keys = [];
+  for (let i = 0; i <= 900; i++) {
+    const a = liveAnnouncement(report, i / 10);
+    if (keys[keys.length - 1] !== a.key) keys.push(a.key);
+  }
+  // A goal and the card that followed it can share a minute, so count the
+  // distinct minutes rather than the moments.
+  const before90 = new Set(report.moments.filter((m) => m.minute < 90).map((m) => m.minute)).size;
+  assert.equal(keys.length, before90 + 2, 'one key per moment, plus none and full');
+  assert.equal(keys[0], 'none');
+  assert.equal(keys[keys.length - 1], 'full');
+  for (const m of report.moments) {
+    if (m.type !== 'goal' || m.minute >= 90) continue;
+    const a = liveAnnouncement(report, m.minute);
+    const s = scoreAt(report, m.minute);
+    assert.ok(a.text.endsWith(s.home + '–' + s.away), 'a goal says the score it left');
+  }
+  assert.match(liveAnnouncement(report, 90).text, /^Full time, \d+–\d+$/);
+});

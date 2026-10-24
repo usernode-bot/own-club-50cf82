@@ -427,6 +427,10 @@ change follows it, and updates it when a request changes the look on purpose.
   screen) and one line naming the Club credits the result earned, with
   "Finance tab" as a pitch-green link. Play, Pause and Skip to full time are
   the plain secondary button; reduced motion shows the whole match at once.
+  The watched match is a replay on the pitch, with Play, the minute slider and
+  Show log on one unwrapping row and the speed chips (and Full motion) below;
+  the log lists the report's moments newest first, and reduced motion opens
+  stepped with a Full motion opt-in for that visit.
 - **Facility levels:** the Club tab's five-step bar reuses the Squad list's
   fitness green (`pitch-ink`) for filled steps on the raised background, the
   step that just filled flashing amber once (off under reduced motion); the

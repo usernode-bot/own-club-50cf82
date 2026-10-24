@@ -30,6 +30,45 @@ export function currentMoment(report, t) {
   return cur;
 }
 
+// Where an arrow or paging key moves the minute slider. The slider keeps its
+// fine 0.1 step for dragging; the keyboard moves a whole minute at a time.
+export function scrubKeyTarget(key, t) {
+  const base = Math.max(0, Math.min(90, Number(t) || 0));
+  let next = null;
+  if (key === 'ArrowRight' || key === 'ArrowUp') next = Math.floor(base) + 1;
+  else if (key === 'ArrowLeft' || key === 'ArrowDown') next = Math.ceil(base) - 1;
+  else if (key === 'PageUp') next = Math.floor(base) + 10;
+  else if (key === 'PageDown') next = Math.floor(base) - 10;
+  else if (key === 'Home') next = 0;
+  else if (key === 'End') next = 90;
+  if (next == null) return null;
+  return Math.max(0, Math.min(90, next));
+}
+
+// How many of the log's minutes (ascending) the clock has reached. The log
+// rows are always newest first; this is how many of them are due.
+export function shownCount(minutes, t) {
+  let n = 0;
+  for (const m of minutes) if (m <= t) n++;
+  return n;
+}
+
+// What a screen reader should hear now, and the key that says it is new.
+// `key` changes only at a moment or at full time, so playback never floods.
+export function liveAnnouncement(report, t) {
+  const s = scoreAt(report, t);
+  const score = s.home + '–' + s.away;
+  if (t >= 90) return { key: 'full', text: 'Full time, ' + score };
+  let idx = -1;
+  for (let i = 0; i < report.moments.length; i++) {
+    if (report.moments[i].minute <= t) idx = i;
+  }
+  if (idx < 0) return { key: 'none', text: '' };
+  const m = report.moments[idx];
+  const who = String(m.teamName || '').replace(/ (FC|Athletic|Town|United|Rovers|City|Wanderers)$/, '') + ': ';
+  return { key: String(idx), text: callText(m, who).main + '. ' + score };
+}
+
 // Canonical pitch coordinates: x across the pitch, y from the goal the near
 // side attacks (0) to the goal it defends (1). Formation slots already read
 // this way (y from the opponent's goal), so the near side keeps them and the
@@ -295,6 +334,31 @@ export function createMatchView(els) {
   let last = 0;
   let scrubbing = false;
   let ro = null;
+  // These belong to the visit, not the match: a next match keeps the log
+  // where the viewer left it and the motion choice they made.
+  let motionOptIn = false;
+  let logOpen = false;
+  let lastAria = null;
+  let lastCallKey = null;
+  let lastShown = null;
+  let lastLiveKey = 'none';
+
+  function stepped() {
+    return !!reduced.matches && !motionOptIn;
+  }
+
+  function applyMotion() {
+    els.stepBack.hidden = !stepped();
+    els.speeds.hidden = stepped();
+    els.motion.hidden = !reduced.matches;
+    els.motion.setAttribute('aria-pressed', motionOptIn ? 'true' : 'false');
+  }
+
+  function applyLog() {
+    els.logSec.hidden = !logOpen;
+    els.logToggle.setAttribute('aria-expanded', logOpen ? 'true' : 'false');
+    els.logToggle.textContent = logOpen ? 'Hide log' : 'Show log';
+  }
 
   function open(setup) {
     close();
@@ -305,18 +369,24 @@ export function createMatchView(els) {
     speed = 1;
     hold = 0;
     scrubbing = false;
-    playing = !reduced.matches;
-    els.stepBack.hidden = !reduced.matches;
-    els.speeds.hidden = !!reduced.matches;
+    lastAria = null;
+    lastCallKey = null;
+    lastShown = null;
+    lastLiveKey = 'none';
+    playing = !stepped();
+    applyMotion();
+    applyLog();
+    if (els.live) els.live.textContent = '';
+    if (els.log) for (const li of els.log.children) li.hidden = true;
     setSpeedButtons();
     updatePlayButton();
     if (typeof ResizeObserver === 'function') {
-      ro = new ResizeObserver(() => draw());
+      ro = new ResizeObserver(() => draw(false));
       ro.observe(canvas);
     }
     last = performance.now();
     raf = requestAnimationFrame(loop);
-    draw();
+    draw(false);
   }
 
   function close() {
@@ -334,7 +404,7 @@ export function createMatchView(els) {
     raf = requestAnimationFrame(loop);
     // Never fast-forward: a background tab gets throttled frames, and a
     // long frame is clamped so the clock cannot jump.
-    const dt = Math.min(0.1, (now - last) / 1000);
+    const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
     last = now;
     if (hold) {
       if (now >= hold) hold = 0;
@@ -350,7 +420,7 @@ export function createMatchView(els) {
         updatePlayButton();
       }
     }
-    draw();
+    draw(playing);
   }
 
   function pauseAt(prev, next) {
@@ -363,7 +433,7 @@ export function createMatchView(els) {
   function updatePlayButton() {
     els.playIcon.hidden = playing;
     els.pauseIcon.hidden = !playing;
-    els.play.setAttribute('aria-label', reduced.matches ? 'Next moment' : playing ? 'Pause' : 'Play');
+    els.play.setAttribute('aria-label', stepped() ? 'Next moment' : playing ? 'Pause' : 'Play');
   }
 
   function setSpeedButtons() {
@@ -373,7 +443,7 @@ export function createMatchView(els) {
   }
 
   function playToggle() {
-    if (reduced.matches) {
+    if (stepped()) {
       step(1);
       return;
     }
@@ -400,7 +470,7 @@ export function createMatchView(els) {
     }
     playing = false;
     updatePlayButton();
-    draw();
+    draw(true);
   }
 
   function onScrubInput() {
@@ -409,10 +479,24 @@ export function createMatchView(els) {
     hold = 0;
     t = Math.max(0, Math.min(90, Number(els.scrub.value) || 0));
     updatePlayButton();
-    draw();
+    draw(false);
   }
   function onScrubChange() {
     scrubbing = false;
+  }
+  // The slider moves a whole minute at a time from the keyboard, ten with
+  // Page Up and Page Down, and to either end with Home and End.
+  function onScrubKey(e) {
+    const target = scrubKeyTarget(e.key, t);
+    if (target == null) return;
+    e.preventDefault();
+    scrubbing = false;
+    playing = false;
+    hold = 0;
+    t = target;
+    els.scrub.value = String(t);
+    updatePlayButton();
+    draw(false);
   }
 
   function onVisibility() {
@@ -445,7 +529,10 @@ export function createMatchView(els) {
     return timeline.markers.filter((mk) => tt >= mk.from && (tt < mk.to || (mk.to >= 90 && tt >= 90)));
   }
 
-  function draw() {
+  // `speak` says whether a new moment may be announced: playback and a
+  // deliberate step do; dragging or arrow-keying the slider does not, because
+  // the slider's own value text already says where the clock went.
+  function draw(speak) {
     if (!timeline || !report) return;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
@@ -580,31 +667,76 @@ export function createMatchView(els) {
       }
     }
 
-    // The readouts around the pitch.
+    // The readouts around the pitch, written only when they change so the
+    // live regions and the browser are not touched on every frame.
     const s = scoreAt(report, t);
-    els.score.textContent = s.home + '–' + s.away;
+    const scoreStr = s.home + '–' + s.away;
     const minute = Math.floor(t);
-    els.clock.textContent = 'Matchday ' + meta.matchday + ' · ' + (t >= 90 ? 'Full time' : minute + "'");
-    if (!scrubbing) els.scrub.value = String(Math.min(90, t));
-    const ann = timeline.moments.find((m) => m.minute <= t && t - m.minute <= EVENT_WINDOW) || null;
-    if (ann) {
-      els.call.hidden = false;
-      els.callIcon.innerHTML = ICONS[ann.type] || '';
-      const who = ann.teamName.replace(/ (FC|Athletic|Town|United|Rovers|City|Wanderers)$/, '') + ': ';
-      const txt = callText(ann, who);
-      els.callMain.textContent = txt.main;
-      els.callSub.textContent = txt.sub;
-      els.callSub.hidden = !txt.sub;
-    } else {
-      els.call.hidden = true;
+    const clockStr = 'Matchday ' + meta.matchday + ' · ' + (t >= 90 ? 'Full time' : minute + "'");
+    if (els.score.textContent !== scoreStr) els.score.textContent = scoreStr;
+    if (els.clock.textContent !== clockStr) els.clock.textContent = clockStr;
+    if (!scrubbing) {
+      const v = String(Math.min(90, Math.round(t * 10) / 10));
+      if (els.scrub.value !== v) els.scrub.value = v;
     }
-    canvas.setAttribute('aria-label', 'Match view, minute ' + minute + ', score ' + s.home + ' to ' + s.away);
+
+    const aria = minute + '|' + scoreStr + '|' + (t >= 90 ? 'f' : 'm');
+    if (aria !== lastAria) {
+      lastAria = aria;
+      els.scrub.setAttribute('aria-valuetext', t >= 90 ? 'Full time, ' + scoreStr : 'Minute ' + minute + ', ' + scoreStr);
+      canvas.setAttribute('aria-label', 'Match view, minute ' + minute + ', score ' + s.home + ' to ' + s.away);
+    }
+
+    const ann = timeline.moments.find((m) => m.minute <= t && t - m.minute <= EVENT_WINDOW) || null;
+    const callKey = ann ? String(timeline.moments.indexOf(ann)) : '';
+    if (callKey !== lastCallKey) {
+      lastCallKey = callKey;
+      if (ann) {
+        els.callIcon.innerHTML = ICONS[ann.type] || '';
+        const who = ann.teamName.replace(/ (FC|Athletic|Town|United|Rovers|City|Wanderers)$/, '') + ': ';
+        const txt = callText(ann, who);
+        els.callMain.textContent = txt.main;
+        els.callSub.textContent = txt.sub;
+        els.callSub.hidden = !txt.sub;
+      }
+    }
+    els.call.classList.toggle('is-empty', !ann);
+
+    // The log fills in as the clock reaches each moment, newest first.
+    if (els.log) {
+      const rows = els.log.children;
+      const shown = shownCount(Array.prototype.map.call(rows, (li) => Number(li.dataset.minute)), t);
+      if (shown !== lastShown) {
+        lastShown = shown;
+        for (const li of rows) li.hidden = Number(li.dataset.minute) > t;
+      }
+    }
+
+    const live = liveAnnouncement(report, t);
+    if (live.key !== lastLiveKey) {
+      if (speak) els.live.textContent = live.text;
+      lastLiveKey = live.key;
+    }
   }
 
   els.play.addEventListener('click', playToggle);
   els.stepBack.addEventListener('click', () => step(-1));
   els.scrub.addEventListener('input', onScrubInput);
   els.scrub.addEventListener('change', onScrubChange);
+  els.scrub.addEventListener('keydown', onScrubKey);
+  els.logToggle.addEventListener('click', () => {
+    logOpen = !logOpen;
+    applyLog();
+    draw(false);
+  });
+  els.motion.addEventListener('click', () => {
+    motionOptIn = !motionOptIn;
+    playing = false;
+    hold = 0;
+    applyMotion();
+    updatePlayButton();
+    draw(false);
+  });
   els.speeds.addEventListener('click', (e) => {
     const b = e.target.closest('[data-speed]');
     if (b) {
