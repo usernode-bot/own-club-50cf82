@@ -190,8 +190,8 @@ test('a version 2 career loads, plays its season and joins the three tiers', () 
     if (outcome.kind === 'stayed' || outcome.kind === 'champions') {
       assert.equal(next.division, Math.min(division, 3), 'a club staying in old Division ' + division + ' lands in its tier');
     }
-    assert.equal(next.groups.length, 9);
-    assert.deepEqual(next.groups.map((g) => g.clubIds.length), Array(9).fill(18));
+    assert.equal(next.groups.length, 17);
+    assert.deepEqual(next.groups.map((g) => g.clubIds.length), Array(17).fill(18));
     // The club is present in exactly one group, and it is the manager's.
     assert.equal(next.groups.filter((g) => g.clubIds.includes(state.clubId)).length, 1);
     assert.ok(next.groups[next.groupIndex].clubIds.includes(state.clubId));

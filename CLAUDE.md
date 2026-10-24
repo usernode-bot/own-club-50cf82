@@ -96,8 +96,8 @@ tables you've marked private), etc.
 ## About Own Club
 
 A football management game. A new career starts with your manager name, a mock
-wallet of 1,000 Dummy USDC and a shop of all 162 clubs, 100 in Division 3,
-200 in Division 2 and 300 in Division 1;
+wallet of 1,000 Dummy USDC and a shop of all 306 clubs, priced 100 USDC in
+Division 3, 200 in Division 2 and 300 in Division 1;
 then you set the eleven on a pitch diagram, choose formation, mentality,
 pressing and each player's role, and play each of your group's 34 matchdays
 and read the report. A Club tab lists the nine club facilities (stadium,
@@ -105,12 +105,15 @@ training ground, academy, shop, food stand, hotel, toilets, parking, VIP room),
 each level 1 to 5, and upgrades them with Club credits. Training and cups come
 later.
 
-The Coastal League has three tiers and 162 clubs. Division 1 is one group of
-18; Divisions 2 and 3 have four groups, A to D, of 18. The bottom 8 of
-Division 1 go down, two into each Division 2 group; the top 2 of each
-Division 2 group go up to Division 1 and its bottom 2 go down into the
-same-letter Division 3 group; the top 2 of each Division 3 group go up. Nobody
-leaves Division 3, and every group stays at 18. Start next season carries your
+The Coastal League has three tiers and 306 clubs. Division 1 is one group of
+18; Division 2 has four groups, A to D, and Division 3 has twelve, A to L, all
+of 18. The bottom 8 of Division 1 go down, two into each Division 2 group; the
+top 2 of each Division 2 group go up to Division 1 and its bottom 6 go down,
+two into each of its three Division 3 groups in finish order (18th and 17th to
+the first, 16th and 15th to the second, 14th and 13th to the third); the top 2
+of each Division 3 group go up into the Division 2 group above it (A, B and C
+under Division 2 A, D, E and F under B, and so on). Nobody leaves Division 3,
+and every group stays at 18. Start next season carries your
 club, its players and their roles into its new group.
 
 Matches play by themselves at 00:00, 06:00, 12:00 and 18:00 on the manager's own
@@ -272,12 +275,14 @@ stay, and the academy takes in none while over; `youthFields` caps at 60. `acade
 `POST /api/career/youth`. `PUT /api/career` keeps the stored `staff` and
 `youth` whatever the page sends.
 
-The ten original clubs make up most of Division 1; the other 152 are generated
+The ten original clubs make up most of Division 1; the other 296 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
 squads that get weaker with each tier down. Only the manager's own group is
-saved; the other eight groups are played out from the career seed when a
+saved; the other sixteen groups are played out from the career seed when a
 season rolls over. A career saved in the old eight divisions finishes its
-season and joins the three tiers at rollover.
+season and joins the three tiers at rollover. A career saved with the old nine
+groups keeps all nine as they are and gains the eight new Division 3 groups,
+so its own season carries on untouched.
 
 The simulation lives in `public/engine.js` as a pure, seeded ES module shared
 by the browser and the server: the same state and seed always produce the same
@@ -339,9 +344,9 @@ change follows it, and updates it when a request changes the look on purpose.
   <name>" for a club a person runs (your own row included), "Run by a bot" for
   one nobody does. The shop's taken rows agree, saying "Run by <name>". Under
   the table (and under the Group buttons on New career, for Divisions 2 and 3)
-  one grey line says "Division N has four groups of 18: the Coastal League
-  holds 162 clubs.", from `groupsNote` in `engine.js`; it is absent for
-  Division 1 and for a career from before the three tiers.
+  one grey line says "Division 2 has four groups of 18: the Coastal League
+  holds 306 clubs." ("twelve" in Division 3), from `groupsNote` in `engine.js`;
+  it is absent for Division 1 and for a career from before the three tiers.
 - **Signature element:** the pitch diagram: a drawn pitch with your formation
   as white player tokens you drag to swap, the goalkeeper in amber. Small line
   icons mark each kind of moment in the report (a ball, a card, a swap arrow,
@@ -404,7 +409,7 @@ Re-theme by changing the token values there, keeping every text pair at
   `state.wallet` in a career is only a display copy written at purchase. A
   first-time manager's row is seeded with `STARTING_BALANCE`; careers saved
   before the table grandfather their `state.wallet.balance` on boot.
-- The pyramid is capped at three tiers and 162 clubs (the early-stage maximum):
+- The pyramid is capped at three tiers and 306 clubs (the early-stage maximum):
   no Division 4. The shop lists every division's clubs at its tier price
   (`TIER_PRICE`), and a manager owns one club at a time. Selling a club, owning more than one and real USDC come
   later; the purchase is stored so selling can be added.
