@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   CLUBS, CLUB_BY_ID, COASTAL_IDS, GROUPS,
   buildInitialState, buildFixtures, buildSquad, buildDemoState,
-  repairCareer, validateLineup, autoLineup, defaultRole,
+  repairCareer, groupSetupError, validateLineup, autoLineup, defaultRole,
   playMatchday, leagueTable, seasonOutcome, startNextSeason,
 } from '../public/engine.js';
 
@@ -144,13 +144,20 @@ test('repairCareer rejects what cannot be shown', () => {
   delete noResults.results;
   assert.equal(repairCareer(noResults), null);
 
-  // A three-tier career whose groups are broken, or which is not in its group.
+  // A three-tier career whose group setup is broken is rebuilt now, keeping
+  // every result already played (test/group-setup.test.mjs has the details).
   const brokenGroups = buildInitialState('harbourside', 'Test manager', 42);
   brokenGroups.groups = 'x';
-  assert.equal(repairCareer(brokenGroups), null);
+  const regrouped = repairCareer(brokenGroups);
+  assert.ok(regrouped);
+  assert.equal(groupSetupError(regrouped), null);
+  assert.equal(regrouped.groups[regrouped.groupIndex].clubIds.length, 18);
   const wrongGroup = buildInitialState('harbourside', 'Test manager', 42);
   wrongGroup.groupIndex = 5;
-  assert.equal(repairCareer(wrongGroup), null);
+  const replaced = repairCareer(wrongGroup);
+  assert.ok(replaced);
+  assert.equal(groupSetupError(replaced), null);
+  assert.equal(replaced.groupIndex, 0);
 });
 
 test('a version 1 career opens and plays', () => {
@@ -190,8 +197,8 @@ test('a version 2 career loads, plays its season and joins the three tiers', () 
     if (outcome.kind === 'stayed' || outcome.kind === 'champions') {
       assert.equal(next.division, Math.min(division, 3), 'a club staying in old Division ' + division + ' lands in its tier');
     }
-    assert.equal(next.groups.length, 9);
-    assert.deepEqual(next.groups.map((g) => g.clubIds.length), Array(9).fill(18));
+    assert.equal(next.groups.length, 17);
+    assert.deepEqual(next.groups.map((g) => g.clubIds.length), Array(17).fill(18));
     // The club is present in exactly one group, and it is the manager's.
     assert.equal(next.groups.filter((g) => g.clubIds.includes(state.clubId)).length, 1);
     assert.ok(next.groups[next.groupIndex].clubIds.includes(state.clubId));

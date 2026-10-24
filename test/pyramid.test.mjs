@@ -3,10 +3,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CLUBS, CLUB_BY_ID, COASTAL_IDS, GROUPS, GROUP_LETTERS, TIER_COUNT, CLUB_COUNT,
+  CLUBS, CLUB_BY_ID, COASTAL_IDS, GROUPS, GROUP_LETTERS, GROUP_COUNTS, TIER_COUNT, CLUB_COUNT,
   DIVISION_SIZE, MATCHDAYS, clubToGroup, groupName, purchaseError,
   divisionClubIds, placeName, seasonSeed, seasonOutcome, nextPlacement, startNextSeason,
-  buildInitialState, buildFixtures, buildSquad, buildDemoState,
+  buildInitialState, buildFixtures, buildSquad, buildDemoState, repairCareer, pyramidGroups,
+  feederIndices, parentIndex, relegationFeeder,
   leagueTable, playMatchday, objectiveMet, clubSummary, defaultRole, autoLineup,
   openingBalance, CREDIT_REWARDS, creditsForResult,
   GROUND_CAPACITY, TICKET_PRICE, clubTier,
@@ -21,16 +22,17 @@ function finishedCareer(clubId, seed) {
 }
 
 // A few clubs exactly as the eight-division league had them: the new pyramid
-// must not have moved or renamed any of them.
+// must not have moved or renamed any of them. The last number is the group
+// each one starts in, which must not have changed either.
 const KEPT_CLUBS = [
-  [0, 'harbourside', 'Harbourside FC', 4, 'HF'],
-  [7, 'marrow', 'Marrow Bay', 2, 'MB'],
-  [17, 'valebrook-rovers', 'Valebrook Rovers', 2, 'VR'],
-  [18, 'rosemarket-rovers', 'Rosemarket Rovers', 3, 'RR'],
-  [44, 'torcross-town', 'Torcross Town', 1, 'TT'],
-  [89, 'jarrow-athletic', 'Jarrow Athletic', 1, 'JA'],
-  [90, 'hartwell-fc', 'Hartwell FC', 2, 'HA'],
-  [133, 'ashcombe-united', 'Ashcombe United', 1, 'AS'],
+  [0, 'harbourside', 'Harbourside FC', 4, 'HF', 0],
+  [7, 'marrow', 'Marrow Bay', 2, 'MB', 0],
+  [17, 'valebrook-rovers', 'Valebrook Rovers', 2, 'VR', 0],
+  [18, 'rosemarket-rovers', 'Rosemarket Rovers', 3, 'RR', 1],
+  [44, 'torcross-town', 'Torcross Town', 1, 'TT', 2],
+  [89, 'jarrow-athletic', 'Jarrow Athletic', 1, 'JA', 4],
+  [90, 'hartwell-fc', 'Hartwell FC', 2, 'HA', 5],
+  [133, 'ashcombe-united', 'Ashcombe United', 1, 'AS', 7],
 ];
 
 // The exact ten-club table the code produced for seed 7 before the pyramid.
@@ -61,44 +63,55 @@ function v1State(seed) {
   return state;
 }
 
-test('the Coastal League is three tiers and 162 clubs in nine groups', () => {
-  assert.equal(CLUB_COUNT, 162);
+test('the Coastal League is three tiers and 306 clubs in seventeen groups', () => {
+  assert.equal(CLUB_COUNT, 306);
+  assert.deepEqual(GROUP_COUNTS, { 1: 1, 2: 4, 3: 12 });
   assert.equal(CLUBS.length, CLUB_COUNT);
-  assert.equal(new Set(CLUBS.map((c) => c.id)).size, 162);
-  assert.equal(new Set(CLUBS.map((c) => c.name)).size, 162);
+  assert.equal(new Set(CLUBS.map((c) => c.id)).size, 306);
+  assert.equal(new Set(CLUBS.map((c) => c.name)).size, 306);
+  assert.equal(new Set(CLUBS.map((c) => c.short)).size, 306);
   assert.equal(MATCHDAYS, 34);
 
-  assert.deepEqual(GROUPS.map((g) => g.tier), [1, 2, 2, 2, 2, 3, 3, 3, 3]);
-  assert.deepEqual(GROUPS.map((g) => g.group), [null, 'A', 'B', 'C', 'D', 'A', 'B', 'C', 'D']);
-  assert.deepEqual(GROUPS.map((g) => g.name), [
-    'Division 1', 'Division 2 Group A', 'Division 2 Group B', 'Division 2 Group C', 'Division 2 Group D',
-    'Division 3 Group A', 'Division 3 Group B', 'Division 3 Group C', 'Division 3 Group D',
-  ]);
-  assert.deepEqual(GROUPS.map((g) => g.clubIds.length), Array(9).fill(DIVISION_SIZE));
+  assert.deepEqual(GROUPS.map((g) => g.tier), [1].concat(Array(4).fill(2), Array(12).fill(3)));
+  assert.deepEqual(GROUPS.map((g) => g.group),
+    [null].concat(GROUP_LETTERS.slice(0, GROUP_COUNTS[2]), GROUP_LETTERS));
+  assert.deepEqual(GROUPS.map((g) => g.name), GROUPS.map((g) => groupName(g.tier, g.group)));
+  assert.equal(GROUPS[0].name, 'Division 1');
+  assert.equal(GROUPS[16].name, 'Division 3 Group L');
+  assert.deepEqual(GROUPS.map((g) => g.clubIds.length), Array(17).fill(DIVISION_SIZE));
 
   // The ten original clubs keep their order and their data, all in Division 1.
   assert.deepEqual(CLUBS.slice(0, 10).map((c) => c.id), COASTAL_IDS);
   assert.deepEqual(CLUBS[0], {
-    id: 'harbourside', name: 'Harbourside FC', short: 'HF', color: 'rgb(var(--pitch))',
+    id: 'harbourside', name: 'Harbourside FC', short: 'HF', city: 'Harbourside', code: 'HAR', kit: 16,
     rep: 4, formation: '4-3-3', objective: 'Finish in the top half', ground: 'The Quay',
   });
   for (const id of COASTAL_IDS) {
     assert.ok(GROUPS[0].clubIds.includes(id));
     assert.equal(clubToGroup[id], 0);
   }
-  // The 18 extra clubs come after the ones that already existed, so every
-  // club a saved career knows keeps its id, name and strength.
-  for (const [i, id, name, rep, short] of KEPT_CLUBS) {
+  // The new clubs come after the ones that already existed, so every club a
+  // saved career knows keeps its id, name, strength and starting group.
+  for (const [i, id, name, rep, short, groupIndex] of KEPT_CLUBS) {
     assert.equal(CLUBS[i].id, id);
     assert.equal(CLUBS[i].name, name);
     assert.equal(CLUBS[i].rep, rep);
     assert.equal(CLUBS[i].short, short);
+    assert.equal(clubToGroup[id], groupIndex);
   }
 
   // Every club is in exactly one group, and clubToGroup names it.
   const all = GROUPS.flatMap((g) => g.clubIds);
-  assert.equal(new Set(all).size, 162);
+  assert.equal(new Set(all).size, 306);
   for (const c of CLUBS) assert.ok(GROUPS[clubToGroup[c.id]].clubIds.includes(c.id));
+
+  // The feeder blocks: A, B and C sit under Division 2 A, and so on.
+  assert.deepEqual(feederIndices(1), [5, 6, 7]);
+  assert.deepEqual(feederIndices(4), [14, 15, 16]);
+  for (let gi = 1; gi <= 4; gi++) {
+    for (const f of feederIndices(gi)) assert.equal(parentIndex(f), gi);
+  }
+  assert.deepEqual([13, 14, 15, 16, 17, 18].map(relegationFeeder), [2, 2, 1, 1, 0, 0]);
 });
 
 test('the shop is every club in the pyramid, and the purchase is checked', () => {
@@ -151,15 +164,15 @@ test('eight clubs go down from Division 1 and eight come up into it', () => {
   const divisionOne = leagueTable(state);
   const next = startNextSeason(state);
 
-  assert.deepEqual(next.groups.map((g) => g.clubIds.length), Array(9).fill(18));
-  assert.equal(new Set(next.groups.flatMap((g) => g.clubIds)).size, 162);
+  assert.deepEqual(next.groups.map((g) => g.clubIds.length), Array(17).fill(18));
+  assert.equal(new Set(next.groups.flatMap((g) => g.clubIds)).size, 306);
 
   // The bottom 8 of Division 1 go down, two into each Division 2 group in
   // order of finish: 11th to A, 12th to B, 13th to C, 14th to D, and so on.
   const down = divisionOne.slice(10).map((r) => r.id);
   assert.equal(down.length, 8);
   down.forEach((id, k) => {
-    const gi = 1 + (k % GROUP_LETTERS.length);
+    const gi = 1 + (k % GROUP_COUNTS[2]);
     assert.ok(next.groups[gi].clubIds.includes(id), id + ' is in ' + next.groups[gi].name);
     assert.equal(next.groups.filter((g) => g.clubIds.includes(id)).length, 1);
   });
@@ -168,15 +181,18 @@ test('eight clubs go down from Division 1 and eight come up into it', () => {
   // its own clubs and gains 8.
   assert.equal(next.groups[0].clubIds.filter((id) => before[0].includes(id)).length, 10);
   assert.equal(next.groups[0].clubIds.filter((id) => !before[0].includes(id)).length, 8);
-  for (let gi = 1; gi <= GROUP_LETTERS.length; gi++) {
+  for (let gi = 1; gi <= GROUP_COUNTS[2]; gi++) {
     const lost = before[gi].filter((id) => !next.groups[gi].clubIds.includes(id));
     const gained = next.groups[gi].clubIds.filter((id) => !before[gi].includes(id));
-    assert.equal(lost.length, 4, next.groups[gi].name + ' loses 2 up and 2 down');
-    assert.equal(gained.length, 4, next.groups[gi].name + ' gains 2 down and 2 up');
-    // Same letter between Division 2 and Division 3.
-    const down3 = before[gi + GROUP_LETTERS.length].filter((id) => !next.groups[gi + GROUP_LETTERS.length].clubIds.includes(id));
-    assert.equal(down3.length, 2);
-    for (const id of down3) assert.ok(next.groups[gi].clubIds.includes(id));
+    assert.equal(lost.length, 8, next.groups[gi].name + ' loses 2 up and 6 down');
+    assert.equal(gained.length, 8, next.groups[gi].name + ' gains 2 from Division 1 and 6 from its feeders');
+    // Each feeder loses its top 2 to this Division 2 group and gains 2 down.
+    for (const f of feederIndices(gi)) {
+      const up = before[f].filter((id) => !next.groups[f].clubIds.includes(id));
+      assert.equal(up.length, 2);
+      for (const id of up) assert.ok(next.groups[gi].clubIds.includes(id));
+      assert.equal(next.groups[f].clubIds.filter((id) => !before[f].includes(id)).length, 2);
+    }
   }
 });
 
@@ -201,22 +217,24 @@ test('the outcome names the group each club moves to', () => {
     const outcome = seasonOutcome(state);
     assert.equal(outcome.toDivision, outcome.kind === 'relegated' ? 2 : 1);
     if (outcome.kind === 'relegated') {
-      assert.equal(outcome.toGroup, GROUP_LETTERS[(outcome.rank - 11) % GROUP_LETTERS.length]);
+      assert.equal(outcome.toGroup, GROUP_LETTERS[(outcome.rank - 11) % GROUP_COUNTS[2]]);
     }
     if (outcome.kind === 'champions') assert.equal(outcome.rank, 1);
   }
   const second = finishedCareer(GROUPS[1].clubIds[0], 313);
   const out2 = seasonOutcome(second);
   assert.equal(out2.toDivision, out2.kind === 'promoted' ? 1 : out2.kind === 'relegated' ? 3 : 2);
-  if (out2.kind === 'relegated') assert.equal(out2.toGroup, 'A');
+  if (out2.kind === 'relegated') {
+    assert.equal(out2.toGroup, GROUPS[feederIndices(1)[relegationFeeder(out2.rank)]].group);
+  }
 
-  // A Division 3 club that goes up keeps its group's letter.
+  // A Division 3 club that goes up joins the Division 2 group above it.
   for (let seed = 1; seed <= 12; seed++) {
     const state = finishedCareer(GROUPS[6].clubIds[0], seed);
     const outlet = seasonOutcome(state);
     if (outlet.kind === 'promoted') {
       assert.equal(outlet.toDivision, 2);
-      assert.equal(outlet.toGroup, 'B');
+      assert.equal(outlet.toGroup, 'A');
     }
     assert.notEqual(outlet.kind, 'relegated');
   }
@@ -240,7 +258,7 @@ test('the manager carries their club, players and roles into the next season', (
   assert.equal(next.fixtures.length, 34);
   assert.ok(next.fixtures.some((round) => round.some((f) => f.home === state.clubId || f.away === state.clubId)));
   assert.equal(Object.keys(next.squads).length, 18);
-  assert.equal(next.groups.length, 9);
+  assert.equal(next.groups.length, 17);
   assert.ok(next.groups[next.groupIndex].clubIds.includes(state.clubId));
   assert.equal(next.groups.filter((g) => g.clubIds.includes(state.clubId)).length, 1);
   assert.deepEqual(next.squads[state.clubId].map((p) => p.id), before.map((p) => p.id));
@@ -314,8 +332,8 @@ test('a version 1 career plays its 18 matchdays exactly as it did', () => {
   assert.equal(next.division, 1);
   assert.equal(next.group, null);
   assert.ok(next.groups[0].clubIds.includes('harbourside'));
-  assert.equal(next.groups.map((g) => g.clubIds.length).join(','), Array(9).fill(18).join(','));
-  assert.equal(new Set(next.groups.flatMap((g) => g.clubIds)).size, 162);
+  assert.equal(next.groups.map((g) => g.clubIds.length).join(','), Array(17).fill(18).join(','));
+  assert.equal(new Set(next.groups.flatMap((g) => g.clubIds)).size, 306);
   assert.equal(next.fixtures.length, 34);
   assert.deepEqual(next.squads.harbourside.map((p) => p.id), state.squads.harbourside.map((p) => p.id));
   assert.equal(Object.keys(next.squads).length, 18);
@@ -425,4 +443,120 @@ test('the wallet a first-time manager is given, and the one an earlier career ke
   assert.equal(openingBalance(900, 1000), 900);
   assert.equal(purchaseError(GROUPS[5].clubIds[0], openingBalance(null, 1000), 100), null);
   assert.equal(purchaseError(GROUPS[5].clubIds[0], openingBalance(0, 1000), 100), 'balance');
+});
+
+// ── The twelve-group Division 3 ──────────────────────────────────────────
+function rankOf(state) {
+  return leagueTable(state).find((r) => r.id === state.clubId).rank;
+}
+
+test('four rollovers keep every group at 18 and the pyramid at 306 clubs', () => {
+  let state = finishedCareer(GROUPS[9].clubIds[0], 2468); // Division 3 Group E
+  for (let season = 1; season <= 4; season++) {
+    state = startNextSeason(state);
+    assert.equal(state.groups.length, 17);
+    assert.deepEqual(state.groups.map((g) => g.clubIds.length), Array(17).fill(18));
+    const all = state.groups.flatMap((g) => g.clubIds);
+    assert.equal(all.length, 306);
+    assert.equal(new Set(all).size, 306);
+    for (const c of CLUBS) assert.equal(all.filter((id) => id === c.id).length, 1);
+    assert.equal(state.groups.filter((g) => g.clubIds.includes(state.clubId)).length, 1);
+    assert.ok(state.groups[state.groupIndex].clubIds.includes(state.clubId));
+    while (!state.finished) playMatchday(state);
+  }
+});
+
+test('the top two of every Division 3 group go up into its parent Division 2 group', () => {
+  for (let f = 5; f <= 16; f++) {
+    const state = finishedCareer(GROUPS[f].clubIds[0], 100 + f);
+    const table = leagueTable(state);
+    const up = table.slice(0, 2).map((r) => r.id);
+    const next = startNextSeason(state);
+    const parent = parentIndex(f);
+    assert.equal(next.groups[parent].group, GROUPS[parent].group);
+    for (const id of up) {
+      assert.ok(next.groups[parent].clubIds.includes(id), GROUPS[f].name + ' sends ' + id + ' to ' + GROUPS[parent].name);
+      assert.equal(next.groups.filter((g) => g.clubIds.includes(id)).length, 1);
+    }
+    // The other sixteen stay, and the group is back to eighteen.
+    for (const row of table.slice(2)) assert.ok(next.groups[f].clubIds.includes(row.id));
+    assert.equal(next.groups[f].clubIds.length, 18);
+  }
+});
+
+test('a Division 2 group sends its bottom six down, two into each feeder', () => {
+  const gi = 1; // Division 2 Group A, feeding Division 3 A, B and C
+  // One finished season at each rank from 13th to 18th, so the banner can be
+  // checked against the rollover itself.
+  const atRank = new Map();
+  for (let seed = 1; seed <= 200 && atRank.size < 6; seed++) {
+    const state = finishedCareer(GROUPS[gi].clubIds[0], seed);
+    const rank = rankOf(state);
+    if (rank >= 13 && rank <= 18 && !atRank.has(rank)) atRank.set(rank, state);
+  }
+  assert.equal(atRank.size, 6, 'a finish at each rank from 13th to 18th exists');
+
+  for (const [rank, state] of atRank) {
+    const outcome = seasonOutcome(state);
+    const next = startNextSeason(state);
+    const target = GROUPS[feederIndices(gi)[relegationFeeder(rank)]];
+    assert.equal(outcome.kind, 'relegated', 'rank ' + rank + ' is relegated');
+    assert.equal(outcome.toDivision, 3);
+    assert.equal(outcome.toGroup, target.group, 'rank ' + rank + ' goes to ' + target.name);
+    // The banner and the real move agree.
+    assert.equal(next.division, outcome.toDivision);
+    assert.equal(next.group, outcome.toGroup);
+    assert.ok(next.groups[next.groupIndex].clubIds.includes(state.clubId));
+  }
+
+  // One rollover of that group: six down, two into each of its three feeders.
+  const state = finishedCareer(GROUPS[gi].clubIds[0], 77);
+  const next = startNextSeason(state);
+  assert.equal(next.groups.filter((g) => g.clubIds.length === 18).length, 17);
+  for (const f of feederIndices(gi)) {
+    const gained = next.groups[f].clubIds.filter((id) => !state.groups[f].clubIds.includes(id));
+    assert.equal(gained.length, 2, next.groups[f].name + ' takes in two relegated clubs');
+    for (const id of gained) assert.ok(state.groups[gi].clubIds.includes(id));
+  }
+});
+
+test('a nine-group career keeps its own groups and joins the twelve-group Division 3', () => {
+  const full = buildInitialState(GROUPS[8].clubIds[5], 'Test manager', 12); // Division 3 Group D
+  // The groups exactly as they were saved before Division 3 grew.
+  const saved = JSON.parse(JSON.stringify({
+    ...full,
+    groups: full.groups.slice(0, 9),
+  }));
+  assert.equal(saved.groups.length, 9);
+
+  const fixed = repairCareer(saved);
+  assert.ok(fixed, 'the older career still loads');
+  assert.equal(fixed.version, 3);
+  assert.equal(fixed.groups.length, 17);
+  assert.equal(fixed.groupIndex, 8);
+  // Its own nine groups are untouched: same clubs, same slots.
+  for (let i = 0; i < 9; i++) {
+    assert.equal(fixed.groups[i].tier, saved.groups[i].tier);
+    assert.equal(fixed.groups[i].group, saved.groups[i].group);
+    assert.deepEqual(fixed.groups[i].clubIds, saved.groups[i].clubIds);
+  }
+  // The eight new groups are the new Division 3 E to L, and none of their
+  // clubs is anywhere else.
+  for (let i = 9; i < 17; i++) {
+    assert.deepEqual(fixed.groups[i], { tier: 3, group: GROUP_LETTERS[i - 5], clubIds: GROUPS[i].clubIds });
+  }
+  assert.equal(new Set(fixed.groups.flatMap((g) => g.clubIds)).size, 306);
+  // The season carries on with the same fixtures and squad.
+  assert.equal(fixed.fixtures.length, 34);
+  assert.deepEqual(divisionClubIds(fixed), saved.groups[8].clubIds);
+  assert.deepEqual(Object.keys(fixed.squads), Object.keys(saved.squads));
+  assert.deepEqual(pyramidGroups(fixed), fixed.groups);
+
+  // And its next season end uses the new rules.
+  while (!fixed.finished) playMatchday(fixed);
+  const next = startNextSeason(fixed);
+  assert.equal(next.groups.length, 17);
+  assert.deepEqual(next.groups.map((g) => g.clubIds.length), Array(17).fill(18));
+  assert.equal(new Set(next.groups.flatMap((g) => g.clubIds)).size, 306);
+  assert.ok(next.groups[next.groupIndex].clubIds.includes(fixed.clubId));
 });

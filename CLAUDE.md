@@ -89,15 +89,15 @@ If a rule below this line conflicts with the hosted conventions, the
 hosted conventions win. This file is **app-specific** — write down
 things about *this* app that belong in the repo: product intent,
 data-model quirks, style preferences, opt-in policies (e.g. which
-tables you've marked private), etc.
+tables you've marked private), licensing rules, etc.
 
 ---
 
 ## About Own Club
 
 A football management game. A new career starts with your manager name, a mock
-wallet of 1,000 Dummy USDC and a shop of all 162 clubs, 100 in Division 3,
-200 in Division 2 and 300 in Division 1;
+wallet of 1,000 Dummy USDC and a shop of all 306 clubs, priced 100 USDC in
+Division 3, 200 in Division 2 and 300 in Division 1;
 then you set the eleven on a pitch diagram, choose formation, mentality,
 pressing and each player's role, and play each of your group's 34 matchdays
 and read the report. A Club tab lists the nine club facilities (stadium,
@@ -105,12 +105,15 @@ training ground, academy, shop, food stand, hotel, toilets, parking, VIP room),
 each level 1 to 5, and upgrades them with Club credits. Training and cups come
 later.
 
-The Coastal League has three tiers and 162 clubs. Division 1 is one group of
-18; Divisions 2 and 3 have four groups, A to D, of 18. The bottom 8 of
-Division 1 go down, two into each Division 2 group; the top 2 of each
-Division 2 group go up to Division 1 and its bottom 2 go down into the
-same-letter Division 3 group; the top 2 of each Division 3 group go up. Nobody
-leaves Division 3, and every group stays at 18. Start next season carries your
+The Coastal League has three tiers and 306 clubs. Division 1 is one group of
+18; Division 2 has four groups, A to D, and Division 3 has twelve, A to L, all
+of 18. The bottom 8 of Division 1 go down, two into each Division 2 group; the
+top 2 of each Division 2 group go up to Division 1 and its bottom 6 go down,
+two into each of its three Division 3 groups in finish order (18th and 17th to
+the first, 16th and 15th to the second, 14th and 13th to the third); the top 2
+of each Division 3 group go up into the Division 2 group above it (A, B and C
+under Division 2 A, D, E and F under B, and so on). Nobody leaves Division 3,
+and every group stays at 18. Start next season carries your
 club, its players and their roles into its new group.
 
 Matches play by themselves at 00:00, 06:00, 12:00 and 18:00 on the manager's own
@@ -208,7 +211,13 @@ deletes the seller's listings. `engine.js` owns the rules: `playerWage`,
 `listPlayer`, `buyPlayer`, `returnListing`, `sellToLeague`, `releasePlayer`,
 `ageingFor` and `academyGraduate`; `playMatchday` charges `wageBill` beside
 `GROUND_UPKEEP` into `finance.wage` and `startNextSeason` ages the squad and
-replaces each retiree with a graduate. `PUT /api/career` keeps the stored squad
+replaces each retiree with a graduate. The market's own view is client-only:
+`public/market-view.js` holds the sort orders, the filter steps and the value
+hint (`usualPrice` and `valueHint`: 150 credits for each overall point above
+40, times 1.25 up to age 23, 0.85 from 30 and 0.6 from 33; a bargain under 85%
+of it, steep over 125%), while `app.js` keeps the chosen sort, filters and
+shortlist in page state, never in the career or the browser's storage, so they
+last until the page is reloaded. `PUT /api/career` keeps the stored squad
 (and, on a rollover, the aged one) whatever the page sends, and rebuilds an
 unusable lineup with `autoLineup`.
 
@@ -272,12 +281,14 @@ stay, and the academy takes in none while over; `youthFields` caps at 60. `acade
 `POST /api/career/youth`. `PUT /api/career` keeps the stored `staff` and
 `youth` whatever the page sends.
 
-The ten original clubs make up most of Division 1; the other 152 are generated
+The ten original clubs make up most of Division 1; the other 296 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
 squads that get weaker with each tier down. Only the manager's own group is
-saved; the other eight groups are played out from the career seed when a
+saved; the other sixteen groups are played out from the career seed when a
 season rolls over. A career saved in the old eight divisions finishes its
-season and joins the three tiers at rollover.
+season and joins the three tiers at rollover. A career saved with the old nine
+groups keeps all nine as they are and gains the eight new Division 3 groups,
+so its own season carries on untouched.
 
 The match view is built from `career.lastReport` by `public/match-feed.js` (a
 pure module): kick-off at 0, the saved moments with their minutes, half-time
@@ -315,8 +326,16 @@ change follows it, and updates it when a request changes the look on purpose.
   badge colour of its own, stored as data in `engine.js` (Harbourside uses the
   pitch token).
 - Market rows follow the Club tab's rows: a position chip, name and a small grey
-  line, ending in the plain secondary button (Buy, Withdraw) or a muted
-  "N needed" / "Squad full" in the same place.
+  line, a value hint line (Bargain in the fitness green, Fair and Steep plain),
+  then the star and the plain secondary Buy (or Withdraw) as one unbroken group
+  that drops below the name on a phone. A refused Buy is a greyed button on the
+  raised background reading "N needed" or "Squad full", with the reason on its
+  own small grey line, never faded. Your own listings carry a You chip before
+  Withdraw. Sort and filters sit above the list: a sort select with a visible
+  "Sort by" label and three filter selects plus the Shortlist toggle, amber
+  outlined on the raised background when on, wrapping on a phone and in one row
+  from `md` up, with "K filters on" and Clear all under them. The shortlist star
+  is never amber: it is `--star` when filled.
 - The Wallet section is one list of the same rows, Dummy USDC then Club
   credits then the read-only Homeroom wallet: the balance in `.bal`, the price
   in `.price` (bold, tabular numbers); the group chips reuse the division
@@ -346,9 +365,9 @@ change follows it, and updates it when a request changes the look on purpose.
   <name>" for a club a person runs (your own row included), "Run by a bot" for
   one nobody does. The shop's taken rows agree, saying "Run by <name>". Under
   the table (and under the Group buttons on New career, for Divisions 2 and 3)
-  one grey line says "Division N has four groups of 18: the Coastal League
-  holds 162 clubs.", from `groupsNote` in `engine.js`; it is absent for
-  Division 1 and for a career from before the three tiers.
+  one grey line says "Division 2 has four groups of 18: the Coastal League
+  holds 306 clubs." ("twelve" in Division 3), from `groupsNote` in `engine.js`;
+  it is absent for Division 1 and for a career from before the three tiers.
 - **Signature element:** the pitch diagram: a drawn pitch with your formation
   as white player tokens you drag to swap, the goalkeeper in amber. The match
   report is a written feed rather than a list of icons: each row gives the
@@ -418,7 +437,59 @@ Re-theme by changing the token values there, keeping every text pair at
   `state.wallet` in a career is only a display copy written at purchase. A
   first-time manager's row is seeded with `STARTING_BALANCE`; careers saved
   before the table grandfather their `state.wallet.balance` on boot.
-- The pyramid is capped at three tiers and 162 clubs (the early-stage maximum):
+- The pyramid is capped at three tiers and 306 clubs (the early-stage maximum):
   no Division 4. The shop lists every division's clubs at its tier price
   (`TIER_PRICE`), and a manager owns one club at a time. Selling a club, owning more than one and real USDC come
   later; the purchase is stored so selling can be added.
+
+## Licensing and legal
+
+`AGENTS.md` at the root carries a summary of this section for tools that read
+that file; this section is authoritative if the two ever disagree, and the two
+should be fixed in the same change. Public prose (README, in-app copy) stays
+fictional too, as the rest of this section requires.
+
+1. **Invented names only.** Every club, player, manager, coach, staff member,
+   sponsor, ground and competition name in the game is invented, and new ones
+   stay invented. The pools that generate every name in the game live in
+   `public/engine.js` and are what an extending agent keeps clean:
+   `COASTAL_CLUBS` (the ten original clubs, their grounds and badge colours),
+   `PLACE_POOL`, `CLUB_SUFFIXES` and `GROUND_WORDS` (the 152 generated clubs),
+   `FIRST_NAMES` and `LAST_NAMES` (players, staff and managers),
+   `SPONSOR_NAMES`, `PEAK_NAMES`, `STAFF_ROLES`, `FACILITIES` and
+   `LEAGUE_NAME`. A name is not safe merely because it is not spelled
+   identically to a real one: a famous surname paired with a fitting first
+   name, a real club's nickname ("The Reds"), a real club's name with one word
+   swapped, or a real player's full name all count as real. When a generated
+   or hand-picked combo collides with a famous real name, change one part.
+   Some `PLACE_POOL` entries coincide with small real settlements (Jarrow,
+   Ivybridge, Mossley, Millbrook, …) — geographic names are facts, not
+   trademarks, and stay.
+2. **No real marks or looks.** Badges stay initials on a plain colour; never
+   draw, fetch or approximate a real club's crest or kit, a brand's logo, or
+   one real club's distinctive colour identity.
+3. **Generated data only.** Squads, attributes, results and ratings come from
+   the seeded generator (`buildSquad`, `ageingFor`, the pyramid seed). Never
+   load a real player database, real fixtures, photos or third-party data
+   APIs; never scrape.
+4. **Mock money stays mock.** Dummy USDC and Club credits are play
+   currencies; no real payment, wallet or crypto integration, ever. The
+   Finance tab's "Staging mock" tag stays.
+5. **Permissive inputs only.** Any new dependency, vendored file, font, icon
+   set or data file must carry a permissive licence (MIT, Apache-2.0, BSD,
+   ISC) and have its source and licence recorded — the platform's
+   vendored-file convention covers vendored runtime files, and new npm
+   packages should be mainstream and permissively licensed. Never paste code
+   of unknown origin. Icons stay hand-drawn inline SVG on the platform's
+   line-icon grid.
+6. **Original mechanics.** Design features fresh; do not port code, data or a
+   named patented mechanic from a commercial game.
+7. **When a request asks for the real thing** (a real club, player,
+   competition or brand), do not refuse the intent — build the invented
+   equivalent in the same style as the rest of the game, and say in the
+   change notes why the real name was not used.
+8. **The audit.** On 2026-10-24 the whole tree was grepped for major real
+   club, player, manager, league and brand names and the pools above were read
+   in full: no real-world names anywhere, so the baseline is clean. Re-check
+   the pools when extending them; the greps to repeat are any list of major
+   real football names and brands.

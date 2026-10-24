@@ -163,7 +163,7 @@
       <div class="top">
         <div class="sm">The Coastal League</div>
         <h1>New career</h1>
-        <div class="sm">Three tiers, 162 clubs, 34 matchdays</div>
+        <div class="sm">Three tiers, 306 clubs, 34 matchdays</div>
       </div>
       <div class="sec">
         <label class="section-label" for="manager-name">Manager name</label>
@@ -186,12 +186,7 @@
         </div>
         <div id="group-section">
           <div class="section-label"><span id="group-label">Group</span><span id="group-note">0 of 18 free</span></div>
-          <div class="divrow" id="group-row" role="group" aria-labelledby="group-label">
-          <button class="chip" type="button" data-group="A" aria-pressed="true" aria-label="Division 3 Group A">A</button>
-          <button class="chip" type="button" data-group="B" aria-pressed="false" aria-label="Division 3 Group B">B</button>
-          <button class="chip" type="button" data-group="C" aria-pressed="false" aria-label="Division 3 Group C">C</button>
-            <button class="chip" type="button" data-group="D" aria-pressed="false" aria-label="Division 3 Group D">D</button>
-          </div>
+          <div class="divrow" id="group-row" role="group" aria-labelledby="group-label"></div>
           <p class="league-note" id="group-explain"></p>
         </div>
       </div>
@@ -211,7 +206,7 @@
          More) and a sidebar on a wider window. -->
     <div class="app club-app" id="view-club" hidden>
       <nav class="tabnav" id="tabnav" aria-label="Club">
-        <div class="tab-club" id="tab-club-head"><span class="badge" id="tab-badge"></span><span id="tab-name"></span></div>
+        <div class="tab-club" id="tab-club-head"><span class="badge" id="tab-badge"></span><span id="tab-name"></span><span class="code-pill" id="tab-code" aria-hidden="true" hidden></span></div>
         <a class="tab" href="#home" data-tab="home" aria-current="page">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg><span>Home</span>
         </a>
@@ -254,12 +249,25 @@
       <div class="club-main">
         <div class="top">
           <div class="sm" id="club-md"></div>
-          <h1 id="club-name"></h1>
+          <div class="title-row"><h1><span id="club-name"></span><span class="group-tag" id="club-group" hidden></span></h1><span class="code-pill" id="club-code" aria-hidden="true" hidden></span></div>
           <div class="sm" id="club-pos"></div>
         </div>
 
         <!-- Home -->
         <div class="panel" id="tab-home">
+          <!-- The league group is being rebuilt by the server. -->
+          <div class="next" id="setup-card" hidden>
+            <div class="season-head">
+              <h2 class="season-title">Setting up your group</h2>
+              <p class="season-text">Checking your group of 18 and its 34 matchdays. Your results are kept.</p>
+            </div>
+            <ul class="list">
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+              <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
+            </ul>
+          </div>
+
           <div class="next" id="next-card">
             <div class="row">
               <div class="team"><span class="badge" id="next-home-badge"></span><span id="next-home-name"></span></div>
@@ -333,6 +341,7 @@
           <div class="sec">
             <div class="section-label"><span>League table</span><span class="form" id="club-form"></span></div>
             <ul class="list tbl" id="table-list"></ul>
+            <p class="league-note setup-note" id="setup-note" hidden><b>Setting up your group</b>The table comes back with your results kept.</p>
             <p class="league-note" id="league-note" hidden></p>
           </div>
           <div class="sec">
@@ -424,7 +433,23 @@
             <ul class="list" id="listing-list"></ul>
           </div>
           <div class="sec">
-            <div class="section-label"><span>On the market</span><span id="market-count"></span></div>
+            <div class="section-label"><span>On the market</span><span id="market-count" aria-live="polite"></span></div>
+            <div id="market-controls" hidden>
+              <div class="mkt-sort">
+                <label class="lbl" for="market-sort">Sort by</label>
+                <select class="field" id="market-sort"></select>
+              </div>
+              <div class="fchips">
+                <select class="field fchip" id="filter-pos" aria-label="Position"></select>
+                <select class="field fchip" id="filter-ovr" aria-label="Minimum overall"></select>
+                <select class="field fchip" id="filter-price" aria-label="Maximum price"></select>
+                <button class="fchip" id="filter-short" type="button" aria-pressed="false">Shortlist</button>
+              </div>
+              <div class="fstatus" id="market-status" hidden>
+                <span id="market-active"></span>
+                <button class="btn-secondary small" id="market-clear" type="button">Clear all</button>
+              </div>
+            </div>
             <div id="market-loading" aria-busy="true" hidden>
               <ul class="list">
                 <li class="list-row"><span class="nm"><span class="skeleton sk-line"></span><span class="skeleton sk-sm"></span></span></li>
@@ -436,6 +461,12 @@
             <div class="state-empty" id="market-empty" hidden>
               <p class="state-title">No players on the market</p>
               <p class="state-text">When a manager lists a player, they show here. You can list one of yours from their player sheet.</p>
+              <button class="btn-secondary" id="market-empty-clear" type="button" hidden>Clear filters</button>
+            </div>
+            <div class="state-empty" id="market-nomatch" hidden>
+              <p class="state-title">No players match these filters</p>
+              <p class="state-text" id="market-nomatch-text"></p>
+              <button class="btn-secondary" id="market-nomatch-clear" type="button">Clear filters</button>
             </div>
             <div class="state-error" id="market-error" hidden>
               <p class="state-text">The transfer market could not be loaded. Your squad and matches still work.</p>

@@ -6,11 +6,11 @@
 import {
   CLUBS, CLUB_BY_ID, LEAGUE_NAME, FORMATIONS, FORMATION_NAMES,
   MENTALITY_NAMES, PRESSING_NAMES, ROLES, POS_GROUP,
-  GROUPS, TIER_COUNT, clubToGroup, groupName,
+  GROUPS, GROUP_LETTERS, TIER_COUNT, clubToGroup, groupName,
   divisionClubIds, placeName, seasonOutcome, startNextSeason,
   arrangeLineup, autoLineup,
   leagueTable, formOf, nextFixture, objectiveMet, clubSummary, defaultRole,
-  repairCareer, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
+  repairCareer, groupSetupError, slotLabel, upcomingSlots, clubTier, saleValue, CREDIT_REWARDS,
   moneyFields, seasonMoney, creditsForResult, TICKET_PRICE, GROUND_UPKEEP, FAN_CHANGE,
   FACILITIES, FACILITY_MAX_LEVEL, facilityLevels, upgradeCost, upgradeFacility,
   STAFF_ROLES, staffFields, staffWagesDue, MAINTENANCE, maintenanceDue,
@@ -20,6 +20,10 @@ import {
   growthOutlook, managerLine, groupsNote,
 } from './engine.js';
 import { buildTimeline, matchCrowd, creditsLine } from './match-feed.js';
+import {
+  MARKET_SORTS, POSITION_FILTERS, MIN_OVERALL_STEPS, MAX_PRICE_STEPS,
+  DEFAULT_MARKET_VIEW, valueHint, filterListings, sortListings, activeFilterCount,
+} from './market-view.js';
 
 // ── Small helpers ────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -59,6 +63,12 @@ let autoPlayed = 0;
 let tab = 'home';
 let reportFrom = 'home';
 let refreshFailed = false;
+// The club's league group is being rebuilt by the server: the setting-up
+// screen shows until the repair comes back, or it gives up after two seconds
+// to an error with a Retry.
+let groupSettingUp = false;
+// The last repair attempt failed, so Retry runs the repair again, not a load.
+let groupRetry = false;
 // The sale just made, so the New career screen can say where the money came
 // from. Cleared once a new club is bought.
 let lastSale = null;
@@ -87,8 +97,10 @@ function showTab(next) {
   if (OVERFLOW_TABS.includes(tab)) more.setAttribute('data-current', '');
   else more.removeAttribute('data-current');
   closeMore();
-  if (tab === 'tactics' && career) drawPitch();
-  if (tab === 'transfers' && career) {
+  // While the group is being rebuilt the saved career is not playable yet, so
+  // the pitch and the market wait for the repair.
+  if (tab === 'tactics' && career && !groupSettingUp) drawPitch();
+  if (tab === 'transfers' && career && !groupSettingUp) {
     renderMarket();
     loadMarket();
   }
@@ -150,6 +162,10 @@ async function api(method, body, path) {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    // Never read a saved answer from the browser's cache: a group repair,
+    // a save on another device or a just-played matchday must all be seen
+    // the moment they land.
+    cache: 'no-store',
   });
   let data = null;
   try { data = await res.json(); } catch (_) {}
@@ -231,6 +247,16 @@ async function load() {
   }
 
   if (!cause) {
+    // A career whose league group is broken is rebuilt by the server before
+    // anything else: the page never repairs it itself, because a save spreads
+    // whatever the page holds.
+    const stored = answer.data.career;
+    if (answer.data.groupBroken || groupSetupError(stored)) {
+      career = stored;
+      version = answer.data.version;
+      await repairGroup();
+      return;
+    }
     const repaired = repairCareer(answer.data.career);
     if (!repaired) {
       cause = LOAD_CAUSE.shown;
@@ -253,10 +279,132 @@ async function load() {
   }
 
   loadError = cause;
+  // The error view is shared with the repair failure, which names its own
+  // trouble here.
+  $('error-title').textContent = 'Your career did not load';
   $('error-text').textContent = 'Your career could not be read from the server. Your last saved matchday is kept.';
   setLoadCause(cause);
   screen = 'error';
   render();
+}
+
+// ── Setting up the group ─────────────────────────────────────────────────
+// A career whose league group lost its shape (a short club list, a truncated
+// fixture list) is rebuilt by the server, keeping every result already played.
+// The page only asks for the repair and shows what is happening; it never
+// repairs the career itself, because a save spreads whatever the page holds.
+
+async function repairGroup() {
+  groupSettingUp = true;
+  groupRetry = false;
+  screen = 'club';
+  tab = 'home';
+  render();
+
+  // Give the repair a short cap, so a stuck request ends in an error with a
+  // Retry rather than a screen that waits for ever.
+  let settled = false;
+  const cap = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    giveUp('Setting up your group took too long. Press Retry to try again.');
+  }, 2000);
+
+  function giveUp(cause) {
+    clearTimeout(cap);
+    groupSettingUp = false;
+    groupRetry = true;
+    loadError = cause;
+    $('error-title').textContent = 'Your group could not be set up';
+    $('error-text').textContent = 'Your league could not be set up from its saved results. Nothing you have played has been lost.';
+    setLoadCause(cause);
+    screen = 'error';
+    render();
+  }
+
+  try {
+    const { status, data } = await api('POST', null, '/api/career/group-repair');
+    if (settled) return;
+    settled = true;
+    clearTimeout(cap);
+    if (status === 200 && data && data.career) {
+      const repaired = repairCareer(data.career);
+      if (repaired && !groupSetupError(repaired)) {
+        career = repaired;
+        version = data.version;
+        autoPlayed = Number(data.autoPlayed) > 0 ? Number(data.autoPlayed) : 0;
+        owners = data.owners && typeof data.owners === 'object' ? data.owners : {};
+        groupSettingUp = false;
+        screen = 'club';
+        tab = hashTab();
+        try {
+          render();
+          // A career saved before the zone was stored gets one now, once.
+          if (!career.timeZone) { ensureZone(); save(); }
+          return;
+        } catch (err) {
+          console.error('career render failed', err);
+          career = null;
+          giveUp(LOAD_CAUSE.shown);
+          return;
+        }
+      }
+      giveUp(LOAD_CAUSE.server(data, status));
+      return;
+    }
+    if (status === 401) giveUp(LOAD_CAUSE.signin);
+    else if (data && typeof data.message === 'string' && data.message) giveUp(data.message);
+    else if (status > 0) giveUp(LOAD_CAUSE.server(data, status));
+    else giveUp(LOAD_CAUSE.network);
+  } catch (_) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(cap);
+    giveUp(LOAD_CAUSE.network);
+  }
+}
+
+// The group letter beside the club's name, in the header above every tab.
+// Division 1 has one group, so it shows none.
+function fillGroupPill() {
+  const el = $('club-group');
+  if (!el) return;
+  const show = career && career.version >= 3 && career.division > 1
+    && GROUP_LETTERS.includes(career.group);
+  el.textContent = show ? 'Group ' + career.group : '';
+  el.hidden = !show;
+}
+
+// The setting-up screen: the header says what is happening, the Home card and
+// the Competition table hold loading rows in their own shape, and everything
+// that reads the broken fixtures waits.
+function renderSettingUp() {
+  const club = CLUB_BY_ID[career.clubId];
+  $('club-md').textContent = 'Setting up your group';
+  $('club-name').textContent = club ? club.name : '';
+  $('club-pos').textContent = placeName(career);
+  fillGroupPill();
+  const badge = $('tab-badge');
+  if (badge && club) badge.outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
+  const tabName = $('tab-name');
+  if (tabName) tabName.textContent = club ? club.name : '';
+
+  $('setup-card').hidden = false;
+  $('next-card').hidden = true;
+  $('season-card').hidden = true;
+  $('last-sec').hidden = true;
+  $('home-actions').hidden = true;
+  const rows = [];
+  for (let i = 0; i < 6; i++) {
+    rows.push(`<li class="list-row"><span class="n"><span class="skeleton sk-pos"></span></span>
+      <span class="t"><span class="skeleton sk-line"></span><small><span class="skeleton sk-sm"></span></small></span>
+      <span class="g"><span class="skeleton sk-cell"></span></span>
+      <span class="p"><span class="skeleton sk-cell"></span></span></li>`);
+  }
+  $('table-list').innerHTML = rows.join('');
+  $('club-form').innerHTML = '';
+  $('league-note').hidden = true;
+  $('setup-note').hidden = false;
 }
 
 // ── New career ───────────────────────────────────────────────────────────
@@ -300,10 +448,25 @@ function renderNew() {
   const prices = shop.prices || { 1: 300, 2: 200, 3: 100 };
   const price = prices[pickedDivision] || shop.price;
   const inDivision = SHOP_GROUPS.filter((g) => g.tier === pickedDivision);
-  // Division 1 is one group of 18; Divisions 2 and 3 have four groups.
+  // Division 1 is one group of 18; Division 2 has four groups and Division 3
+  // twelve, as the pyramid says.
   const groups = inDivision.map((g) => ({ group: g.group, clubIds: g.clubIds, free: g.clubIds.filter((id) => !taken.has(id)) }));
   const freeTotal = groups.reduce((n, g) => n + g.free.length, 0);
   const freeAll = SHOP_GROUPS.reduce((n, g) => n + g.clubIds.filter((id) => !taken.has(id)).length, 0);
+
+  // A group picked in another division is not in this one: start at its first.
+  if (pickedDivision !== 1 && !groups.some((g) => g.group === pickedGroup)) {
+    pickedGroup = groups[0] ? groups[0].group : 'A';
+  }
+  // The Group buttons come from the pyramid: four in Division 2, twelve in
+  // Division 3, in rows of four and six.
+  const groupRow = $('group-row');
+  groupRow.dataset.cols = pickedDivision === 3 ? '6' : '4';
+  groupRow.innerHTML = pickedDivision === 1 ? '' : groups.map((g) => (
+    '<button class="chip" type="button" data-group="' + esc(g.group) + '" aria-pressed="'
+      + String(g.group === pickedGroup) + '" aria-label="Division ' + pickedDivision
+      + ' Group ' + esc(g.group) + '">' + esc(g.group) + '</button>'
+  )).join('');
 
   for (const btn of $('division-row').querySelectorAll('[data-division]')) {
     btn.setAttribute('aria-pressed', String(Number(btn.dataset.division) === pickedDivision));
@@ -315,9 +478,6 @@ function renderNew() {
   $('group-section').hidden = pickedDivision === 1;
   $('group-explain').textContent = groupsNote(pickedDivision);
   $('group-note').textContent = freeTotal === 0 ? '' : (group ? group.free.length : 0) + ' of 18 free in Group ' + pickedGroup;
-  for (const btn of $('group-row').querySelectorAll('[data-group]')) {
-    btn.setAttribute('aria-pressed', String(btn.dataset.group === pickedGroup));
-  }
 
   $('wallet-balance').textContent = usdc(shop.balance == null ? shop.startingBalance : shop.balance);
   const sold = lastSale ? CLUB_BY_ID[lastSale.clubId] : null;
@@ -350,16 +510,18 @@ function renderNew() {
     if (isTaken) {
       return `
     <li class="list-row club-row taken-row" aria-disabled="true">
-      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${esc(takenLine(c.id))}</small></span>
+      ${badgeHtml(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${esc(takenLine(c.id))}</small></span>
+      ${codePill(c)}
       <span class="taken">Taken</span>
       <span class="tick" aria-hidden="true"></span>
     </li>`;
     }
     return `
     <li class="list-row club-row${c.id === pickedClub ? ' me' : ''}" data-club-id="${esc(c.id)}" tabindex="0" role="button" aria-pressed="${c.id === pickedClub}">
-      <span class="badge" style="background:${c.color}">${esc(c.short)}</span>
-      <span class="nm">${esc(c.name)}<small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]}, run by a bot</small></span>
+      ${badgeHtml(c)}
+      <span class="nm"><span class="row-title">${esc(c.name)}</span><small>${stars(c.rep)} Squad ${CLUB_PREVIEW[c.id]} · ${esc(c.city)} · ${esc(groupName(GROUPS[clubToGroup[c.id]].tier))}</small></span>
+      ${codePill(c)}
       <span class="price">${usdc(price)}</span>
       <span class="tick" aria-hidden="true">${c.id === pickedClub ? CHECK_SVG : ''}</span>
     </li>`;
@@ -435,7 +597,12 @@ async function startCareer() {
 
 // ── Club screen ──────────────────────────────────────────────────────────
 function badgeHtml(club) {
-  return '<span class="badge" style="background:' + club.color + '">' + esc(club.short) + '</span>';
+  return '<span class="badge" style="--ka:var(--kit-' + club.kit + ');--kb:var(--kit-' + club.kit + 's)">' + esc(club.short) + '</span>';
+}
+
+// The club's three-letter code: decorative, the name carries the meaning.
+function codePill(club) {
+  return '<span class="code-pill" aria-hidden="true">' + esc(club.code) + '</span>';
 }
 
 function playerStatus(p, starters) {
@@ -498,6 +665,7 @@ function fixtureDate(date, zone) {
 }
 
 function renderClub() {
+  if (groupSettingUp) return renderSettingUp();
   const table = leagueTable(career);
   const me = table.find((r) => r.id === career.clubId);
   const club = CLUB_BY_ID[career.clubId];
@@ -514,9 +682,17 @@ function renderClub() {
     $('club-md').textContent = career.finished ? 'Season complete' : 'Matchday ' + (career.matchday + 1) + ' of ' + total;
   }
   $('club-name').textContent = club.name;
+  fillGroupPill();
   $('club-pos').textContent = ordinal(me.rank) + ' in ' + place;
+  $('club-code').textContent = club.code;
+  $('club-code').hidden = false;
+  $('setup-card').hidden = true;
+  $('setup-note').hidden = true;
+  $('home-actions').hidden = false;
   $('tab-badge').outerHTML = badgeHtml(club).replace('<span ', '<span id="tab-badge" ');
   $('tab-name').textContent = club.name;
+  $('tab-code').textContent = club.code;
+  $('tab-code').hidden = false;
 
   if (next && !career.finished) {
     $('next-card').hidden = false;
@@ -625,7 +801,8 @@ function renderClub() {
   $('table-list').innerHTML = table.map((r) => `
     <li class="list-row${r.id === career.clubId ? ' me' : ''}">
       <span class="n">${r.rank}</span>
-      <span class="t">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}<small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
+      ${codePill(CLUB_BY_ID[r.id])}
+      <span class="t"><span class="row-title">${esc(r.id === career.clubId ? r.name + ' (you)' : r.name)}</span><small>${esc(managerLine(r.id, owners, career.clubId, career.managerName))}</small></span>
       <span class="g">${r.gd > 0 ? '+' : ''}${r.gd}</span>
       <span class="p">${r.points}</span>
     </li>`).join('');
@@ -1480,6 +1657,10 @@ $('sheet-bench').addEventListener('click', (e) => {
 
 // ── The transfer market ──────────────────────────────────────────────────
 let market = { listings: [], mine: [], loading: false, error: false, loaded: false };
+// How the market is narrowed and ordered, and the players kept in mind. Page
+// state only: never saved to the career or to the browser's storage.
+const marketView = { ...DEFAULT_MARKET_VIEW };
+const shortlist = { listings: new Set(), players: new Set() };
 let marketBusy = null;
 let marketErrorText = '';
 let sheetTransfer = { mode: 'rows', busy: false, error: '' };
@@ -1492,12 +1673,79 @@ const LEAVE_TEXT = {
 
 function money(n) { return num(n); }
 
+// The star that keeps a listing or one of your own players in mind for the
+// session. A 44 px button with the app's own line star, filled when on.
+function starButton(attr, id, on, name) {
+  const icon = on
+    ? '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>';
+  return '<button class="star-btn" type="button" ' + attr + '="' + esc(id) + '" aria-pressed="' + on
+    + '" aria-label="Shortlist ' + esc(name) + '">' + icon + '</button>';
+}
+
 function marketRow(l) {
-  return `<li class="list-row">
+  const hint = valueHint(l.player, l.price);
+  const starred = shortlist.listings.has(l.id);
+  const err = signError(career, l.player, l.price);
+  let end;
+  let why = '';
+  if (DEMO) {
+    end = '<span class="need">Demo</span>';
+  } else if (err === 'full') {
+    end = '<button class="btn-secondary small blocked" type="button" disabled aria-describedby="why-' + l.id + '">Squad full</button>';
+    why = 'Your squad is full at ' + SQUAD_MAX + ' players. Sell or release one to sign.';
+  } else if (err === 'credits') {
+    const short = Math.max(1, signCost(career, l.player, l.price) - (career.credits || 0));
+    end = '<button class="btn-secondary small blocked" type="button" disabled aria-describedby="why-' + l.id + '">' + num(short) + ' needed</button>';
+    why = 'You need ' + num(short) + ' more Club credits: the price plus one matchday of wages and upkeep.';
+  } else {
+    const busy = marketBusy === 'b' + l.id;
+    end = '<button class="btn-secondary small" type="button" data-buy="' + l.id + '"' + (marketBusy ? ' disabled' : '') + '>'
+      + (busy ? 'Buying...' : 'Buy for ' + num(l.price)) + '</button>';
+  }
+  return `<li class="list-row mkt-row">
     <span class="pos">${esc(l.player.pos)}</span>
-    <span class="nm">${esc(l.player.name)}<small>Age ${l.player.age}, ${l.player.overall} overall, wage ${l.player.wage}. ${esc(displayName(l.club))}</small></span>
-    <span data-listing-end="${l.id}"></span>
+    <span class="nm">${esc(l.player.name)}<small>Age ${l.player.age}, ${l.player.overall} overall, wage ${num(l.player.wage)}. ${esc(displayName(l.club))}</small><small class="hint"><b${hint.kind === 'bargain' ? ' class="bargain"' : ''}>${hint.label}.</b> ${esc(hint.reason)}</small>${why ? '<small id="why-' + l.id + '">' + esc(why) + '</small>' : ''}</span>
+    <span class="mkt-acts">${starButton('data-star', l.id, starred, l.player.name)}${end}</span>
   </li>`;
+}
+
+// The sort and filter controls hold a fixed list of choices; the view state
+// says which one is chosen.
+function fillMarketControls() {
+  $('market-sort').innerHTML = MARKET_SORTS.map((s) => '<option value="' + s.value + '">' + esc(s.label) + '</option>').join('');
+  $('filter-pos').innerHTML = POSITION_FILTERS.map((p) => '<option value="' + esc(p.value) + '">' + esc(p.label) + '</option>').join('');
+  $('filter-ovr').innerHTML = '<option value="0">Any overall</option>'
+    + MIN_OVERALL_STEPS.map((n) => '<option value="' + n + '">' + n + '+ overall</option>').join('');
+  $('filter-price').innerHTML = '<option value="0">Any price</option>'
+    + MAX_PRICE_STEPS.map((n) => '<option value="' + n + '">Up to ' + num(n) + '</option>').join('');
+}
+
+function syncMarketControls(filters, starredOnMarket) {
+  $('market-sort').value = marketView.sort;
+  $('filter-pos').value = marketView.pos;
+  $('filter-ovr').value = String(marketView.minOverall);
+  $('filter-price').value = String(marketView.maxPrice);
+  $('filter-pos').dataset.on = String(!!marketView.pos);
+  $('filter-ovr').dataset.on = String(!!marketView.minOverall);
+  $('filter-price').dataset.on = String(!!marketView.maxPrice);
+  const short = $('filter-short');
+  short.setAttribute('aria-pressed', String(!!marketView.shortlistOnly));
+  short.dataset.on = String(!!marketView.shortlistOnly);
+  short.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR_PATH + '"/></svg>Shortlist'
+    + (starredOnMarket ? ' ' + starredOnMarket : '');
+  $('market-status').hidden = !(filters > 0 || marketView.sort !== DEFAULT_MARKET_VIEW.sort);
+  $('market-active').textContent = filters === 0 ? 'No filters on'
+    : filters + (filters === 1 ? ' filter on' : ' filters on');
+  $('market-empty-clear').hidden = filters === 0;
+}
+
+// Clear all turns every filter off and the sort back to Newest listing; Clear
+// filters keeps the sort. Neither touches a star.
+function clearMarketView(withSort) {
+  const sort = withSort ? DEFAULT_MARKET_VIEW.sort : marketView.sort;
+  Object.assign(marketView, DEFAULT_MARKET_VIEW, { sort });
+  renderMarket();
 }
 
 function renderMarket() {
@@ -1510,40 +1758,44 @@ function renderMarket() {
   const mine = market.mine || [];
   $('listing-sec').hidden = !mine.length;
   $('listing-count').textContent = mine.length + (mine.length === 1 ? ' player' : ' players');
-  $('listing-list').innerHTML = mine.map((l) => `<li class="list-row">
+  $('listing-list').innerHTML = mine.map((l) => `<li class="list-row mkt-row">
     <span class="pos">${esc(l.player.pos)}</span>
     <span class="nm">${esc(l.player.name)}<small>Asking ${num(l.price)} Club credits</small></span>
-    <button class="btn-secondary small" type="button" data-withdraw="${l.id}"${marketBusy ? ' disabled' : ''}>${marketBusy === 'w' + l.id ? 'Withdrawing...' : 'Withdraw'}</button>
+    <span class="mkt-acts"><span class="you-tag">You</span><button class="btn-secondary small" type="button" data-withdraw="${l.id}"${marketBusy ? ' disabled' : ''}>${marketBusy === 'w' + l.id ? 'Withdrawing...' : 'Withdraw'}</button></span>
   </li>`).join('');
 
-  $('market-loading').hidden = userHidden();
-  function userHidden() { return !(market.loading && !market.loaded); }
-  $('market-error').hidden = !market.error;
-  $('market-empty').hidden = !(market.loaded && !market.error && !(market.listings || []).length);
   const listings = market.listings || [];
-  $('market-count').textContent = market.loaded && !market.error
-    ? listings.length + (listings.length === 1 ? ' player' : ' players') : '';
-  $('market-list').innerHTML = listings.map((l) => marketRow(l)).join('');
+  const loadedOk = market.loaded && !market.error;
+  const filters = activeFilterCount(marketView);
+  const starredOnMarket = listings.filter((l) => shortlist.listings.has(l.id)).length;
+  const shown = sortListings(filterListings(listings, marketView, shortlist.listings), marketView.sort);
+  const empty = loadedOk && !listings.length;
+  const noMatch = loadedOk && listings.length > 0 && !shown.length;
+
+  $('market-loading').hidden = !(market.loading && !market.loaded);
+  $('market-error').hidden = !market.error;
+  $('market-empty').hidden = !empty;
+  $('market-nomatch').hidden = !noMatch;
+  $('market-controls').hidden = !(loadedOk && (listings.length > 0 || filters > 0));
+  if (loadedOk) syncMarketControls(filters, starredOnMarket);
+
+  $('market-count').textContent = loadedOk
+    ? (filters
+      ? shown.length + ' of ' + listings.length
+      : String(listings.length)) + (listings.length === 1 ? ' player' : ' players')
+    : '';
+  $('market-list').innerHTML = shown.map((l) => marketRow(l)).join('');
+
+  if (noMatch) {
+    const starredNone = marketView.shortlistOnly && filters === 1 && !starredOnMarket;
+    $('market-nomatch-text').textContent = starredNone
+      ? 'Star a player on the market to add them to your shortlist.'
+      : listings.length + (listings.length === 1 ? ' player is' : ' players are')
+        + ' on the market. Clear the filters to see them all.';
+  }
+
   if (market.error && marketErrorText) {
     $('market-error').querySelector('.state-text').textContent = marketErrorText;
-  }
-  // The end of each row: Buy, what is needed, or Squad full.
-  for (const l of listings) {
-    const slot = $('market-list').querySelector('[data-listing-end="' + l.id + '"]');
-    if (!slot) continue;
-    const err = signError(career, l.player, l.price);
-    if (DEMO) {
-      slot.innerHTML = '<span class="need">Demo</span>';
-    } else if (err === 'full') {
-      slot.innerHTML = '<span class="need">Squad full</span>';
-    } else if (err === 'credits') {
-      const short = Math.max(1, signCost(career, l.player, l.price) - (career.credits || 0));
-      slot.innerHTML = '<span class="need">' + num(short) + ' needed</span>';
-    } else {
-      const busy = marketBusy === 'b' + l.id;
-      slot.innerHTML = '<button class="btn-secondary small" type="button" data-buy="' + l.id + '"' + (marketBusy ? ' disabled' : '') + '>'
-        + (busy ? 'Buying...' : 'Buy for ' + num(l.price)) + '</button>';
-    }
   }
 }
 
@@ -1700,7 +1952,9 @@ function renderSheetTransfer(p) {
     </li>`;
     return;
   }
+  const starred = shortlist.players.has(p.id);
   box.innerHTML = `
+    <li class="list-row"><span class="nm">Shortlist<small>${starred ? 'Starred for this session.' : 'Star ' + name + ' to keep them in mind this session.'}</small></span>${starButton('data-sheet-star', p.id, starred, p.name)}</li>
     <li class="list-row"><span class="nm">List on market<small>${DEMO ? 'The demo season cannot list players.' : 'Other managers can buy ' + name + ' at your asking price.'}</small></span><button class="btn-secondary small" type="button" data-sheet-act="list"${dis || DEMO ? ' disabled' : ''}>List</button></li>
     <li class="list-row"><span class="nm">Sell to the league<small>${escapeSmall(blocked || 'Paid now. ' + name + ' leaves your squad.')}</small></span><button class="btn-secondary small" type="button" data-sheet-act="sell"${dis ? ' disabled' : ''}>Sell for ${num(systemSaleValue(p))}</button></li>
     <li class="list-row"><span class="nm">Release<small>${escapeSmall(blocked || 'Leaves for nothing, and you stop paying the wage.')}</small></span><button class="btn-secondary small" type="button" data-sheet-act="release"${dis ? ' disabled' : ''}>Release</button></li>`;
@@ -1784,13 +2038,45 @@ async function sheetTransferAction(mode) {
 }
 
 $('sheet-transfer').addEventListener('click', (e) => {
+  const star = e.target.closest('[data-sheet-star]');
+  if (star) {
+    const id = star.dataset.sheetStar;
+    if (shortlist.players.has(id)) shortlist.players.delete(id);
+    else shortlist.players.add(id);
+    const p = findPlayer(id);
+    if (p) renderSheetTransfer(p);
+    const again = $('sheet-transfer').querySelector('[data-sheet-star]');
+    if (again) again.focus();
+    return;
+  }
   const btn = e.target.closest('[data-sheet-act]');
   if (btn && !btn.disabled) sheetTransferAction(btn.dataset.sheetAct);
 });
 $('market-list').addEventListener('click', (e) => {
+  const star = e.target.closest('[data-star]');
+  if (star) {
+    const id = Number(star.dataset.star);
+    if (shortlist.listings.has(id)) shortlist.listings.delete(id);
+    else shortlist.listings.add(id);
+    renderMarket();
+    const again = $('market-list').querySelector('[data-star="' + id + '"]');
+    if (again) again.focus();
+    return;
+  }
   const btn = e.target.closest('[data-buy]');
   if (btn && !btn.disabled) buyListing(Number(btn.dataset.buy));
 });
+$('market-sort').addEventListener('change', (e) => { marketView.sort = e.target.value; renderMarket(); });
+$('filter-pos').addEventListener('change', (e) => { marketView.pos = e.target.value; renderMarket(); });
+$('filter-ovr').addEventListener('change', (e) => { marketView.minOverall = Number(e.target.value) || 0; renderMarket(); });
+$('filter-price').addEventListener('change', (e) => { marketView.maxPrice = Number(e.target.value) || 0; renderMarket(); });
+$('filter-short').addEventListener('click', () => {
+  marketView.shortlistOnly = !marketView.shortlistOnly;
+  renderMarket();
+});
+$('market-clear').addEventListener('click', () => clearMarketView(true));
+$('market-empty-clear').addEventListener('click', () => clearMarketView(false));
+$('market-nomatch-clear').addEventListener('click', () => clearMarketView(false));
 $('listing-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-withdraw]');
   if (btn && !btn.disabled) withdrawListing(Number(btn.dataset.withdraw));
@@ -2264,15 +2550,26 @@ window.addEventListener('hashchange', () => {
   if (screen === 'report') { stopFeed(); screen = 'club'; render(); return; }
   if (screen === 'club') showTab(hashTab());
 });
-$('retry-btn').addEventListener('click', load);
+$('retry-btn').addEventListener('click', () => {
+  if (groupRetry) repairGroup();
+  else load();
+});
 
 // The wait line opens by itself when a match time passes, or when the manager
 // comes back to the app.
 async function refresh() {
-  if (!career) return;
+  if (!career || groupSettingUp) return;
   try {
     const { status, data } = await api('GET');
     if (status === 200 && data && data.career) {
+      // The same check a load makes: a group that lost its shape is repaired
+      // by the server, not patched here.
+      if (data.groupBroken || groupSetupError(data.career)) {
+        career = data.career;
+        version = data.version;
+        await repairGroup();
+        return;
+      }
       const repaired = repairCareer(data.career);
       if (repaired) {
         career = repaired;
@@ -2304,4 +2601,5 @@ setInterval(() => {
   }
 }, 30000);
 
+fillMarketControls();
 load();

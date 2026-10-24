@@ -36,6 +36,12 @@
       ]
     },
     {
+      "name": "Demo header shows the club",
+      "path": "/?demo=1",
+      "expectSelector": "#club-name",
+      "expectText": "Harbourside"
+    },
+    {
       "name": "Demo club shows Club credits",
       "path": "/?demo=1#finance",
       "expectText": "Club credits"
@@ -107,6 +113,18 @@
       "path": "/?demo=1#transfers",
       "expectText": "On the market",
       "expectSelector": "#market-list .list-row"
+    },
+    {
+      "name": "Demo transfers tab sorts and filters the market",
+      "path": "/?demo=1#transfers",
+      "expectText": "Sort by",
+      "expectSelector": "#market-controls:not([hidden]) #market-sort"
+    },
+    {
+      "name": "Demo transfer listings carry a value hint and a shortlist star",
+      "path": "/?demo=1#transfers",
+      "expectText": "Staging Demo Keeper",
+      "expectSelector": "#market-list .hint"
     },
     {
       "name": "Demo club shows its wages",
