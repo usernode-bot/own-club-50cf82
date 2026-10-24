@@ -18,8 +18,9 @@ import {
   wageBill, playerWage, stadiumSeats, homeCrowd, FAN_CAP, ACADEMY_INTAKE, academyCapacity,
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
   growthOutlook, managerLine, groupsNote, tableZone, topScorers,
+  scoreAt, keyMoments,
 } from './engine.js';
-import { buildTimeline, matchCrowd, creditsLine } from './match-feed.js';
+import { matchCrowd, creditsLine } from './match-feed.js';
 import {
   MARKET_SORTS, POSITION_FILTERS, MIN_OVERALL_STEPS, MAX_PRICE_STEPS,
   DEFAULT_MARKET_VIEW, valueHint, filterListings, sortListings, activeFilterCount,
@@ -192,7 +193,7 @@ function render() {
   showView(screen);
   if (screen === 'club' && career) renderClub();
   if (screen === 'new') renderNew();
-  if (screen === 'report' && career && career.lastReport) renderReport();
+  if (screen === 'report' && career && reportFor(timeline.matchday)) renderReport();
 }
 
 // Why a career did not load, in one line under the message. The codes in
@@ -818,7 +819,7 @@ function renderClub() {
     const a = CLUB_BY_ID[last.away.id];
     $('last-sec').hidden = false;
     $('last-md').textContent = 'Matchday ' + last.matchday;
-    $('last-list').innerHTML = `<li class="list-row row-btn" data-open-report="1" tabindex="0" role="button" aria-label="Open the match report">
+    $('last-list').innerHTML = `<li class="list-row row-btn" data-open-report="1" data-md="${last.matchday}" tabindex="0" role="button" aria-label="Open the match report">
       <span class="nm">${esc(h.name)} ${last.homeGoals}–${last.awayGoals} ${esc(a.name)}<small>Shots ${last.stats.shots[0]}–${last.stats.shots[1]}, possession ${last.stats.possession[0]}%–${last.stats.possession[1]}%</small></span>
       <span class="form"><i class="${resultClass(last, career.clubId)}">${resultLetter(last, career.clubId, ownHome)}</i></span>
       <span class="chev" aria-hidden="true">›</span>
@@ -887,11 +888,13 @@ function renderClub() {
           <span class="nm">${esc(displayName(f.home))} v ${esc(displayName(f.away))}${mine ? '<small>Your match</small>' : ''}</span>
         </li>`;
       }
-      const latest = mine && career.lastReport && career.lastReport.matchday === f.result.matchday;
-      return `<li class="list-row${latest ? ' row-btn' : ''}${mine ? ' me' : ''}"${latest ? ' data-open-report="1" tabindex="0" role="button"' : ''}>
+      // Every own result this season that kept a replay opens it; the match
+      // already openable on Home is the latest one.
+      const replayable = mine && reportFor(f.result.matchday);
+      return `<li class="list-row${replayable ? ' row-btn' : ''}${mine ? ' me' : ''}"${replayable ? ' data-open-report="1" data-md="' + f.result.matchday + '" tabindex="0" role="button"' : ''}>
         <span class="nm">${esc(f.home.name)} ${f.result.homeGoals}–${f.result.awayGoals} ${esc(f.away.name)}${mine ? '<small>Your match</small>' : ''}</span>
         ${mine ? `<span class="form"><i class="${resultClass(f.result, career.clubId)}">${resultLetter(f.result, career.clubId)}</i></span>` : ''}
-        ${latest ? '<span class="chev" aria-hidden="true">›</span>' : ''}
+        ${replayable ? '<span class="chev" aria-hidden="true">›</span>' : ''}
       </li>`;
     }).join('')).join('');
 
@@ -1315,15 +1318,19 @@ async function changeFacilityNow(key, level, dir) {
   }
 }
 
-function openReport(from) {
-  if (!career || !career.lastReport) return;
+function openReport(from, matchday) {
+  if (!career) return;
+  const md = Number.isInteger(matchday) ? matchday
+    : (career.lastReport ? career.lastReport.matchday : null);
+  if (!reportFor(md)) return;
   reportFrom = from || tab;
   const label = reportFrom === 'competition' ? 'Back to Competition' : 'Back to Home';
   $('report-back-label').textContent = label;
   $('report-close').textContent = label;
-  stopFeed();
-  const events = buildTimeline(career.lastReport, CLUB_BY_ID);
-  feed = { events, shown: reducedMotion() ? events.length : 1, timer: null };
+  stopTimeline();
+  // A played match opens at full time, paused: a result from while the
+  // manager was away reads as a finished match, never as one playing itself.
+  timeline = { matchday: md, minute: 90, playing: false, timer: null };
   announce('');
   screen = 'report';
   render();
@@ -2198,19 +2205,93 @@ $('listing-list').addEventListener('click', (e) => {
 $('market-retry').addEventListener('click', () => { loadMarket(); });
 
 // ── Match report ─────────────────────────────────────────────────────────
-// The match you can watch: the saved report as a timeline, revealed one event
-// at a time. Play and Skip to full time end on the same list, because both
-// read this one timeline.
-let feed = { events: [], shown: 0, timer: null };
+// The match, minute by minute: a pinned scoreboard, a scrubber from kick-off
+// to full time, and the events up to the chosen minute, newest first. Every
+// own result this season opens here: the latest from the full `lastReport`,
+// any other from the compact snapshot that matchday saved in `replays`.
+let timeline = { matchday: null, minute: 90, playing: false, timer: null };
 
-const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+// The report for one of the manager's own matchdays. A result with no saved
+// replay (one played before this screen kept them) has none.
+function reportFor(matchday) {
+  if (!career) return null;
+  const md = Number.isInteger(matchday) ? matchday
+    : (career.lastReport ? career.lastReport.matchday : null);
+  if (!Number.isInteger(md)) return null;
+  if (career.lastReport && career.lastReport.matchday === md) return career.lastReport;
+  const entry = (Array.isArray(career.replays) ? career.replays : [])
+    .find((x) => x && x.matchday === md);
+  if (!entry) return null;
+  const side = (id) => {
+    const club = CLUB_BY_ID[id] || {};
+    return { id, name: club.name || '', short: club.short || '' };
+  };
+  return {
+    matchday: entry.matchday,
+    home: side(entry.home),
+    away: side(entry.away),
+    homeGoals: entry.homeGoals,
+    awayGoals: entry.awayGoals,
+    moments: Array.isArray(entry.moments) ? entry.moments : [],
+    stats: entry.stats || {},
+  };
+}
 
-function feedRow(e) {
-  const who = e.player ? ', ' + esc(e.player) : '';
-  const code = e.code ? ' <span class="code">' + esc(e.code) + '</span>' : '';
-  return '<li class="list-row"><span class="min">' + e.minute + "'</span>"
-    + '<span class="ev"><b>' + esc(e.label) + '</b>' + who + code
-    + '<small>' + esc(e.text) + '</small></span></li>';
+function minuteText(minute) {
+  return minute <= 0 ? 'Kick-off' : minute >= 90 ? 'Full time' : minute + "'";
+}
+
+// The report's line icons, in one stroke: a goal, the two cards, an injury,
+// a substitution, a save (a goal frame) and a near miss (a ball past a post).
+const MOMENT_ICONS = {
+  goal: '<circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/>',
+  yellow: '<rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(var(--card-y))" stroke="none"/>',
+  red: '<rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(var(--card-r))" stroke="none"/>',
+  injury: '<path d="M9 4h6v5h5v6h-5v5H9v-5H4V9h5z"/>',
+  sub: '<path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3"/>',
+  save: '<path d="M4 19V6h16v13"/><path d="M8 19v-4h8v4"/>',
+  miss: '<circle cx="15" cy="9" r="5"/><path d="M5 21V8"/>',
+};
+const MOMENT_LABELS = {
+  goal: 'Goal', yellow: 'Yellow card', red: 'Red card', injury: 'Injury',
+  sub: 'Sub', save: 'Shot saved', miss: 'Near miss',
+};
+
+function momentIcon(type, own) {
+  const path = MOMENT_ICONS[type] || MOMENT_ICONS.goal;
+  return '<span class="ico' + (own ? ' own' : '') + '"><svg width="20" height="20" viewBox="0 0 24 24" '
+    + 'aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" '
+    + 'stroke-linecap="round" stroke-linejoin="round">' + path + '</svg></span>';
+}
+
+function momentRow(m, report, ownSide, note) {
+  const type = MOMENT_LABELS[m.type] ? m.type : 'goal';
+  const sideClub = m.side === 'home' ? report.home : report.away;
+  const code = (sideClub && sideClub.short) || '';
+  const who = type === 'sub' && m.playerOutName
+    ? (m.playerName || '') + ' on for ' + m.playerOutName
+    : (m.playerName || '');
+  const small = note !== undefined ? note
+    : type === 'goal' ? (m.assistName ? 'Assist: ' + m.assistName : '')
+      : (m.detail || '');
+  return '<li class="list-row"><span class="min">' + (Number(m.minute) || 0) + "'</span>"
+    + momentIcon(type, m.side === ownSide)
+    + '<span class="ev"><b>' + esc(MOMENT_LABELS[type]) + '</b>' + (who ? ', ' + esc(who) : '')
+    + (code ? ' <span class="code">' + esc(code) + '</span>' : '')
+    + (small ? '<small>' + esc(small) + '</small>' : '') + '</span></li>';
+}
+
+function eventsHtml(report, minute) {
+  const ownSide = report.home.id === career.clubId ? 'home' : 'away';
+  const all = Array.isArray(report.moments) ? report.moments : [];
+  const shown = all.filter((m) => (Number(m.minute) || 0) <= minute)
+    .slice().sort((a, b) => (Number(b.minute) || 0) - (Number(a.minute) || 0));
+  if (!shown.length) {
+    return '<li class="list-row"><span class="ev">'
+      + (all.length ? 'Kick-off. Nothing has happened yet.' : 'No chances, cards or injuries.')
+      + '</span></li>';
+  }
+  return shown.map((m) => momentRow(m, report, ownSide)).join('');
 }
 
 function announce(text) {
@@ -2218,58 +2299,46 @@ function announce(text) {
   if (el) el.textContent = text || '';
 }
 
-function stopFeed() {
-  if (feed.timer) clearInterval(feed.timer);
-  feed.timer = null;
+function stopTimeline() {
+  if (timeline.timer) clearInterval(timeline.timer);
+  timeline.timer = null;
+  timeline.playing = false;
 }
 
-function feedPause() {
-  stopFeed();
-  $('feed-play').textContent = 'Play';
+function pauseTimeline() {
+  stopTimeline();
+  const btn = $('report-play');
+  if (btn) btn.textContent = 'Play';
 }
 
-// One event a second. Only the newest row is added, so a busy match costs one
-// DOM append per event and never re-renders the whole report.
-function feedStep() {
-  if (!feed.events.length || screen !== 'report') { stopFeed(); return; }
-  if (feed.shown < feed.events.length) {
-    feed.shown += 1;
-    const e = feed.events[feed.shown - 1];
-    $('report-moments').insertAdjacentHTML('beforeend', feedRow(e));
-    $('report-md').textContent = 'Matchday ' + career.lastReport.matchday + ', ' + e.minute + "'";
-    $('report-score').textContent = e.score[0] + '–' + e.score[1];
-    announce(e.minute + "', " + e.label + (e.player ? ', ' + e.player + ', ' + e.code : '') + '. ' + e.text);
-    const rows = $('report-moments').children;
-    const last = rows[rows.length - 1];
-    if (last && last.scrollIntoView) last.scrollIntoView({ block: 'nearest' });
-  }
-  if (feed.shown >= feed.events.length) finishFeed();
-}
-
-// Both Play reaching the end and Skip come through here, so the final state is
-// exactly the same.
-function finishFeed() {
-  stopFeed();
-  feed.shown = feed.events.length;
-  const focused = document.activeElement;
-  const fromControls = focused && (focused.id === 'feed-play' || focused.id === 'feed-skip');
-  renderReport();
-  announce(feed.events[feed.events.length - 1].text);
-  if (fromControls) {
-    const row = $('report-ft-row');
-    if (row) row.focus({ preventScroll: true });
+// About one match minute every 0.4 seconds. Only the scoreboard, the feed and
+// the summary read the minute, so a tick never re-renders the whole report.
+function playTick() {
+  timeline.minute = Math.min(90, timeline.minute + 1);
+  if (timeline.minute >= 90) pauseTimeline();
+  renderTimeline();
+  const r = reportFor(timeline.matchday);
+  const at = r ? (r.moments || []).filter((m) => (Number(m.minute) || 0) === timeline.minute) : [];
+  if (at.length) {
+    announce(timeline.minute + "', " + (MOMENT_LABELS[at[0].type] || '')
+      + (at[0].playerName ? ', ' + at[0].playerName : '') + '.');
   }
 }
 
-function feedPlay() {
-  if (!feed.events.length) return;
-  if (feed.timer) { feedPause(); return; }
-  if (reducedMotion()) return;
-  feedStep();
-  if (feed.shown < feed.events.length) {
-    feed.timer = setInterval(feedStep, 1000);
-    $('feed-play').textContent = 'Pause';
-  }
+// Play starts from kick-off when the match is already finished, and carries
+// on from the chosen minute otherwise. A played match never starts by itself.
+function playTimeline() {
+  if (timeline.playing) { pauseTimeline(); return; }
+  if (timeline.minute >= 90) timeline.minute = 0;
+  timeline.playing = true;
+  timeline.timer = setInterval(playTick, 400);
+  renderTimeline();
+}
+
+function scrubTimeline(value) {
+  pauseTimeline();
+  timeline.minute = Math.max(0, Math.min(90, Number(value) || 0));
+  renderTimeline();
 }
 
 function statRow(label, left, right, suffix = '') {
@@ -2282,21 +2351,33 @@ function statRow(label, left, right, suffix = '') {
   </li>`;
 }
 
-// The full-time summary: the recorded score, the compact strip and one line
-// naming what the result paid, linking to the Finance tab.
+// The full-time panel: the recorded score, possession, shots and shots on
+// target from the manager's side first, what the result paid, and the three
+// key moments. A replay snapshot has no finances, so its line is left out.
 function renderFullTime(r) {
   const s = r.stats || {};
+  const ownHome = r.home.id === career.clubId;
+  const ownIdx = ownHome ? 0 : 1;
+  const oppIdx = ownHome ? 1 : 0;
   const pair = (name, suffix) => {
     const arr = Array.isArray(s[name]) ? s[name] : [0, 0];
-    return (Number(arr[0]) || 0) + (suffix || '') + '–' + (Number(arr[1]) || 0) + (suffix || '');
+    const own = Number(arr[ownIdx]) || 0;
+    const opp = Number(arr[oppIdx]) || 0;
+    return own + (suffix || '') + '–' + opp + (suffix || '');
   };
-  const crowd = matchCrowd(r, career, CLUB_BY_ID);
   const ground = (CLUB_BY_ID[r.home.id] || {}).ground;
   const at = ground ? ' at ' + ground : '';
   const result = r.homeGoals > r.awayGoals ? r.home.name + ' win' + at + '.'
     : r.homeGoals < r.awayGoals ? r.away.name + ' win' + at + '.'
       : r.home.name + ' and ' + r.away.name + ' draw' + at + '.';
   const cred = creditsLine(r.finance);
+  let crowdRow = '';
+  if (r.finance) {
+    const crowd = matchCrowd(r, career, CLUB_BY_ID);
+    crowdRow = `<div><b>${num(crowd.attendance)}</b>${crowd.estimate ? 'Attendance (estimate)' : 'Attendance'}</div>`;
+  }
+  const ownSide = ownHome ? 'home' : 'away';
+  const keys = keyMoments(r.moments);
   $('report-ft').innerHTML = `
     <li class="list-row" id="report-ft-row" tabindex="-1">
       <span class="ev"><span class="ft-title">${esc(r.home.short)} ${r.homeGoals}–${r.awayGoals} ${esc(r.away.short)}</span><small>${esc(result)}</small></span>
@@ -2305,13 +2386,35 @@ function renderFullTime(r) {
       <div><b>${pair('possession', '%')}</b>Possession</div>
       <div><b>${pair('shots')}</b>Shots</div>
       <div><b>${pair('onTarget')}</b>On target</div>
-      <div><b>${num(crowd.attendance)}</b>${crowd.estimate ? 'Attendance (estimate)' : 'Attendance'}</div>
+      ${crowdRow}
     </li>
-    ${cred ? `<li class="list-row"><span class="ev">${esc(cred)}<a href="#finance" data-finance-link>Finance tab</a>.</span></li>` : ''}`;
+    ${cred ? `<li class="list-row"><span class="ev">${esc(cred)}<a href="#finance" data-finance-link>Finance tab</a>.</span></li>` : ''}
+    ${keys.map((m) => momentRow(m, r, ownSide, 'Key moment')).join('')}`;
+}
+
+// The scoreboard, the controls and the feed for the chosen minute.
+function renderTimeline() {
+  const r = reportFor(timeline.matchday);
+  if (!r) return;
+  const minute = timeline.minute;
+  const score = scoreAt(r.moments, minute);
+  const done = minute >= 90;
+  $('report-score').textContent = score[0] + '–' + score[1];
+  $('report-clock').textContent = minuteText(minute);
+  $('report-minute').textContent = minute + "'";
+  $('report-scrub').value = String(minute);
+  $('report-play').textContent = timeline.playing ? 'Pause' : 'Play';
+  $('report-moments').innerHTML = eventsHtml(r, minute);
+  $('report-ft-sec').hidden = !done;
+  $('report-stats-sec').hidden = !done;
+  $('report-finance-sec').hidden = !done || !r.finance;
+  $('report-ratings-sec').hidden = !done || !r.ratings;
+  if (done) renderFullTime(r);
 }
 
 function renderReport() {
-  const r = career.lastReport;
+  const r = reportFor(timeline.matchday);
+  if (!r) return;
   const ownHome = r.home.id === career.clubId;
   const own = ownHome ? r.home : r.away;
   const opp = ownHome ? r.away : r.home;
@@ -2324,47 +2427,35 @@ function renderReport() {
   $('report-home-name').textContent = CLUB_BY_ID[r.home.id].name;
   $('report-away-badge').outerHTML = badgeHtml(CLUB_BY_ID[r.away.id]).replace('<span ', '<span id="report-away-badge" ');
   $('report-away-name').textContent = CLUB_BY_ID[r.away.id].name;
-  $('report-match-teams').textContent = r.home.name + ' v ' + r.away.name;
+  $('report-md').textContent = placeName(career) + ', matchday ' + r.matchday;
+  $('report-ft-teams').textContent = r.home.name + ' v ' + r.away.name;
 
-  // The feed: the timeline up to the reveal index. A re-render keeps the place.
-  if (!feed.events.length) feed.events = buildTimeline(r, CLUB_BY_ID);
-  const total = feed.events.length;
-  feed.shown = Math.max(1, Math.min(feed.shown || 1, total));
-  const done = feed.shown >= total;
-  const shown = feed.events[feed.shown - 1];
-  $('report-md').textContent = done
-    ? 'Full time, matchday ' + r.matchday
-    : 'Matchday ' + r.matchday + ', ' + shown.minute + "'";
-  $('report-score').textContent = shown.score[0] + '–' + shown.score[1];
-  $('report-moments').innerHTML = feed.events.slice(0, feed.shown).map(feedRow).join('');
-  $('feed-controls').hidden = done || reducedMotion();
-  $('feed-play').textContent = feed.timer ? 'Pause' : 'Play';
-  $('report-ft-sec').hidden = !done;
-  $('report-stats-sec').hidden = !done;
-  $('report-ratings-sec').hidden = !done;
-  if (done) renderFullTime(r);
+  renderTimeline();
 
   $('report-stats-home').textContent = ownClub.name;
   $('report-stats-away').textContent = oppClub.name;
-  const s = r.stats;
+  const s = r.stats || {};
+  const arr = (v) => (Array.isArray(v) && v.length === 2 ? v : [0, 0]);
   const ownIdx = ownHome ? 0 : 1;
   const oppIdx = ownHome ? 1 : 0;
-  const pick = (pair) => [pair[ownIdx], pair[oppIdx]];
+  const pick = (pair) => [arr(pair)[ownIdx], arr(pair)[oppIdx]];
   const rows = [
     statRow('Possession', pick(s.possession)[0], pick(s.possession)[1], '%'),
     statRow('Shots', pick(s.shots)[0], pick(s.shots)[1]),
     statRow('Shots on target', pick(s.onTarget)[0], pick(s.onTarget)[1]),
-    statRow('Passes', pick(s.passes)[0], pick(s.passes)[1]),
-    statRow('Fouls', pick(s.fouls)[0], pick(s.fouls)[1]),
-    statRow('Yellow cards', pick(s.yellow)[0], pick(s.yellow)[1]),
-    statRow('Red cards', pick(s.red)[0], pick(s.red)[1]),
   ];
+  // A replay snapshot keeps only those three; the latest report has the rest.
+  if (r.ratings) {
+    rows.push(statRow('Passes', pick(s.passes)[0], pick(s.passes)[1]));
+    rows.push(statRow('Fouls', pick(s.fouls)[0], pick(s.fouls)[1]));
+    rows.push(statRow('Yellow cards', pick(s.yellow)[0], pick(s.yellow)[1]));
+    rows.push(statRow('Red cards', pick(s.red)[0], pick(s.red)[1]));
+  }
   $('report-stats').innerHTML = rows.join('');
 
-  // Club finances: what this match earned and cost, for a report saved with
-  // them. A report from before they existed keeps the section hidden.
+  // Club finances: what this match earned and cost, for the latest report
+  // saved with them. An older replay keeps the section hidden.
   const fin = r.finance;
-  $('report-finance-sec').hidden = !fin || $('report-ft-sec').hidden;
   if (fin) {
     const resultCredits = creditsForResult(
       fin.result === 'win' ? 1 : 0,
@@ -2407,35 +2498,38 @@ function renderReport() {
       <li class="list-row"><span class="nm">Fans<small>Now ${num(fin.fansAfter)}</small></span><span class="price">${signed(fin.fansAfter - fin.fansBefore)}</span></li>`;
   }
 
-  $('report-ratings-team').textContent = ownClub.name;
-  const ratings = r.ratings[ownSide] || {};
-  const effects = (r.effects && r.effects[ownSide]) || {};
-  const squad = career.squads[career.clubId];
-  const byId = Object.fromEntries(squad.map((p) => [p.id, p]));
-  const ids = Object.keys(ratings).filter((id) => byId[id]);
-  ids.sort((a, b) => ratings[b] - ratings[a]);
-  const best = ids[0];
-  $('report-ratings').innerHTML = ids.map((id) => {
-    const p = byId[id];
-    const e = effects[id] || {};
-    const bits = [p.pos];
-    if (e.subOn != null) bits.push('on ' + e.subOn + "'");
-    if (e.goals) bits.push(e.goals + (e.goals === 1 ? ' goal' : ' goals'));
-    if (e.assists) bits.push(e.assists + (e.assists === 1 ? ' assist' : ' assists'));
-    if (e.yellow) bits.push('yellow card');
-    if (e.red) bits.push('red card');
-    if (e.subOff != null) bits.push('off ' + e.subOff + "'");
-    if (!e.goals && !e.assists && e.subOn == null && !e.yellow && !e.red) bits.push(e.minutes ? e.minutes + ' min' : 'unused');
-    return `<li class="list-row">
-      <span class="nm">${esc(p.name)}<small>${esc(bits.join(', '))}</small></span>
-      <span class="rt${id === best ? ' top1' : ''}">${ratings[id].toFixed(1)}</span>
-    </li>`;
-  }).join('');
+  // Player ratings stay on the latest match: a replay keeps only the events.
+  if (r.ratings) {
+    $('report-ratings-team').textContent = ownClub.name;
+    const ratings = r.ratings[ownSide] || {};
+    const effects = (r.effects && r.effects[ownSide]) || {};
+    const squad = career.squads[career.clubId];
+    const byId = Object.fromEntries(squad.map((p) => [p.id, p]));
+    const ids = Object.keys(ratings).filter((id) => byId[id]);
+    ids.sort((a, b) => ratings[b] - ratings[a]);
+    const best = ids[0];
+    $('report-ratings').innerHTML = ids.map((id) => {
+      const p = byId[id];
+      const e = effects[id] || {};
+      const bits = [p.pos];
+      if (e.subOn != null) bits.push('on ' + e.subOn + "'");
+      if (e.goals) bits.push(e.goals + (e.goals === 1 ? ' goal' : ' goals'));
+      if (e.assists) bits.push(e.assists + (e.assists === 1 ? ' assist' : ' assists'));
+      if (e.yellow) bits.push('yellow card');
+      if (e.red) bits.push('red card');
+      if (e.subOff != null) bits.push('off ' + e.subOff + "'");
+      if (!e.goals && !e.assists && e.subOn == null && !e.yellow && !e.red) bits.push(e.minutes ? e.minutes + ' min' : 'unused');
+      return `<li class="list-row">
+        <span class="nm">${esc(p.name)}<small>${esc(bits.join(', '))}</small></span>
+        <span class="rt${id === best ? ' top1' : ''}">${ratings[id].toFixed(1)}</span>
+      </li>`;
+    }).join('');
+  }
 }
 
 function backToClub() {
   if (!career) return;
-  stopFeed();
+  stopTimeline();
   closeSheet();
   closeMenu();
   screen = 'club';
@@ -2449,14 +2543,14 @@ $('report-back').addEventListener('click', backToClub);
 $('report-back').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); backToClub(); }
 });
-$('feed-play').addEventListener('click', feedPlay);
-$('feed-skip').addEventListener('click', () => { if (feed.events.length) finishFeed(); });
+$('report-play').addEventListener('click', playTimeline);
+$('report-scrub').addEventListener('input', (e) => scrubTimeline(e.target.value));
 // The full-time line's way into the Finance tab for this matchday.
 $('report-ft').addEventListener('click', (e) => {
   const link = e.target.closest('[data-finance-link]');
   if (!link) return;
   e.preventDefault();
-  stopFeed();
+  stopTimeline();
   screen = 'club';
   tab = 'finance';
   if (location.hash !== '#finance') location.hash = '#finance';
@@ -2631,7 +2725,7 @@ function openFromEvent(e) {
   if (!row) return;
   if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
   if (e.type === 'keydown') e.preventDefault();
-  openReport(row.closest('#tab-competition') ? 'competition' : 'home');
+  openReport(row.closest('#tab-competition') ? 'competition' : 'home', Number(row.dataset.md));
 }
 $('last-list').addEventListener('click', openFromEvent);
 $('last-list').addEventListener('keydown', openFromEvent);
@@ -2661,7 +2755,7 @@ document.addEventListener('keydown', (e) => {
 
 window.addEventListener('hashchange', () => {
   if (!career) return;
-  if (screen === 'report') { stopFeed(); screen = 'club'; render(); return; }
+  if (screen === 'report') { stopTimeline(); screen = 'club'; render(); return; }
   if (screen === 'club') showTab(hashTab());
 });
 $('retry-btn').addEventListener('click', () => {

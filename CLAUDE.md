@@ -318,12 +318,22 @@ season and joins the three tiers at rollover. A career saved with the old nine
 groups keeps all nine as they are and gains the eight new Division 3 groups,
 so its own season carries on untouched.
 
-The match view is built from `career.lastReport` by `public/match-feed.js` (a
-pure module): kick-off at 0, the saved moments with their minutes, half-time
-at 45 and full time at 90, whose score is always the recorded result. Only the
-latest matchday can be watched, because one report is stored. The crowd is the
-saved home attendance, or an estimate of the home club's crowd for an away
-match; the Club credits line comes from the report's saved finances.
+The match report replays a matchday minute by minute, and every own result
+this season opens it. The latest comes from `career.lastReport`; any other
+from `state.replays`, a compact snapshot each own matchday appends in
+`playMatchday` (`replaySnapshot`). `REPLAY_MAX` is 34, `replayFields` keeps
+only this season's valid own entries (one per matchday) and is what
+`repairCareer` applies, `startNextSeason` empties it, and `PUT /api/career`
+keeps the stored list (the page cannot forge one). `scoreAt` counts the goals
+up to a minute and `keyMoments` picks the three the full-time panel shows
+(goal, red, injury, save, miss, yellow). `simulateMatch` also records saves
+(`onTarget - goals`) and up to two near misses per side from a second
+generator, so results and every other saved moment are unchanged.
+`public/match-feed.js` still turns the latest report into a written timeline;
+the report screen itself builds the minute feed from the saved moments. The
+crowd is the saved home attendance, or an estimate of the home club's crowd
+for an away match; the Club credits line comes from the report's saved
+finances.
 
 The simulation lives in `public/engine.js` as a pure, seeded ES module shared
 by the browser and the server: the same state and seed always produce the same
@@ -418,15 +428,19 @@ change follows it, and updates it when a request changes the look on purpose.
   leaves out players on no goals.
 - **Signature element:** the pitch diagram: a drawn pitch with your formation
   as white player tokens you drag to swap, the goalkeeper in amber. The match
-  report is a written feed rather than a list of icons: each row gives the
-  minute, a plain word for the moment (Kick-off, Goal, Yellow card, Red card,
-  Injury, Substitution, Half-time, Full time), the player, the club's short
-  code in a small grey chip and one line of commentary. At full time the feed
-  ends with a "Full time" list: the recorded score, a four-figure strip
-  (possession, shots, on target, attendance, two by two on a very narrow
-  screen) and one line naming the Club credits the result earned, with
-  "Finance tab" as a pitch-green link. Play, Pause and Skip to full time are
-  the plain secondary button; reduced motion shows the whole match at once.
+  report is a pinned pitch-green scoreboard (the competition and matchday, the
+  score at the chosen minute, the minute as Kick-off, 47' or Full time), then
+  Play and a white-on-pitch scrubber moving a minute at a time. Match events
+  list the goals, cards, injuries, substitutions, saves and near misses up to
+  the minute, newest first, each with the minute and player, the club's short
+  code in a small grey chip and one line of detail, with the report's line
+  icons, including a goal frame for a save and a ball past a post for a near
+  miss. At full time the feed ends with a "Full time" list: the recorded
+  score, a strip (possession, shots, on target and, with finances, attendance,
+  two by two on a very narrow screen), one line naming the Club credits the
+  result earned with "Finance tab" as a pitch-green link, and the three key
+  moments. Play/Pause is the plain secondary button, never amber. A played
+  match opens at full time, paused, and never plays by itself.
 - **Facility levels:** the Club tab's five-step bar reuses the Squad list's
   fitness green (`pitch-ink`) for filled steps on the raised background, the
   step that just filled flashing amber once (off under reduced motion); the

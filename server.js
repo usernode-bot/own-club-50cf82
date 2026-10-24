@@ -967,6 +967,9 @@ app.put('/api/career', async (req, res) => {
     // too. A played match adds them; a rollover settles the sponsor fee from
     // the stored finished season, so the page cannot award itself one.
     const money = check === 'rollover' ? e.seasonEndMoney(stored) : e.moneyFields(stored);
+    // The season's replays too: the page never invents one, and a rollover
+    // starts the new season with none.
+    const replays = check === 'rollover' ? [] : e.replayFields(stored);
     // The page never decides who is in the squad: a listed, sold or retired
     // player cannot be brought back by a stale or forged save.
     const guardedSquad = check === 'rollover'
@@ -1000,11 +1003,12 @@ app.put('/api/career', async (req, res) => {
           || jsonb_build_object('credits', COALESCE(careers.state->'credits', '0'::jsonb),
                                 'facilities', COALESCE(careers.state->'facilities', '{}'::jsonb),
                                 'staff', COALESCE(careers.state->'staff', '{}'::jsonb),
-                                'youth', COALESCE(careers.state->'youth', '[]'::jsonb)),
+                                'youth', COALESCE(careers.state->'youth', '[]'::jsonb),
+                                'replays', $5::jsonb),
         version = version + 1, updated_at = now()
         WHERE user_id = $1 AND is_demo = $2 AND version = $4
         RETURNING version`,
-      [req.user.id, demo, saved, up.version]
+      [req.user.id, demo, saved, up.version, JSON.stringify(replays)]
     );
     if (rows.length) return res.json({ version: rows[0].version });
     const exists = await pool.query(

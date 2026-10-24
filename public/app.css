@@ -370,6 +370,8 @@ button.chip[aria-expanded="true"] {
 .feed-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .ev { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ev small { display: block; color: rgb(var(--muted)); }
+.ico { display: flex; flex: none; color: rgb(var(--muted)); }
+.ico.own { color: rgb(var(--fg)); }
 .code {
   display: inline-block;
   margin-left: 6px;

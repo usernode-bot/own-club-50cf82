@@ -1809,6 +1809,8 @@ export function repairCareer(state) {
     // The server owns the schedule; a career saved before it existed gets one
     // stamped by the server, not invented here.
     lastReport: reportOk ? report : null,
+    // The season's own replays, for every Competition result this season.
+    replays: replayFields(state),
     // A career saved before Club credits, fans or sponsors existed gets them
     // now: credits 0, the division's starting fans and this season's sponsor.
     ...moneyFields(state),
@@ -2273,6 +2275,56 @@ export function simulateMatch(home, away, seed) {
     });
   }
 
+  // Saves and near misses, so a goalless match still reads as a match. A
+  // second generator keeps the match's own rng untouched: scores, cards,
+  // injuries and every saved result stay exactly as they were.
+  const extraRng = mulberry32(((seed >>> 0) ^ 0x9e3779b9) >>> 0);
+  const shooterAt = (s, minute) => {
+    const outfield = s.onPitch.filter((e) => e.on <= minute && (!e.off || e.off > minute)
+      && POS_GROUP[e.slot.pos] !== 'GK');
+    return weighted(extraRng, outfield.length ? outfield : s.onPitch, (e) => {
+      const g = POS_GROUP[e.slot.pos];
+      const posW = g === 'FW' ? 3 : g === 'MF' ? 1.2 : 0.5;
+      return posW * (0.5 + e.player.attrs.sho / 100);
+    });
+  };
+  const keepers = {
+    home: (sides.home.onPitch.find((e) => POS_GROUP[e.slot.pos] === 'GK') || {}).player,
+    away: (sides.away.onPitch.find((e) => POS_GROUP[e.slot.pos] === 'GK') || {}).player,
+  };
+  for (const key of ['home', 'away']) {
+    const s = sides[key];
+    const other = key === 'home' ? 'away' : 'home';
+    const keeperName = keepers[other] ? keepers[other].name : sides[other].label + ' keeper';
+    const saved = Math.max(0, onTarget[key] - s.goals);
+    for (let i = 0; i < saved; i++) {
+      const minute = 2 + Math.floor(extraRng() * 88);
+      const shot = shooterAt(s, minute);
+      moments.push({
+        minute,
+        type: 'save',
+        side: key,
+        playerName: shot ? shot.player.name : '',
+        detail: 'Saved by ' + keeperName,
+        teamName: s.team.club.name,
+      });
+    }
+    const missed = Math.max(0, Math.min(2, shots[key] - onTarget[key]));
+    const missWords = ['Over the bar', 'Wide of the post', 'Off the post'];
+    for (let i = 0; i < missed; i++) {
+      const minute = 2 + Math.floor(extraRng() * 88);
+      const shot = shooterAt(s, minute);
+      moments.push({
+        minute,
+        type: 'miss',
+        side: key,
+        playerName: shot ? shot.player.name : '',
+        detail: missWords[Math.floor(extraRng() * missWords.length)],
+        teamName: s.team.club.name,
+      });
+    }
+  }
+
   moments.sort((x, y) => x.minute - y.minute || (x.type === 'goal' ? -1 : 0));
 
   // Minutes played and fitness drain.
@@ -2457,6 +2509,111 @@ export function settleClubMatch(state, own, md) {
     academyIntake(state, md + 1);
 }
 
+// ── Matchday replays ─────────────────────────────────────────────────────
+// Only the last report is kept in full, so each own matchday also leaves a
+// compact snapshot: enough for the match report to replay it, a minute at a
+// time, for the rest of the season.
+export const REPLAY_MAX = 34;
+
+function replayPair(value) {
+  return Array.isArray(value) && value.length === 2
+    && Number.isInteger(value[0]) && Number.isInteger(value[1])
+    ? [value[0], value[1]] : [0, 0];
+}
+
+function replayMoment(m) {
+  if (!m || typeof m !== 'object') return null;
+  const out = {
+    minute: Number.isInteger(m.minute) ? m.minute : 0,
+    type: typeof m.type === 'string' ? m.type : '',
+    side: m.side === 'away' ? 'away' : 'home',
+    playerName: typeof m.playerName === 'string' ? m.playerName : '',
+  };
+  if (typeof m.playerOutName === 'string' && m.playerOutName) out.playerOutName = m.playerOutName;
+  if (typeof m.assistName === 'string' && m.assistName) out.assistName = m.assistName;
+  if (typeof m.detail === 'string' && m.detail) out.detail = m.detail;
+  return out;
+}
+
+// The compact replay of one match, as the season's Competition rows open it.
+export function replaySnapshot(report, season) {
+  if (!report) return null;
+  return {
+    season: Number.isInteger(season) ? season : 1,
+    matchday: report.matchday,
+    home: report.home.id,
+    away: report.away.id,
+    homeGoals: report.homeGoals,
+    awayGoals: report.awayGoals,
+    moments: (Array.isArray(report.moments) ? report.moments : [])
+      .map(replayMoment).filter(Boolean),
+    stats: {
+      possession: replayPair(report.stats && report.stats.possession),
+      shots: replayPair(report.stats && report.stats.shots),
+      onTarget: replayPair(report.stats && report.stats.onTarget),
+    },
+  };
+}
+
+// The replay list a stored or repaired career is allowed to keep: this
+// season's own matchdays, one each, valid clubs and goals, at most 34.
+export function replayFields(state) {
+  if (!state || typeof state !== 'object') return [];
+  const list = Array.isArray(state.replays) ? state.replays : [];
+  const season = Number.isInteger(state.season) ? state.season : 1;
+  const total = Array.isArray(state.fixtures) ? state.fixtures.length : 0;
+  const byMatchday = new Map();
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    if (entry.season !== season) continue;
+    if (!Number.isInteger(entry.matchday) || entry.matchday < 1 || entry.matchday > total) continue;
+    if (!CLUB_BY_ID[entry.home] || !CLUB_BY_ID[entry.away]) continue;
+    if (!Number.isInteger(entry.homeGoals) || !Number.isInteger(entry.awayGoals)) continue;
+    if (!Array.isArray(entry.moments)) continue;
+    byMatchday.set(entry.matchday, {
+      season,
+      matchday: entry.matchday,
+      home: entry.home,
+      away: entry.away,
+      homeGoals: entry.homeGoals,
+      awayGoals: entry.awayGoals,
+      moments: entry.moments.map(replayMoment).filter(Boolean),
+      stats: {
+        possession: replayPair(entry.stats && entry.stats.possession),
+        shots: replayPair(entry.stats && entry.stats.shots),
+        onTarget: replayPair(entry.stats && entry.stats.onTarget),
+      },
+    });
+  }
+  return [...byMatchday.values()]
+    .sort((a, b) => a.matchday - b.matchday)
+    .slice(-REPLAY_MAX);
+}
+
+// The score at a chosen minute: goals at or before it, from the two sides.
+export function scoreAt(moments, minute) {
+  const at = Number.isInteger(minute) ? minute : Number(minute) || 0;
+  const out = [0, 0];
+  for (const m of Array.isArray(moments) ? moments : []) {
+    if (!m || m.type !== 'goal') continue;
+    if ((Number(m.minute) || 0) <= at) out[m.side === 'away' ? 1 : 0] += 1;
+  }
+  return out;
+}
+
+// The three moments a full-time panel shows: goals first, then red cards,
+// injuries, saves, near misses and bookings, earlier first on a tie. Shown in
+// minute order.
+const KEY_RANK = { goal: 0, red: 1, injury: 2, save: 3, miss: 4, yellow: 5 };
+
+export function keyMoments(moments) {
+  const list = (Array.isArray(moments) ? moments : [])
+    .filter((m) => m && KEY_RANK[m.type] !== undefined)
+    .sort((x, y) => KEY_RANK[x.type] - KEY_RANK[y.type]
+      || (Number(x.minute) || 0) - (Number(y.minute) || 0));
+  return list.slice(0, 3).sort((x, y) => (Number(x.minute) || 0) - (Number(y.minute) || 0));
+}
+
 export function playMatchday(state) {
   const md = state.matchday;
   if (md >= state.fixtures.length) return [];
@@ -2481,6 +2638,9 @@ export function playMatchday(state) {
   }
   const own = reports.find((r) => r.home.id === state.clubId || r.away.id === state.clubId) || null;
   state.lastReport = own;
+  if (own) {
+    state.replays = [...replayFields(state), replaySnapshot(own, state.season || 1)].slice(-REPLAY_MAX);
+  }
   // Only the manager's own fixture earns or pays Club credits, from the
   // manager's side: the result, the home gate and what the home crowd spends
   // at the shop, food stand and hotel, less ground upkeep, maintenance, player
@@ -2749,6 +2909,7 @@ export function buildInitialState(clubId, managerName, seed) {
     plays: [],
     finished: false,
     lastReport: null,
+    replays: [],
     credits: 0,
     fans: FAN_SEED[tier],
     sponsor: sponsorFor(seed, 1, tier),
@@ -3007,6 +3168,8 @@ export function startNextSeason(state) {
     matchday: 0,
     finished: false,
     lastReport: null,
+    // A new season keeps no replay of the old one.
+    replays: [],
     // The money fields the finished season leaves: the sponsor fee if its
     // target was met, the fans carried over, and a fresh season's totals.
     ...seasonEndMoney(state),

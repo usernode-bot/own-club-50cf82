@@ -520,23 +520,24 @@
         <div class="sm" id="report-md">Full time</div>
         <div class="score">
           <div class="team"><span class="badge" id="report-home-badge"></span><span id="report-home-name"></span></div>
-          <div class="big" id="report-score"></div>
+          <div class="big"><span id="report-score"></span><span class="clock" id="report-clock">Full time</span></div>
           <div class="team"><span class="badge" id="report-away-badge"></span><span id="report-away-name"></span></div>
+        </div>
+        <div class="ctl" id="report-controls">
+          <button class="btn-secondary" type="button" id="report-play">Play</button>
+          <input class="scrub" type="range" id="report-scrub" min="0" max="90" step="1" value="90" aria-label="Match minute">
+          <span class="mn" id="report-minute">90'</span>
         </div>
       </div>
 
       <div class="sec">
-        <div class="section-label"><span>Match</span><span id="report-match-teams"></span></div>
-        <div class="feed-controls" id="feed-controls">
-          <button class="btn-secondary" type="button" id="feed-play">Play</button>
-          <button class="btn-secondary" type="button" id="feed-skip">Skip to full time</button>
-        </div>
+        <div class="section-label"><span>Match events</span><span>Newest first</span></div>
         <p class="sr-only" id="report-live" aria-live="polite"></p>
         <ul class="list" id="report-moments"></ul>
       </div>
 
       <div class="sec" id="report-ft-sec" hidden>
-        <div class="section-label"><span>Full time</span></div>
+        <div class="section-label"><span>Full time</span><span id="report-ft-teams"></span></div>
         <ul class="list" id="report-ft"></ul>
       </div>
 

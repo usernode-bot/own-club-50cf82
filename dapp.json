@@ -185,6 +185,11 @@
       "path": "/?demo=1#competition",
       "expectText": "Top scorers",
       "expectSelector": "#table-list .zone-down .form"
+    },
+    {
+      "name": "Demo competition results open their replay",
+      "path": "/?demo=1#competition",
+      "expectSelector": "#fixtures-list [data-open-report][data-md]"
     }
   ]
 }
