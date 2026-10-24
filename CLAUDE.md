@@ -274,7 +274,10 @@ stay, and the academy takes in none while over; `youthFields` caps at 60. `acade
 
 The ten original clubs make up most of Division 1; the other 152 are generated
 from a fixed seed in `engine.js`, so every career meets the same clubs, with
-squads that get weaker with each tier down. Only the manager's own group is
+squads that get weaker with each tier down. `tableZone` in `engine.js` says
+which table places move at the end of the season, mirroring `nextPlacement`,
+and `topScorers` ranks the group's leading scorers from `p.goals`. Only the
+manager's own group is
 saved; the other eight groups are played out from the career seed when a
 season rolls over. A career saved in the old eight divisions finishes its
 season and joins the three tiers at rollover.
@@ -341,7 +344,21 @@ change follows it, and updates it when a request changes the look on purpose.
   the table (and under the Group buttons on New career, for Divisions 2 and 3)
   one grey line says "Division N has four groups of 18: the Coastal League
   holds 162 clubs.", from `groupsNote` in `engine.js`; it is absent for
-  Division 1 and for a career from before the three tiers.
+  Division 1 and for a career from before the three tiers. The places that
+  move at the end of the season carry a thin strip down the left of the row:
+  `pitch-ink` for promotion (the top 2 of a Division 2 or 3 group) and card red
+  for relegation (ranks 11 to 18 in Division 1, the bottom 2 of a Division 2
+  group), from `tableZone` in `engine.js`, with a small legend above the table
+  naming only the places this division uses; both are absent for a career from
+  before the three tiers. Every row has a Form column of the club's last five
+  W/D/L chips, oldest first, empty before the first matchday, under a small
+  Club / Form / GD / Pts header row. Fixtures and results lists the whole
+  group: the next matchday's fixtures with its kick-off time, then each played
+  matchday newest first with its scores, your own match on the raised
+  background and marked "Your match", the latest one opening its report.
+  Top scorers below it lists the leading ten of the group from the season goals
+  saved on each player, as Squad-style rows (position, name over the club), and
+  leaves out players on no goals.
 - **Signature element:** the pitch diagram: a drawn pitch with your formation
   as white player tokens you drag to swap, the goalkeeper in amber. Small line
   icons mark each kind of moment in the report (a ball, a card, a swap arrow,
