@@ -31,6 +31,14 @@ Nobody leaves Division 3, and every group stays at 18. Start next season takes
 the same club and players into its new group. Lower tiers start with weaker
 players.
 
+Everyone who buys a club plays in one shared Coastal League, on London time:
+matches kick off for every club at 12 am, 6 am, 12 pm and 6 pm, and a club run
+by a real manager uses their saved lineup while every other club is run by a
+bot. Buying a club joins the league with the points and squad it already has,
+and selling hands it to a bot while its results stay. A career from before the
+shared league keeps playing on its own clock until its manager presses Join on
+Home.
+
 Every club also has Club credits, a second in-game currency that belongs to the
 career rather than to the person. Its balance shows under your Dummy USDC in the
 Wallet at the top of the Finance tab. A match earns 50 credits for a win, 25 for

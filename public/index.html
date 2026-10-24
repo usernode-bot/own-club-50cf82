@@ -162,8 +162,8 @@
     <div class="app" id="view-new" hidden>
       <div class="top">
         <div class="sm">The Coastal League</div>
-        <h1>New career</h1>
-        <div class="sm">Three tiers, 306 clubs, 34 matchdays</div>
+        <h1 id="new-title">Buy a club</h1>
+        <div class="sm" id="new-sub">Three tiers, 306 clubs, 34 matchdays</div>
       </div>
       <div class="sec">
         <label class="section-label" for="manager-name">Manager name</label>
@@ -193,6 +193,7 @@
       <div class="sec">
         <div class="section-label"><span>Choose a club</span><span>Price</span></div>
         <ul class="list" id="club-list"></ul>
+        <p class="league-note" id="shared-note" hidden></p>
         <div class="state-error" id="career-error" hidden>
           <p class="state-text" id="career-error-text"></p>
         </div>
@@ -274,7 +275,7 @@
               <div class="mid"><span id="next-label"></span><b>vs</b><span id="next-venue"></span></div>
               <div class="team"><span class="badge" id="next-away-badge"></span><span id="next-away-name"></span></div>
             </div>
-            <div class="kick" id="kickoff"><b id="kickoff-when"></b>Matches play by themselves at 12 am, 6 am, 12 pm and 6 pm your time, with your saved lineup and tactics.</div>
+            <div class="kick" id="kickoff"><b id="kickoff-when"></b><span id="kickoff-note">Matches play by themselves at 12 am, 6 am, 12 pm and 6 pm your time, with your saved lineup and tactics.</span></div>
           </div>
 
           <p class="away-note" id="away-note" hidden></p>
@@ -296,6 +297,23 @@
           <div class="sec">
             <div class="section-label"><span>Board objective</span><span id="objective-season"></span></div>
             <ul class="list"><li class="list-row"><span class="nm" id="objective-text"></span></li></ul>
+          </div>
+
+          <div class="sec" id="shared-sec" hidden>
+            <div class="section-label"><span>Shared league</span></div>
+            <ul class="list">
+              <li class="list-row"><span class="nm">Your club plays its own save<small>In the shared league every club is run by its real manager or a bot, with one result everyone sees.</small></span><button class="btn-secondary" id="join-shared" type="button">Join</button></li>
+            </ul>
+            <div class="confirm" id="join-confirm" hidden>
+              <p class="state-text" id="join-confirm-text"></p>
+              <div class="confirm-row">
+                <button class="btn-primary" id="join-yes" type="button">Join shared league</button>
+                <button class="btn-secondary" id="join-no" type="button">Cancel</button>
+              </div>
+            </div>
+            <div class="state-error" id="join-error" hidden>
+              <p class="state-text" id="join-error-text"></p>
+            </div>
           </div>
 
           <div class="sec" id="home-actions">

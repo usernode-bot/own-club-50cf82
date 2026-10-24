@@ -10,14 +10,25 @@
   },
   "tests": [
     {
-      "name": "New career screen",
+      "name": "Buy a club screen",
       "path": "/",
-      "expectText": "New career"
+      "expectText": "Buy a club"
     },
     {
       "name": "New career shows the club shop",
       "path": "/",
       "expectText": "Dummy USDC (staging mock)"
+    },
+    {
+      "name": "Buy a club shows the shared league",
+      "path": "/",
+      "expectText": "One shared league",
+      "expectSelector": "#shared-note:not([hidden])"
+    },
+    {
+      "name": "Buy a club says London time",
+      "path": "/",
+      "expectText": "London time"
     },
     {
       "name": "New career lists every division at its tier price",
