@@ -19,6 +19,7 @@ import {
   youthFields, SQUAD_MAX, SQUAD_MIN, systemSaleValue, leaveError, signCost, signError, ageingFor,
   growthOutlook, managerLine, groupsNote,
 } from './engine.js';
+import { buildTimeline, matchCrowd, creditsLine } from './match-feed.js';
 import {
   MARKET_SORTS, POSITION_FILTERS, MIN_OVERALL_STEPS, MAX_PRICE_STEPS,
   DEFAULT_MARKET_VIEW, valueHint, filterListings, sortListings, activeFilterCount,
@@ -1251,6 +1252,10 @@ function openReport(from) {
   const label = reportFrom === 'competition' ? 'Back to Competition' : 'Back to Home';
   $('report-back-label').textContent = label;
   $('report-close').textContent = label;
+  stopFeed();
+  const events = buildTimeline(career.lastReport, CLUB_BY_ID);
+  feed = { events, shown: reducedMotion() ? events.length : 1, timer: null };
+  announce('');
   screen = 'report';
   render();
   window.scrollTo(0, 0);
@@ -2079,22 +2084,78 @@ $('listing-list').addEventListener('click', (e) => {
 $('market-retry').addEventListener('click', () => { loadMarket(); });
 
 // ── Match report ─────────────────────────────────────────────────────────
-const ICONS = {
-  goal: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg>',
-  yellow: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(var(--card-y))"/></svg>',
-  red: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(var(--card-r))"/></svg>',
-  sub: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3"/></svg>',
-  injury: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6v5h5v6h-5v5H9v-5H4V9h5z"/></svg>',
-};
+// The match you can watch: the saved report as a timeline, revealed one event
+// at a time. Play and Skip to full time end on the same list, because both
+// read this one timeline.
+let feed = { events: [], shown: 0, timer: null };
 
-function momentText(m, own) {
-  const who = own ? '' : m.teamName.replace(/ (FC|Athletic|Town|United|Rovers|City|Wanderers)$/, '') + ': ';
-  if (m.type === 'goal') return { main: 'Goal, ' + who + m.playerName, sub: m.assistName ? 'Assist: ' + m.assistName : '' };
-  if (m.type === 'yellow') return { main: 'Yellow card, ' + who + m.playerName, sub: m.detail || '' };
-  if (m.type === 'red') return { main: 'Red card, ' + who + m.playerName, sub: m.detail || '' };
-  if (m.type === 'injury') return { main: 'Injury, ' + who + m.playerName, sub: m.detail || '' };
-  if (m.type === 'sub') return { main: 'Sub: ' + m.playerName + ' on for ' + m.playerOutName, sub: own ? (m.detail || '') : m.teamName };
-  return { main: m.type, sub: '' };
+const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+function feedRow(e) {
+  const who = e.player ? ', ' + esc(e.player) : '';
+  const code = e.code ? ' <span class="code">' + esc(e.code) + '</span>' : '';
+  return '<li class="list-row"><span class="min">' + e.minute + "'</span>"
+    + '<span class="ev"><b>' + esc(e.label) + '</b>' + who + code
+    + '<small>' + esc(e.text) + '</small></span></li>';
+}
+
+function announce(text) {
+  const el = $('report-live');
+  if (el) el.textContent = text || '';
+}
+
+function stopFeed() {
+  if (feed.timer) clearInterval(feed.timer);
+  feed.timer = null;
+}
+
+function feedPause() {
+  stopFeed();
+  $('feed-play').textContent = 'Play';
+}
+
+// One event a second. Only the newest row is added, so a busy match costs one
+// DOM append per event and never re-renders the whole report.
+function feedStep() {
+  if (!feed.events.length || screen !== 'report') { stopFeed(); return; }
+  if (feed.shown < feed.events.length) {
+    feed.shown += 1;
+    const e = feed.events[feed.shown - 1];
+    $('report-moments').insertAdjacentHTML('beforeend', feedRow(e));
+    $('report-md').textContent = 'Matchday ' + career.lastReport.matchday + ', ' + e.minute + "'";
+    $('report-score').textContent = e.score[0] + '–' + e.score[1];
+    announce(e.minute + "', " + e.label + (e.player ? ', ' + e.player + ', ' + e.code : '') + '. ' + e.text);
+    const rows = $('report-moments').children;
+    const last = rows[rows.length - 1];
+    if (last && last.scrollIntoView) last.scrollIntoView({ block: 'nearest' });
+  }
+  if (feed.shown >= feed.events.length) finishFeed();
+}
+
+// Both Play reaching the end and Skip come through here, so the final state is
+// exactly the same.
+function finishFeed() {
+  stopFeed();
+  feed.shown = feed.events.length;
+  const focused = document.activeElement;
+  const fromControls = focused && (focused.id === 'feed-play' || focused.id === 'feed-skip');
+  renderReport();
+  announce(feed.events[feed.events.length - 1].text);
+  if (fromControls) {
+    const row = $('report-ft-row');
+    if (row) row.focus({ preventScroll: true });
+  }
+}
+
+function feedPlay() {
+  if (!feed.events.length) return;
+  if (feed.timer) { feedPause(); return; }
+  if (reducedMotion()) return;
+  feedStep();
+  if (feed.shown < feed.events.length) {
+    feed.timer = setInterval(feedStep, 1000);
+    $('feed-play').textContent = 'Pause';
+  }
 }
 
 function statRow(label, left, right, suffix = '') {
@@ -2107,6 +2168,34 @@ function statRow(label, left, right, suffix = '') {
   </li>`;
 }
 
+// The full-time summary: the recorded score, the compact strip and one line
+// naming what the result paid, linking to the Finance tab.
+function renderFullTime(r) {
+  const s = r.stats || {};
+  const pair = (name, suffix) => {
+    const arr = Array.isArray(s[name]) ? s[name] : [0, 0];
+    return (Number(arr[0]) || 0) + (suffix || '') + '–' + (Number(arr[1]) || 0) + (suffix || '');
+  };
+  const crowd = matchCrowd(r, career, CLUB_BY_ID);
+  const ground = (CLUB_BY_ID[r.home.id] || {}).ground;
+  const at = ground ? ' at ' + ground : '';
+  const result = r.homeGoals > r.awayGoals ? r.home.name + ' win' + at + '.'
+    : r.homeGoals < r.awayGoals ? r.away.name + ' win' + at + '.'
+      : r.home.name + ' and ' + r.away.name + ' draw' + at + '.';
+  const cred = creditsLine(r.finance);
+  $('report-ft').innerHTML = `
+    <li class="list-row" id="report-ft-row" tabindex="-1">
+      <span class="ev"><span class="ft-title">${esc(r.home.short)} ${r.homeGoals}–${r.awayGoals} ${esc(r.away.short)}</span><small>${esc(result)}</small></span>
+    </li>
+    <li class="list-row ft-strip">
+      <div><b>${pair('possession', '%')}</b>Possession</div>
+      <div><b>${pair('shots')}</b>Shots</div>
+      <div><b>${pair('onTarget')}</b>On target</div>
+      <div><b>${num(crowd.attendance)}</b>${crowd.estimate ? 'Attendance (estimate)' : 'Attendance'}</div>
+    </li>
+    ${cred ? `<li class="list-row"><span class="ev">${esc(cred)}<a href="#finance" data-finance-link>Finance tab</a>.</span></li>` : ''}`;
+}
+
 function renderReport() {
   const r = career.lastReport;
   const ownHome = r.home.id === career.clubId;
@@ -2117,22 +2206,29 @@ function renderReport() {
   const ownClub = CLUB_BY_ID[own.id];
   const oppClub = CLUB_BY_ID[opp.id];
 
-  $('report-md').textContent = 'Full time, matchday ' + r.matchday;
   $('report-home-badge').outerHTML = badgeHtml(CLUB_BY_ID[r.home.id]).replace('<span ', '<span id="report-home-badge" ');
   $('report-home-name').textContent = CLUB_BY_ID[r.home.id].name;
   $('report-away-badge').outerHTML = badgeHtml(CLUB_BY_ID[r.away.id]).replace('<span ', '<span id="report-away-badge" ');
   $('report-away-name').textContent = CLUB_BY_ID[r.away.id].name;
-  $('report-score').textContent = r.homeGoals + '–' + r.awayGoals;
+  $('report-match-teams').textContent = r.home.name + ' v ' + r.away.name;
 
-  $('report-moments').innerHTML = r.moments.length ? r.moments.map((m) => {
-    const isOwn = m.side === ownSide;
-    const txt = momentText(m, isOwn);
-    return `<li class="list-row">
-      <span class="min">${m.minute}'</span>
-      <span class="ico${isOwn ? ' own' : ''}">${ICONS[m.type] || ''}</span>
-      <span class="ev${isOwn ? '' : ' away'}">${esc(txt.main)}${txt.sub ? '<small>' + esc(txt.sub) + '</small>' : ''}</span>
-    </li>`;
-  }).join('') : '<li class="list-row"><span class="nm">No goals, cards, injuries or substitutions.</span></li>';
+  // The feed: the timeline up to the reveal index. A re-render keeps the place.
+  if (!feed.events.length) feed.events = buildTimeline(r, CLUB_BY_ID);
+  const total = feed.events.length;
+  feed.shown = Math.max(1, Math.min(feed.shown || 1, total));
+  const done = feed.shown >= total;
+  const shown = feed.events[feed.shown - 1];
+  $('report-md').textContent = done
+    ? 'Full time, matchday ' + r.matchday
+    : 'Matchday ' + r.matchday + ', ' + shown.minute + "'";
+  $('report-score').textContent = shown.score[0] + '–' + shown.score[1];
+  $('report-moments').innerHTML = feed.events.slice(0, feed.shown).map(feedRow).join('');
+  $('feed-controls').hidden = done || reducedMotion();
+  $('feed-play').textContent = feed.timer ? 'Pause' : 'Play';
+  $('report-ft-sec').hidden = !done;
+  $('report-stats-sec').hidden = !done;
+  $('report-ratings-sec').hidden = !done;
+  if (done) renderFullTime(r);
 
   $('report-stats-home').textContent = ownClub.name;
   $('report-stats-away').textContent = oppClub.name;
@@ -2154,7 +2250,7 @@ function renderReport() {
   // Club finances: what this match earned and cost, for a report saved with
   // them. A report from before they existed keeps the section hidden.
   const fin = r.finance;
-  $('report-finance-sec').hidden = !fin;
+  $('report-finance-sec').hidden = !fin || $('report-ft-sec').hidden;
   if (fin) {
     const resultCredits = creditsForResult(
       fin.result === 'win' ? 1 : 0,
@@ -2225,6 +2321,7 @@ function renderReport() {
 
 function backToClub() {
   if (!career) return;
+  stopFeed();
   closeSheet();
   closeMenu();
   screen = 'club';
@@ -2237,6 +2334,20 @@ $('report-close').addEventListener('click', backToClub);
 $('report-back').addEventListener('click', backToClub);
 $('report-back').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); backToClub(); }
+});
+$('feed-play').addEventListener('click', feedPlay);
+$('feed-skip').addEventListener('click', () => { if (feed.events.length) finishFeed(); });
+// The full-time line's way into the Finance tab for this matchday.
+$('report-ft').addEventListener('click', (e) => {
+  const link = e.target.closest('[data-finance-link]');
+  if (!link) return;
+  e.preventDefault();
+  stopFeed();
+  screen = 'club';
+  tab = 'finance';
+  if (location.hash !== '#finance') location.hash = '#finance';
+  render();
+  window.scrollTo(0, 0);
 });
 
 // ── Saving ───────────────────────────────────────────────────────────────
@@ -2436,7 +2547,7 @@ document.addEventListener('keydown', (e) => {
 
 window.addEventListener('hashchange', () => {
   if (!career) return;
-  if (screen === 'report') { screen = 'club'; render(); return; }
+  if (screen === 'report') { stopFeed(); screen = 'club'; render(); return; }
   if (screen === 'club') showTab(hashTab());
 });
 $('retry-btn').addEventListener('click', () => {

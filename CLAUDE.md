@@ -290,6 +290,13 @@ season and joins the three tiers at rollover. A career saved with the old nine
 groups keeps all nine as they are and gains the eight new Division 3 groups,
 so its own season carries on untouched.
 
+The match view is built from `career.lastReport` by `public/match-feed.js` (a
+pure module): kick-off at 0, the saved moments with their minutes, half-time
+at 45 and full time at 90, whose score is always the recorded result. Only the
+latest matchday can be watched, because one report is stored. The crowd is the
+saved home attendance, or an estimate of the home club's crowd for an away
+match; the Club credits line comes from the report's saved finances.
+
 The simulation lives in `public/engine.js` as a pure, seeded ES module shared
 by the browser and the server: the same state and seed always produce the same
 match. `public/app.js` renders and saves; `server.js` owns the `careers` table
@@ -362,9 +369,16 @@ change follows it, and updates it when a request changes the look on purpose.
   holds 306 clubs." ("twelve" in Division 3), from `groupsNote` in `engine.js`;
   it is absent for Division 1 and for a career from before the three tiers.
 - **Signature element:** the pitch diagram: a drawn pitch with your formation
-  as white player tokens you drag to swap, the goalkeeper in amber. Small line
-  icons mark each kind of moment in the report (a ball, a card, a swap arrow,
-  a cross).
+  as white player tokens you drag to swap, the goalkeeper in amber. The match
+  report is a written feed rather than a list of icons: each row gives the
+  minute, a plain word for the moment (Kick-off, Goal, Yellow card, Red card,
+  Injury, Substitution, Half-time, Full time), the player, the club's short
+  code in a small grey chip and one line of commentary. At full time the feed
+  ends with a "Full time" list: the recorded score, a four-figure strip
+  (possession, shots, on target, attendance, two by two on a very narrow
+  screen) and one line naming the Club credits the result earned, with
+  "Finance tab" as a pitch-green link. Play, Pause and Skip to full time are
+  the plain secondary button; reduced motion shows the whole match at once.
 - **Facility levels:** the Club tab's five-step bar reuses the Squad list's
   fitness green (`pitch-ink`) for filled steps on the raised background, the
   step that just filled flashing amber once (off under reduced motion); the

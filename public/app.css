@@ -339,10 +339,36 @@ button.chip[aria-expanded="true"] {
 .sheet-body .list-row { padding: 8px 12px; }
 .sheet-body .btn-secondary.small { min-height: 44px; padding: 0 12px; font-size: 14px; }
 
-/* The match report's moment icons and its numbers. */
-.ico { display: flex; align-items: center; color: rgb(var(--muted)); flex: none; }
-.ico.own { color: rgb(var(--fg)); }
+/* The match feed: a minute, a word for what happened, the player, the club
+   code and one line of commentary. Rows wrap inside a 320px screen. */
+.feed-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.ev { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ev small { display: block; color: rgb(var(--muted)); }
+.code {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgb(var(--raised));
+  font-size: 12px;
+  font-weight: 700;
+  color: rgb(var(--muted));
+}
+.ft-title { display: block; font-weight: 700; }
+.ft-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ft-strip div { min-width: 0; font-size: 12px; line-height: 16px; color: rgb(var(--muted)); }
+.ft-strip b { display: block; font-size: 16px; line-height: 24px; color: rgb(var(--fg)); font-variant-numeric: tabular-nums; }
+[data-finance-link] { color: rgb(var(--pitch-ink)); font-weight: 600; text-decoration: underline; }
+[data-finance-link]:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: 2px; border-radius: 2px; }
+#report-ft-row:focus-visible { outline: 2px solid rgb(var(--focus)); outline-offset: -2px; }
 .min, .big, .rt, .ovr, .tbl, .stat .h { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 359px) {
+  .ft-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* The report's scoreline keeps three across a 320px screen. */
+  [data-spec-screen="2"] .score .team { width: auto; flex: 1; min-width: 0; }
+  [data-spec-screen="2"] .score .big { flex: none; font-size: 32px; }
+}
 
 /* ── The seven club tabs ──────────────────────────────────────────────── */
 /* The bar carries four labels and More; below a tablet the labels drop to
