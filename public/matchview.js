@@ -5,7 +5,8 @@
 // loop. The pitch keeps the drawn pitch's white lines and white tokens; the
 // viewer's own club is always the near side.
 
-import { FORMATIONS, POS_GROUP, mulberry32 } from './engine.js';
+import { CLUB_BY_ID, FORMATIONS, POS_GROUP, mulberry32 } from './engine.js';
+import { buildTimeline as buildFeed } from './match-feed.js';
 
 // ── Pure timeline ────────────────────────────────────────────────────────
 
@@ -261,12 +262,196 @@ const HOLD_MS = 1500;
 const EVENT_WINDOW = 2.5; // match minutes an announcement stays up
 
 const ICONS = {
+  kickoff: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>',
+  half: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg>',
+  full: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   goal: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/></svg>',
   yellow: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(var(--card-y))"/></svg>',
   red: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2" fill="rgb(var(--card-r))"/></svg>',
   sub: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3"/></svg>',
   injury: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6v5h5v6h-5v5H9v-5H4V9h5z"/></svg>',
 };
+
+// ── The match log ────────────────────────────────────────────────────────
+// The same timeline the report screen reads, shown beside the pitch. The
+// helpers are pure and DOM-free so the tests can import them.
+
+const LOG_KEY = 'ownclub.matchLog';
+
+function esc(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+// How many leading events the clock has reached. The feed is in match order,
+// so a scrub back reveals fewer again.
+export function revealedCount(events, t) {
+  let n = 0;
+  for (const e of events || []) {
+    if (e.minute > t) break;
+    n += 1;
+  }
+  return n;
+}
+
+export function logRowHtml(e) {
+  const who = e.player ? ', ' + esc(e.player) : '';
+  const code = e.code ? ' <span class="code">' + esc(e.code) + '</span>' : '';
+  return '<li class="list-row log-row" data-kind="' + esc(e.kind) + '">'
+    + '<span class="min">' + (Number(e.minute) || 0) + "'</span>"
+    + '<span class="log-icon" aria-hidden="true">' + (ICONS[e.kind] || '') + '</span>'
+    + '<span class="ev"><b>' + esc(e.label) + '</b>' + who + code
+    + '<small>' + esc(e.text) + '</small></span></li>';
+}
+
+// Following the newest row means being at the end, give or take a little.
+export function atBottom(scrollTop, clientHeight, scrollHeight, slack = 24) {
+  return scrollHeight - (scrollTop + clientHeight) <= slack;
+}
+
+export function readLogOpen(storage, wide) {
+  try {
+    const value = storage && storage.getItem(LOG_KEY);
+    if (value === 'open') return true;
+    if (value === 'closed') return false;
+  } catch (_) {}
+  return !!wide;
+}
+
+export function writeLogOpen(storage, open) {
+  try {
+    if (storage) storage.setItem(LOG_KEY, open ? 'open' : 'closed');
+  } catch (_) {}
+}
+
+// The panel's own state: open or closed, the choice kept in sessionStorage,
+// and the follow-the-playback behaviour. It is created once with the view
+// and reused for every match the same page shows.
+function createMatchLog(els, storage) {
+  const { root, logPanel: panel, logToggle: toggle, logHead: head, logClose: closeBtn,
+    logFixture: fixture, logScroll: scrollEl, logList: listEl, logLive: liveBtn } = els;
+
+  let events = [];
+  let shown = 0;
+  let follow = true;
+  let active = false;
+  let drag = null;
+
+  const isSheet = () => typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 1023px)').matches;
+  const isWide = () => typeof window.matchMedia === 'function'
+    && window.matchMedia('(min-width: 1024px)').matches;
+
+  function showLive(on) {
+    liveBtn.hidden = !on;
+  }
+
+  function toEnd() {
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+  }
+
+  function setOpen(open, opts) {
+    const sheet = isSheet();
+    const hadFocus = panel.contains(document.activeElement);
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    root.dataset.log = open ? 'open' : 'closed';
+    if (opts && opts.save) writeLogOpen(storage, open);
+    if (open) {
+      follow = true;
+      showLive(false);
+      toEnd();
+      if (opts && opts.moveFocus && sheet) closeBtn.focus();
+    } else if (opts && opts.moveFocus && sheet && hadFocus) {
+      toggle.focus();
+    }
+  }
+
+  function begin(nextEvents, fixtureText) {
+    events = Array.isArray(nextEvents) ? nextEvents : [];
+    shown = 0;
+    follow = true;
+    showLive(false);
+    listEl.innerHTML = '';
+    fixture.textContent = fixtureText || '';
+    drag = null;
+    panel.style.transform = '';
+    setOpen(readLogOpen(storage, isWide()), { save: false });
+    sync(0);
+  }
+
+  function sync(t) {
+    const n = revealedCount(events, t);
+    if (n > shown) {
+      listEl.insertAdjacentHTML('beforeend', events.slice(shown, n).map(logRowHtml).join(''));
+      shown = n;
+    } else if (n < shown) {
+      listEl.innerHTML = events.slice(0, n).map(logRowHtml).join('');
+      shown = n;
+    }
+    if (follow && !panel.hidden) toEnd();
+  }
+
+  toggle.addEventListener('click', () => {
+    setOpen(panel.hidden, { save: true, moveFocus: true });
+  });
+
+  closeBtn.addEventListener('click', () => {
+    setOpen(false, { save: true, moveFocus: true });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !active || panel.hidden || !isSheet()) return;
+    e.preventDefault();
+    setOpen(false, { save: true, moveFocus: true });
+  });
+
+  scrollEl.addEventListener('scroll', () => {
+    if (panel.hidden) return;
+    follow = atBottom(scrollEl.scrollTop, scrollEl.clientHeight, scrollEl.scrollHeight);
+    showLive(!follow);
+  });
+
+  liveBtn.addEventListener('click', () => {
+    follow = true;
+    showLive(false);
+    toEnd();
+  });
+
+  // A downward swipe on the sheet's top edge closes it. The grip and the
+  // header are the handle; the close button is not.
+  head.addEventListener('pointerdown', (e) => {
+    if (!isSheet() || panel.hidden || e.target.closest('#match-log-close')) return;
+    drag = { y: e.clientY, dy: 0, id: e.pointerId };
+    try { head.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  head.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.dy = Math.max(0, e.clientY - drag.y);
+    panel.style.transform = 'translateY(' + drag.dy + 'px)';
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = drag.dy;
+    drag = null;
+    panel.style.transform = '';
+    if (dy > 64) setOpen(false, { save: true, moveFocus: true });
+  };
+  head.addEventListener('pointerup', endDrag);
+  head.addEventListener('pointercancel', endDrag);
+
+  return {
+    begin,
+    sync,
+    activate() { active = true; },
+    deactivate() {
+      active = false;
+      drag = null;
+      panel.style.transform = '';
+    },
+  };
+}
 
 function callText(m, who) {
   if (m.type === 'goal') return { main: 'Goal, ' + who + m.playerName, sub: m.assistName ? 'Assist: ' + m.assistName : '' };
@@ -295,12 +480,18 @@ export function createMatchView(els) {
   let last = 0;
   let scrubbing = false;
   let ro = null;
+  const log = createMatchLog(els, els.storage || null);
 
   function open(setup) {
     close();
     report = setup.report;
     timeline = buildTimeline(setup.report, setup.sides, setup.ownClubId, setup.seed);
     meta = setup.meta;
+    log.begin(
+      buildFeed(setup.report, CLUB_BY_ID),
+      setup.report.home.name + ' v ' + setup.report.away.name + ', matchday ' + (setup.meta && setup.meta.matchday),
+    );
+    log.activate();
     t = 0;
     speed = 1;
     hold = 0;
@@ -324,6 +515,7 @@ export function createMatchView(els) {
     raf = 0;
     playing = false;
     hold = 0;
+    log.deactivate();
     if (ro) {
       ro.disconnect();
       ro = null;
@@ -599,6 +791,7 @@ export function createMatchView(els) {
       els.call.hidden = true;
     }
     canvas.setAttribute('aria-label', 'Match view, minute ' + minute + ', score ' + s.home + ' to ' + s.away);
+    log.sync(t);
   }
 
   els.play.addEventListener('click', playToggle);

@@ -1504,7 +1504,10 @@ function renderMatch() {
   $('match-away-name').textContent = report.away.name;
 
   if (!matchView) {
+    let storage = null;
+    try { storage = window.sessionStorage; } catch (_) {}
     matchView = createMatchView({
+      root: $('view-match'),
       canvas: $('match-canvas'),
       clock: $('match-clock'),
       score: $('match-score'),
@@ -1518,6 +1521,15 @@ function renderMatch() {
       stepBack: $('match-step-back'),
       speeds: $('match-speeds'),
       scrub: $('match-scrub'),
+      logToggle: $('match-log-toggle'),
+      logPanel: $('match-log'),
+      logHead: $('match-log-head'),
+      logClose: $('match-log-close'),
+      logFixture: $('match-log-fixture'),
+      logScroll: $('match-log-scroll'),
+      logList: $('match-log-list'),
+      logLive: $('match-log-live'),
+      storage,
     });
   }
   // A re-render while the match is playing (a quiet refresh) keeps it going.
