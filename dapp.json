@@ -21,6 +21,12 @@
       ]
     },
     {
+      "name": "Demo match view has a match log",
+      "path": "/?demo=1&match=2",
+      "expectText": "Match log",
+      "expectSelector": "#match-log-toggle[aria-expanded]"
+    },
+    {
       "name": "Buy a club screen",
       "path": "/",
       "expectText": "Buy a club"

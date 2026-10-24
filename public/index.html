@@ -602,28 +602,56 @@
         </div>
       </div>
 
-      <div class="sec">
-        <div class="pitch match-pitch">
-          <canvas id="match-canvas" role="img"></canvas>
-        </div>
+      <div class="sec log-bar">
+        <button class="log-toggle" id="match-log-toggle" type="button" aria-expanded="false" aria-controls="match-log">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>
+          Match log
+        </button>
       </div>
 
-      <div class="sec">
-        <div class="controls">
-          <button class="icon-btn play-btn" id="match-play" type="button" aria-label="Play">
-            <span id="match-play-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
-            <span id="match-pause-icon" hidden aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg></span>
-          </button>
-          <button class="icon-btn play-btn" id="match-step-back" type="button" aria-label="Previous moment" hidden>
-            <svg width="24" height="24" viewBox="0 0 24 24"><path d="M7 6h2.2v12H7zM18 6l-8 6 8 6z" fill="currentColor"/></svg>
-          </button>
-          <div class="speedrow" id="match-speeds" role="group" aria-label="Playback speed">
-            <button class="chip chip-speed" data-speed="0.5" type="button" aria-pressed="false">Half</button>
-            <button class="chip chip-speed" data-speed="1" type="button" aria-pressed="true">Normal</button>
-            <button class="chip chip-speed" data-speed="2" type="button" aria-pressed="false">Double</button>
+      <div class="match-stage">
+        <div class="stage-main">
+          <div class="sec">
+            <div class="pitch match-pitch">
+              <canvas id="match-canvas" role="img"></canvas>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="controls">
+              <button class="icon-btn play-btn" id="match-play" type="button" aria-label="Play">
+                <span id="match-play-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+                <span id="match-pause-icon" hidden aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg></span>
+              </button>
+              <button class="icon-btn play-btn" id="match-step-back" type="button" aria-label="Previous moment" hidden>
+                <svg width="24" height="24" viewBox="0 0 24 24"><path d="M7 6h2.2v12H7zM18 6l-8 6 8 6z" fill="currentColor"/></svg>
+              </button>
+              <div class="speedrow" id="match-speeds" role="group" aria-label="Playback speed">
+                <button class="chip chip-speed" data-speed="0.5" type="button" aria-pressed="false">Half</button>
+                <button class="chip chip-speed" data-speed="1" type="button" aria-pressed="true">Normal</button>
+                <button class="chip chip-speed" data-speed="2" type="button" aria-pressed="false">Double</button>
+              </div>
+            </div>
+            <input class="scrub" id="match-scrub" type="range" min="0" max="90" step="0.1" value="0" aria-label="Scrub the match">
           </div>
         </div>
-        <input class="scrub" id="match-scrub" type="range" min="0" max="90" step="0.1" value="0" aria-label="Scrub the match">
+
+        <aside class="log-panel" id="match-log" aria-labelledby="match-log-title" hidden>
+          <div class="log-head" id="match-log-head">
+            <span class="log-grip" aria-hidden="true"></span>
+            <div class="log-head-text">
+              <b id="match-log-title">Match log</b>
+              <small id="match-log-fixture"></small>
+            </div>
+            <button class="icon-btn log-close" id="match-log-close" type="button" aria-label="Close the log">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+          <div class="log-scroll" id="match-log-scroll">
+            <ol class="list log-list" id="match-log-list"></ol>
+            <button class="btn-secondary small log-live" id="match-log-live" type="button" hidden>Jump to live</button>
+          </div>
+        </aside>
       </div>
 
       <div class="sec">

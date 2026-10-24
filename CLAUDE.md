@@ -323,7 +323,11 @@ pure module): kick-off at 0, the saved moments with their minutes, half-time
 at 45 and full time at 90, whose score is always the recorded result. Only the
 latest matchday can be watched, because one report is stored. The crowd is the
 saved home attendance, or an estimate of the home club's crowd for an away
-match; the Club credits line comes from the report's saved finances.
+match; the Club credits line comes from the report's saved finances. The match
+view's own Match log reads that same feed: `createMatchLog` in
+`public/matchview.js` reveals its rows as the replay reaches their minute, and
+keeps the manager's open or closed choice under the `ownclub.matchLog`
+sessionStorage key, never in the career.
 
 The simulation lives in `public/engine.js` as a pure, seeded ES module shared
 by the browser and the server: the same state and seed always produce the same
@@ -427,6 +431,21 @@ change follows it, and updates it when a request changes the look on purpose.
   screen) and one line naming the Club credits the result earned, with
   "Finance tab" as a pitch-green link. Play, Pause and Skip to full time are
   the plain secondary button; reduced motion shows the whole match at once.
+- **Match log:** the match view's plain "Match log" toggle (a list icon) sits
+  in its own row above the pitch and carries the amber outline on the raised
+  background while the log is showing, never filled amber. From 1024px the log
+  is a surface panel with a line border docked to the right of the pitch, its
+  header naming "Home club v Away club, matchday N"; hiding it leaves one
+  full-width pitch column with no gutter. Below 1024px it is a bottom sheet
+  with rounded top corners, a grip, safe-area padding and a Close control
+  (Escape and a downward swipe on its top edge close it too), above everything
+  else on the screen and with room below the page to scroll the controls above
+  it. Rows keep the report feed's layout: minute, a drawn icon for the kind,
+  the moment's word, the player, the grey club code chip and one grey line;
+  goals carry a raised background and an amber strip down the left, yellow and
+  red cards their card colours, injuries the text colour. The list follows
+  playback, stops when the manager scrolls up, and then offers Jump to live.
+  The open or closed choice lives in sessionStorage only.
 - **Facility levels:** the Club tab's five-step bar reuses the Squad list's
   fitness green (`pitch-ink`) for filled steps on the raised background, the
   step that just filled flashing amber once (off under reduced motion); the
